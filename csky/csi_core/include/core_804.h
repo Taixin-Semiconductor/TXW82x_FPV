@@ -1085,7 +1085,7 @@ __STATIC_INLINE void csi_icache_enable (void)
 {
 #if (__ICACHE_PRESENT == 1U)
     CACHE->CIR = CACHE_CIR_INV_ALL_Msk;         /* invalidate all Cache */
-    CACHE->CER |=  (uint32_t)(CACHE_CER_EN_Msk | CACHE_CER_CFIG_Msk);  /* enable all Cache */
+    CACHE->CER |=  (uint32_t)(CACHE_CER_EN_Msk & (~ CACHE_CER_CFIG_Msk));  /* enable all Cache */
 #endif
 }
 

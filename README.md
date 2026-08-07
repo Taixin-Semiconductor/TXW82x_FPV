@@ -6,9 +6,9 @@ This repository contains the software development kit for the Taixin Semiconduct
 
 ## Release information
 
-- Version: `v2.7.0.7-41243`
-- Source: SVN release `v2.7.0.7-41243`
-- Fix known issues.
+- Version: `v2.7.0.7-41244`
+- Source: SVN release `v2.7.0.7-41244`
+- Fix the instruction-cache performance regression introduced by release `41243`.
 
 ## Development environment
 
