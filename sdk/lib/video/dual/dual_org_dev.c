@@ -79,25 +79,42 @@ void dual_org_rd_slow_isr(uint32 irq,uint32 dev,uint32  param){
 	_os_printf("(rd slow)");
 }
 
-void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,uint32 src0_raw_num,uint32 src1_raw_num,uint8_t dvp_type,uint8_t csi0_type,uint8_t csi1_type){
+void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,uint32 src0_fmt,uint32 src1_fmt,uint8_t dvp_type,uint8_t csi0_type,uint8_t csi1_type){
     struct dual_device *dual_dev;
 	struct jpg_device *jpeg_dev;
 	struct isp_device *isp_dev;
-    uint8_t *psram_photo_buf;
-    uint8_t *psram_photo_buf1;
-	uint8_t raw_dw;
+    uint8_t *psram_frame_buf0;
+    uint8_t *psram_frame_buf1;
+	uint32  buf0_size = 0;
+	uint32  buf1_size = 0;
 	uint8_t type_master = 0;
 	uint8_t type_slave = 0;
 	
 	isp_dev  = (struct isp_device  *)dev_get(HG_ISP_DEVID);
 	dual_dev = (struct dual_device *)dev_get(HG_DUALORG_DEVID);
 	jpeg_dev = (struct jpg_device *)dev_get(HG_JPG0_DEVID);
-	
-	raw_dw = 8+(src0_raw_num-1)*2;
-	psram_photo_buf  = (uint8_t *)av_psram_malloc((src0_w*src0_h*raw_dw)/8);
-	raw_dw = 8+(src1_raw_num-1)*2;
-	psram_photo_buf1 = (uint8_t *)av_psram_malloc((src1_w*src1_h*raw_dw)/8);
-	_os_printf("psram:%08x  %08x  size:%d\r\n",psram_photo_buf,psram_photo_buf1,(src1_w*src1_h*raw_dw)/8);
+
+    if (src0_fmt == YUV422) {
+        buf0_size = src0_w * src0_h * 2;
+    } else {
+        buf0_size = src0_w * src0_h * (8 + (src0_fmt - 1) * 2) / 8;
+    }
+
+    if (src1_fmt == YUV422) {
+        buf1_size = src1_w * src1_h * 2;
+    } else {
+        buf1_size = src1_w * src1_h * (8 + (src1_fmt - 1) * 2) / 8;
+    }
+
+	psram_frame_buf0  = (uint8_t *)av_psram_malloc(buf0_size);
+	psram_frame_buf1  = (uint8_t *)av_psram_malloc(buf1_size);
+
+    if (!psram_frame_buf0 || !psram_frame_buf1) {
+		os_printf(KERN_ERR"%s malloc size : %d %d err!", __func__, buf0_size , buf1_size);
+        return;
+    }
+	os_printf("dual_org psram addr:%08x %08x size:%d %d\r\n", psram_frame_buf0, psram_frame_buf1, buf0_size, buf1_size);
+
 	if(video_msg.dvp_type == 1){
 		video_msg.dvp_type	= dvp_type;
 	}
@@ -112,8 +129,6 @@ void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,
 		video_msg.csi1_type = csi1_type;
 	}
 	
-	
-
 	if(video_msg.dvp_type == 1){
 		type_master = IN_DVP0;
 	}else if(video_msg.csi0_type == 1){
@@ -138,12 +153,12 @@ void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,
 	//dual_input_src_num(dual_dev,2);
 	dual_input_src_num(dual_dev,(video_msg.video_num>1)?2:1);
 	dual_open_hdr(dual_dev,0);
-	dual_size_cfg(dual_dev,src0_w,src1_w,src0_raw_num,src1_raw_num);
+	dual_size_cfg(dual_dev,src0_w,src1_w,src0_fmt,src1_fmt);
 
 #if 0 //master:gc1084, slave:gc1084
-	dual_timer_cfg(dual_dev,32,2,512); 
-	dual_fs_trig(dual_dev,420);
-	dual_rd_trig(dual_dev,422,425); 
+	dual_timer_cfg(dual_dev,32,2,512); //读的速度
+	dual_fs_trig(dual_dev,420);//主摄计数420出fysnc给副
+	dual_rd_trig(dual_dev,422,425); //计数422主开始读，计数425行副开始读
 
 #elif 0 //master:2336p, slave:gc1084
 	dual_timer_cfg(dual_dev,32,1,256);	
@@ -166,8 +181,8 @@ void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,
 #endif
 
 
-	dual_wr_cnt_cfg(dual_dev,src0_w,src0_h,src1_w,src1_h,src0_raw_num,src1_raw_num);
-	dual_set_addr(dual_dev,(uint32_t)psram_photo_buf,(uint32_t)psram_photo_buf1);
+	dual_wr_cnt_cfg(dual_dev,src0_w,src0_h,src1_w,src1_h,src0_fmt,src1_fmt);
+	dual_set_addr(dual_dev,(uint32_t)psram_frame_buf0,(uint32_t)psram_frame_buf1);
 	//dual_set_addr(dual_dev,0x28000000,0x28151800);
 	dual_arg[0] = (uint32_t)dual_dev;
 	dual_arg[1] = (uint32_t)jpeg_dev;
@@ -181,4 +196,30 @@ void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,
 	dual_open(dual_dev);
 }
 
+void dual_org_debug_config(uint8 dbg_io0,uint8 dbg_io1,uint8 dbg_io2,uint8 dbg_io3)
+{
+    sysctrl_ace_peris_access_cpu_all(ACE_MIX_TOP|ACE_GPIO_TOP|ACE_EFUSE_CTRL|ACE_SYS_SEC_TOP|ACE_PMU|ACE_BASEBAND1|ACE_BASEBAND|ACE_RFDIGITAL|ACE_RFDIGCAL_TOP);
 
+    SYSCTRL->SYS_CON0 |= BIT(3);
+	SYSCTRL->SYS_CON1 |= BIT(21);
+	SYSCTRL->CLK_CON2 |= BIT(22);
+
+	gpio_iomap_output(dbg_io0, GPIO_IOMAP_OUT_DBGPATH_DBGO_0); //dbg0
+	gpio_iomap_output(dbg_io1, GPIO_IOMAP_OUT_DBGPATH_DBGO_1); //dbg1
+	gpio_iomap_output(dbg_io2, GPIO_IOMAP_OUT_DBGPATH_DBGO_2); //dbg2
+	gpio_iomap_output(dbg_io3, GPIO_IOMAP_OUT_DBGPATH_DBGO_3); //dbg3
+ 
+	//dbg0
+    *(volatile uint32 *)0x40062ef0 &= ~(0xff<<0); 
+    *(volatile uint32 *)0x40062ef0 |= (5)<<0; //5:dual_wr0
+    //dbg1
+    *(volatile uint32 *)0x40062ef0 &= ~(0xff<<8); 
+    *(volatile uint32 *)0x40062ef0 |= (6)<<8; //6:dual_wr1
+    //dbg2
+    *(volatile uint32 *)0x40062ef0 &= ~(0xff<<16); 
+    *(volatile uint32 *)0x40062ef0 |= (7)<<16;//7:dual_rd
+    //dbg3
+    *(volatile uint32 *)0x40062ef0 &= ~(0xff<<24); 
+    *(volatile uint32 *)0x40062ef0 |= (8)<<24;//8:dual_free, 正常情况这个IO不会翻转
+
+}

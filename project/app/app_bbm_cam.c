@@ -21,6 +21,7 @@
 #include "lib/audio/audio_code/audio_code.h"
 #include "lib/audio/audio_proc/audio_proc.h"
 #include "lib/audio/wsola/wsola_process.h"
+#include "lib/audio/resample/resample.h"
 
 #if RTT_USB_EN
 #include "rtthread.h"
@@ -48,6 +49,9 @@
 
 #include "babyprotocol_playback.h"
 #include "babyprotocol_record.h"
+#include "takephoto_module/takephoto.h"
+#include "scale_msi/scale3_normal_msi.h"
+#include "mp4_encode_msi2.h"
 
 int32 atcmd_recv(uint8 *data, int32 len);
 void user_workqueue_init(uint16 pri,void *stack,uint16 stack_size);
@@ -198,15 +202,17 @@ __init static void fpv_app_init(void)
     }
     
 #endif
-    
+
+#ifndef LCD_EN
+    // 启动无屏的scale3
+    scale3_msi_no_lcd(S_PREVIEW_SCALE3, 0, FSTYPE_YUV_P0, 320, 180);
+#endif
+
 // 支持拍照和缩略图,暂时默认启动,(紧紧支持录风者模式)
 #if TAKEPHOTO_EN
     // 正常拍照和缩略图
     {
         extern uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
-        extern void    takephoto_with_thumb_init(const char *thumb_msi_name);
-        extern void    takephoto_with_thumb_over_dpi_init(const char *thumb_msi_name, uint8_t jpg_num);
-        extern void    takephoto_720P_with_thumb_init(const char *thumb_msi_name);
         uint16_t       camera_w, camera_h;
         get_vpp_w_h(&camera_w, &camera_h);
         // 没有识别到摄像头
@@ -216,20 +222,23 @@ __init static void fpv_app_init(void)
         // 如果是720P摄像头,支持原分辨率以及大分辨拍照
         else if (camera_w == 1280 && camera_h == 720)
         {
-            takephoto_with_thumb_init(R_THUMB);
-            takephoto_with_thumb_over_dpi_init(SR_OVER_DPI_THUMB_JPG, JPGID0);
+            common_takephoto_normal_init(R_THUMB);
+            common_takephoto_over_dpi_init(JPGID0);
             takephoto_from = VPP_DATA0;
         }
         // 其他摄像头,主要是为了拍照720P的图片,1080P摄像头从VPP_DATA1,不支持大分辨率拍照
         else
         {
-            takephoto_with_thumb_init(R_THUMB);
-            takephoto_with_thumb_over_dpi_init(SR_OVER_DPI_THUMB_JPG, JPGID1);
+            common_takephoto_normal_init(R_THUMB);
+            common_takephoto_over_dpi_init(JPGID1);
             takephoto_from = VPP_DATA1;
             takephoto1_from = VPP_DATA0;
         }
     }
 #endif
+
+    // mp4 的缩略图初始化
+    mp4_thumb_init();
 
 #if JPG_EN == 1
     if(takephoto_from >= 0)
@@ -265,32 +274,16 @@ __weak void user_hardware_config()
 
 static uint8_t vcam_en(void)
 {
-    uint8_t ret = TRUE;
 #if VCAM_EN
-    pmu_vcam_dis();
-    os_sleep_ms(1);
-    pmu_set_vcam_vol(VCAM_VOL_2V80);
-    pmu_vcam_oc_set(VCAM_OC_200MA);
-    pmu_vcam_lc_en();
-    pmu_vcam_oc_int_dis();
-    pmu_vcam_discharge_dis();
-    pmu_vcam_pg_dis();
+
 #ifdef VCAM_33
-    pmu_set_vcam_vol(VCAM_VOL_3V25);
-    pmu_vcam_en();
-    os_sleep_ms(1);
-    pmu_vcam_pg_en();
+    pmu_vcam_ldo_en(1, VCAM_VOL_3V30);
 #else
-    pmu_vcam_en();
-    os_sleep_ms(1);
+    pmu_vcam_ldo_en(1, VCAM_VOL_2V80);
 #endif
 
-    pmu_vcam_oc_pending_clr();
-
-    pmu_vcam_oc_int_dis();
-    pmu_lvd_oe_en();
 #endif
-    return ret;
+    return TRUE;
 }
 
 extern void scale2_mutex_init();
@@ -339,14 +332,12 @@ static void hardware_init(uint8_t vcam)
     mipi_debug.debug_type1  = 7;
     mipi_debug.debug_type2  = 8;
     mipi_debug.debug_type3  = 9;
-    int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_data_lane_num, uint8_t dual_en, uint8_t dual_sensor_type, uint8_t mclk,struct mipi_csi_debug *p_debug);
 #if DVP_EN
 	int ret;
-    ret = mipi_csi_hardware_config(HG_MIPI_CSI_DEVID,  1, 1, DUAL_EN, SENSOR_TYPE_SLAVE0,24, &mipi_debug);
-    mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, 1, DUAL_EN, ret?SENSOR_TYPE_SLAVE1:SENSOR_TYPE_SLAVE0,24, &mipi_debug);
+    ret = mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, CAM_DUAL_MASTER_SLAVE_MODE, 1, SENSOR_TYPE_SLAVE0, 24, &mipi_debug);
+    mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, CAM_DUAL_MASTER_SLAVE_MODE, 1, ret?SENSOR_TYPE_SLAVE1:SENSOR_TYPE_SLAVE0, 24, &mipi_debug);
 #else
-    mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, 1, DUAL_EN, SENSOR_TYPE_MASTER, 24, &mipi_debug);
-    //mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, 1, DUAL_EN, SENSOR_TYPE_SLAVE0, 24, &mipi_debug);
+    mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, CAM_SINGLE_MASTER_MODE, 0, SENSOR_TYPE_MASTER, 24, &mipi_debug);
 #endif
 #endif
 
@@ -355,8 +346,8 @@ static void hardware_init(uint8_t vcam)
 #endif
 
 #if ISP_EN
-    //  debug_config();
     isp_cfg_dev();
+    ircut_init();
 #endif
 
 #if VPP_EN
@@ -375,7 +366,8 @@ static void hardware_init(uint8_t vcam)
 #if AUDIO_EN
 	reg_auproc_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
 	reg_wsola_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
-    reg_aucoder_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
+	reg_aures_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
+    reg_aucoder_alloc(av_malloc, av_zalloc, av_calloc, av_realloc, av_free);
     aucode_mutex_init();
     audio_adc_init(AUSYS_AUAD, 8000, 1, 4, 1);
     audio_dac_init();

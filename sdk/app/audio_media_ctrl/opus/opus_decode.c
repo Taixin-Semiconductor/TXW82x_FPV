@@ -113,6 +113,7 @@ static void opus_decode(struct opus_decode_struct *s)
                     goto opus_decode_frame_end;                    
                 }
                 os_memcpy(send_frame_buf->data, s->dec_buf, dec_samples*2);
+                send_frame_buf->priv = &(s->audio_track);
                 send_frame_buf->len = dec_samples*2;
                 send_frame_buf->mtype = F_AUDIO;
                 send_frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -407,11 +408,6 @@ struct msi *opus_decode_init(uint32_t samplerate, AUDEC_INIT *audec_init)
     msi->priv = opus_decode_s;
 	msi->action = (msi_action)opus_decode_msi_action;   
 	fbpool_init(&opus_decode_s->tx_pool, MAX_OPUS_DECODE_TXBUF);
-	for(uint32_t i=0; i<MAX_OPUS_DECODE_TXBUF; i++) {
-        struct framebuff *frame_buf = (opus_decode_s->tx_pool.pool)+i;
-		frame_buf->data = NULL;
-		frame_buf->priv = &(opus_decode_s->audio_track);
-	}
     if(os_event_init(&opus_decode_s->event) != RET_OK) {
         OPUS_INFO("create opus decode event fail!\r\n");
         goto opus_decode_init_err;

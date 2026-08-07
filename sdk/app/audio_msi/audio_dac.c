@@ -5,8 +5,8 @@
 #include "audio_dac.h"
 #include "dev/audio/ausys.h"
 #include "dev/audio/ausys_da.h"
-#include "lib/audio/wsola/wsola_process.h"
 #include "lib/audio/audio_proc/audio_proc.h"
+#include "lib/audio/resample/resample.h"
 #include "audio_media_ctrl/audio_code_ctrl.h"
 
 extern AUPROC_HDL *global_auproc_hdl;
@@ -37,6 +37,7 @@ struct audac_struct
 	uint8_t audac_stop;
 	int16_t *empty_buf;
 	int16_t *resample_buf;
+	uint32_t resample_nsamples;
     uint32_t data_nbytes;
 	uint32_t data_nsamples;
     uint32_t filter_type;
@@ -47,6 +48,7 @@ struct audac_struct
 	uint32_t bell_volume;
 	uint32_t target_volume;
 	float cur_soft_volume;
+	void *resample_hdl;
 	struct msi *msi;
 	struct audac_cache_struct cache_struct;
 	struct filter_track_struct filter_track_s;
@@ -180,8 +182,8 @@ void set_audac_samplingrate(struct audac_struct *audac_s, uint32_t sampling_rate
 	set_audac_filter_track(audac_s, 1, NULL);  
 	while((!audac_s->is_empty) && (wait_empty_cnt++<5000))
 		os_sleep_ms(1);  
-	if(global_auproc_hdl && global_auproc_hdl->aec) {
-		ret = audio_resample_config(global_auproc_hdl, sampling_rate, AUDAC_SAMPLERATE);
+	if(audac_s->resample_hdl) {
+		ret = resampler_reconfig(audac_s->resample_hdl, sampling_rate, AUDAC_SAMPLERATE);
 		if(ret == RET_OK) {
 			audac_s->sampleRate = sampling_rate; 
 		}  
@@ -193,7 +195,7 @@ void set_audac_samplingrate(struct audac_struct *audac_s, uint32_t sampling_rate
 			audac_s->sampleRate = sampling_rate; 
 		}  
 	}
-	audac_s->data_nbytes = sampling_rate*AUDAC_TIME_INTERVAL*2/1000;  
+	audac_s->data_nbytes = audac_s->sampleRate*AUDAC_TIME_INTERVAL*2/1000;  
 	audac_s->data_nsamples = audac_s->data_nbytes / 2;    
 	set_audac_filter_track(audac_s, 0, NULL);   
 }
@@ -289,12 +291,18 @@ void audac_deal_task(void *d)
 						  data + audac_cache_s->s_offset, audac_cache_s->res_nsamples * sizeof(int16_t));
 				data_nsamples -= audac_cache_s->res_nsamples;
 				audac_cache_s->s_offset += audac_cache_s->res_nsamples;
-				if(global_auproc_hdl && global_auproc_hdl->aec) {
-					audio_resample_data(global_auproc_hdl, audac_cache_s->buf, audac_s->data_nsamples, audac_s->resample_buf, &resample_nsamples);
-					audac_soft_volume_adjust(audac_s, audac_s->resample_buf, resample_nsamples);
+				if(audac_s->resample_hdl) {
+					resample_nsamples = audac_s->resample_nsamples;
+					resampler_process(audac_s->resample_hdl, audac_cache_s->buf, audac_s->data_nsamples, audac_s->resample_buf, &resample_nsamples);
+					if(global_auproc_hdl && global_auproc_hdl->aec) {
+						audac_soft_volume_adjust(audac_s, audac_s->resample_buf, resample_nsamples);
+					}
 					audac_write_data(audac_s, audac_s->resample_buf, (resample_nsamples << 1));
 				}
 				else {
+					if(global_auproc_hdl && global_auproc_hdl->aec) {
+						audac_soft_volume_adjust(audac_s, audac_cache_s->buf, audac_s->data_nsamples);
+					}
 					audac_write_data(audac_s, audac_cache_s->buf, audac_s->data_nbytes);
 				}
 				audac_cache_s->res_nsamples = audac_s->data_nsamples;
@@ -317,12 +325,18 @@ void audac_deal_task(void *d)
 			if((audac_cache_s->d_offset > 0) && end_stream) {	
 				os_memset(audac_cache_s->buf + audac_cache_s->d_offset, 0, 
 						 (audac_s->data_nsamples - audac_cache_s->d_offset) * sizeof(int16_t));
-				if(global_auproc_hdl && global_auproc_hdl->aec) {
-					audio_resample_data(global_auproc_hdl, audac_cache_s->buf, audac_s->data_nsamples, audac_s->resample_buf, &resample_nsamples);
-					audac_soft_volume_adjust(audac_s, audac_s->resample_buf, resample_nsamples);
+				if(audac_s->resample_hdl) {
+					resample_nsamples = audac_s->resample_nsamples;
+					resampler_process(audac_s->resample_hdl, audac_cache_s->buf, audac_s->data_nsamples, audac_s->resample_buf, &resample_nsamples);
+					if(global_auproc_hdl && global_auproc_hdl->aec) {
+						audac_soft_volume_adjust(audac_s, audac_s->resample_buf, resample_nsamples);
+					}
 					audac_write_data(audac_s, audac_s->resample_buf, (resample_nsamples << 1));
 				}
 				else {
+					if(global_auproc_hdl && global_auproc_hdl->aec) {
+						audac_soft_volume_adjust(audac_s, audac_cache_s->buf, audac_s->data_nsamples);
+					}
 					audac_write_data(audac_s, audac_cache_s->buf, audac_s->data_nbytes);
 				}
 				audac_cache_s_clear(audac_cache_s);
@@ -339,7 +353,13 @@ void audac_deal_task(void *d)
 void audac_msg_task(void *d)
 {
 	int32_t ret = 0;
+    uint32_t *data_nsamples_ptr = NULL;
 	struct ausys_da_msg ausys_msg;
+#if AUDAC_RESAMPLERATE 
+    data_nsamples_ptr = &(audac_s->resample_nsamples);
+#else   
+    data_nsamples_ptr = &(audac_s->data_nsamples);
+#endif
 
 	while(1) {
 		if(audac_s->audac_stop == 2)
@@ -350,7 +370,7 @@ void audac_msg_task(void *d)
 		}
 		if((ret == RET_OK) && (ausys_msg.type & AUSYS_DA_MSG_PLAY_HALF)) {
 			if(ausys_msg.da_content.fifo_next_len == 0)
-				audio_process_fardata(global_auproc_hdl, audac_s->empty_buf, audac_s->data_nsamples);
+				audio_process_fardata(global_auproc_hdl, audac_s->empty_buf, *data_nsamples_ptr);
 			else
 				audio_process_fardata(global_auproc_hdl, (int16_t*)(ausys_msg.da_content.fifo_next_addr),
 																ausys_msg.da_content.fifo_next_len / 2);
@@ -381,6 +401,15 @@ int32_t audac_start(struct audac_struct *s)
 		AUDAC_INFO("audac create filter_track_s mutex fail!\r\n");
 		return RET_ERR;		
 	}
+	audac_s->empty_buf = (int16_t*)AUDAC_ZALLOC(sizeof(int16_t) * AUDAC_SAMPLERATE * AUDAC_TIME_INTERVAL / 1000);
+#if AUDAC_RESAMPLERATE
+	audac_s->resample_buf = (int16_t*)AUDAC_ZALLOC(sizeof(int16_t) * AUDAC_SAMPLERATE * AUDAC_TIME_INTERVAL / 1000);
+	audac_s->resample_hdl = resampler_open(audac_s->sampleRate, AUDAC_SAMPLERATE, 1);
+	if((audac_s->empty_buf == NULL) || (audac_s->resample_hdl == NULL) || (audac_s->resample_buf == NULL)) {
+		return RET_ERR;
+	}
+	audac_s->resample_nsamples = AUDAC_SAMPLERATE * AUDAC_TIME_INTERVAL / 1000;
+#endif
 	ausys_da_register_msg(AUSYS_DA_MSG_PLAY_HALF | AUSYS_DA_MSG_FIFO_EMPTY);
     OS_TASK_INIT("audac_deal_task", &audac_s->deal_task_hdl, audac_deal_task, audac_s, AUDAC_TASK_PRIORITY, NULL, 1024);
 	OS_TASK_INIT("audac_msg_task", &audac_s->msg_task_hdl, audac_msg_task, audac_s, AUDAC_TASK_PRIORITY, NULL, 512);
@@ -544,6 +573,9 @@ int32_t audac_msi_action(struct msi *msi,uint32_t cmd_id,uint32_t param1,uint32_
 				if(audac_s->empty_buf) {
 					AUDAC_FREE(audac_s->empty_buf);
 				}
+				if(audac_s->resample_hdl) {
+					resampler_close(audac_s->resample_hdl);
+				}
 				if(audac_s->resample_buf) {
 					AUDAC_FREE(audac_s->resample_buf);
 				}
@@ -576,13 +608,6 @@ int32_t audio_dac_init(void)
         audac_s->sampleRate = AUDAC_SAMPLERATE;
 		audac_s->data_nbytes = audac_s->sampleRate*AUDAC_TIME_INTERVAL*2/1000; 
 		audac_s->data_nsamples = audac_s->data_nbytes / 2;
-		audac_s->empty_buf = (int16_t*)AUDAC_ZALLOC(sizeof(int16_t) * audac_s->data_nsamples);
-		audac_s->resample_buf = (int16_t*)AUDAC_ZALLOC(sizeof(int16_t) * audac_s->data_nsamples);
-		if((audac_s->empty_buf==NULL) || (audac_s->resample_buf==NULL)) {
-			AUDAC_INFO("malloc audac empty_buf fail!\r\n");
-			msi_destroy(audac_s->msi);
-			return RET_ERR;
-		}
         audac_s->is_empty = 1;
 		audac_s->hold_empty = 1;
 		audac_s->call_volume = 100;

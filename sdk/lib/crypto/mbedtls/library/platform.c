@@ -53,6 +53,22 @@ static void platform_free_uninit(void *ptr)
 #define MBEDTLS_PLATFORM_STD_FREE     platform_free_uninit
 #endif /* !MBEDTLS_PLATFORM_STD_FREE */
 
+#ifdef PSRAM_HEAP
+static void *mbedtls_calloc_wrapper(size_t n, size_t size) {
+    return _os_calloc_psram((uint32_t)n, (uint32_t)size);
+}
+static void mbedtls_free_wrapper(void *ptr) {
+    _os_free_psram(ptr);
+}
+#else
+static void *mbedtls_calloc_wrapper(size_t n, size_t size) {
+    return _os_calloc((uint32_t)n, (uint32_t)size);
+}
+static void mbedtls_free_wrapper(void *ptr) {
+    _os_free(ptr);
+}
+#endif
+
 static void * (*mbedtls_calloc_func)(size_t, size_t) = MBEDTLS_PLATFORM_STD_CALLOC;
 static void (*mbedtls_free_func)(void *) = MBEDTLS_PLATFORM_STD_FREE;
 

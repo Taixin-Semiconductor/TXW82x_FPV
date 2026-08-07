@@ -26,7 +26,7 @@ void        lcd_hardware_init565();
 void        lcd_hardware_init666();
 extern void lcd_register_read_3line(struct spi_device *spi_dev, uint32 code, uint8 *buf, uint32 len);
 extern void lcd_table_init(struct spi_device *spi_dev, uint8_t *lcd_table);
-extern void lcd_table_init_MCU(struct lcdc_device *lcd_dev, uint8_t (*lcd_table)[2]);
+extern void lcd_table_init_MCU(struct lcdc_device *lcd_dev, const uint8_t (*lcd_table)[2]);
 extern void lcd_reg_table_init(struct lcdc_device *lcd_dev, uint8 lcd_bus_type, uint8_t *lcd_table);
 
 // 暂时没有作处理
@@ -195,11 +195,8 @@ void lcd_hardware_init(uint16_t *w, uint16_t *h, uint8_t *rotate, uint16_t *scre
             lcd_hardware_init565();
         }
     }
-    else if ((lcdstruct.lcd_bus_type == LCD_BUS_RGB) || (lcdstruct.lcd_bus_type == LCD_BUS_SPI4))
-    {
-        lcd_hardware_init565();
-    }
-    else if (lcdstruct.lcd_bus_type == LCD_BUS_MIPI)
+    else if ((lcdstruct.lcd_bus_type == LCD_BUS_RGB) || (lcdstruct.lcd_bus_type == LCD_BUS_SPI4) ||
+                (lcdstruct.lcd_bus_type == LCD_BUS_QSPI) || (lcdstruct.lcd_bus_type == LCD_BUS_MIPI))
     {
         lcd_hardware_init565();
     }
@@ -253,7 +250,7 @@ void lcd_hardware_init565()
 
     // scale_to_lcd_config();
     lcdc_init(lcd_dev);
-    if ((lcdstruct.lcd_bus_type == LCD_BUS_I80) || (lcdstruct.lcd_bus_type == LCD_BUS_SPI4))
+    if ((lcdstruct.lcd_bus_type == LCD_BUS_I80) || (lcdstruct.lcd_bus_type == LCD_BUS_SPI4) || (lcdstruct.lcd_bus_type == LCD_BUS_QSPI))
     {
         lcdc_open(lcd_dev);
     }
@@ -266,6 +263,7 @@ void lcd_hardware_init565()
     lcdc_set_lcd_visible_size(lcd_dev, lcdstruct.screen_w, lcdstruct.screen_h, pixel_dot_num);
     if (lcdstruct.lcd_bus_type == LCD_BUS_I80)
     {
+        lcdc_clk_gather_select(lcd_dev, 1);
         lcdc_mcu_signal_config(lcd_dev, lcdstruct.signal_config.value);
     }
     else if ((lcdstruct.lcd_bus_type == LCD_BUS_RGB) || (lcdstruct.lcd_bus_type == LCD_BUS_MIPI) || (lcdstruct.lcd_bus_type == LCD_BUS_QSPI))
@@ -284,8 +282,19 @@ void lcd_hardware_init565()
     }
     else if (lcdstruct.lcd_bus_type == LCD_BUS_MIPI)
     {
-        mipi_dsi_init(lcdstruct.screen_w, lcdstruct.screen_h, lcdstruct.pclk, lcdstruct.vlw, lcdstruct.vbp, lcdstruct.vfp, lcdstruct.hlw, lcdstruct.hbp, lcdstruct.hfp, lcdstruct.lane_num,
-                      lcdstruct.color_mode);
+        lcdc_dsi_select_edpi_or_dpi(lcd_dev,0);
+        mipi_dsi_init(lcdstruct.screen_w, lcdstruct.screen_h, lcdstruct.pclk, lcdstruct.vlw, lcdstruct.vbp, lcdstruct.vfp, lcdstruct.hlw, lcdstruct.hbp, lcdstruct.hfp, lcdstruct.lane_num, 
+					  lcdstruct.color_mode);
+    }
+    else if (lcdstruct.lcd_bus_type == LCD_BUS_QSPI)
+    {
+        lcdc_set_baudrate(lcd_dev,4000000);
+		lcdc_clk_gather_select(lcd_dev,1);
+		lcdc_cmd_auto_send(lcd_dev,0xde006100,0xde006000);
+		lcdc_spi_cs_lock_time(lcd_dev,0xe0,0xe0,0xe0);
+		lcdc_qspi_cmd_dw4(lcd_dev,0);        
+        lcd_reg_table_init(lcd_dev,lcdstruct.lcd_bus_type,(uint8_t *)(lcdstruct.init_table));
+        lcdc_set_baudrate(lcd_dev,lcdstruct.pclk);
     }
     else if (lcdstruct.lcd_bus_type == LCD_BUS_SPI4)
     {
@@ -300,6 +309,10 @@ void lcd_hardware_init565()
         //		os_printf("ID:%02x %02x %02x %02x %02x %02x %02x\r\n",pt8[0],pt8[1],pt8[2],pt8[3],pt8[4],pt8[5],pt8[6]);
         lcd_reg_table_init(lcd_dev, lcdstruct.lcd_bus_type, (uint8_t *) (lcdstruct.init_table));
     }
+	if((lcdstruct.lcd_bus_type == LCD_BUS_RGB) || (lcdstruct.lcd_bus_type == LCD_BUS_MIPI) || (lcdstruct.lcd_bus_type == LCD_BUS_QSPI))
+	{
+		lcdc_clock_alway_on(lcd_dev,1);
+	}
 }
 
 void lcd_hardware_init666()
@@ -355,6 +368,7 @@ void lcd_hardware_init666()
     lcdc_set_lcd_visible_size(lcd_dev, lcdstruct.screen_w, lcdstruct.screen_h, 3);
     if (lcdstruct.lcd_bus_type == LCD_BUS_I80)
     {
+        lcdc_clk_gather_select(lcd_dev, 1);
         lcdc_mcu_signal_config(lcd_dev, lcdstruct.signal_config.value);
     }
     else if (lcdstruct.lcd_bus_type == LCD_BUS_RGB)
@@ -420,12 +434,12 @@ void lcd_driver_init(const char *osd_encode_name, const char *lcd_osd_name, cons
     RB_INIT(&lcd_s->p2_rb, LCD_RB_COUNT);
 
     RB_INIT(&lcd_s->delete_rb, LCD_DELETE_RB_COUNT);
-#if 1
+
     lcd_s->lcd_osd_msi      = lcd_osd_msi(lcd_osd_name);
     lcd_s->video_p0_msi     = lcd_video_msi_init(lcd_video_p0, FSTYPE_YUV_P0);
     lcd_s->video_p1_msi     = lcd_video_msi_init(lcd_video_p1, FSTYPE_YUV_P1);
     lcd_s->csc_video_p2_msi = lcd_video_msi_init(R_CSC_VIDEO_P2, FSTYPE_YUV_P0);
-#endif
+
 
     lcd_s->hardware_ready   = 1;
     lcd_s->thread_exit      = 0;
@@ -500,6 +514,78 @@ void lcd_driver_init(const char *osd_encode_name, const char *lcd_osd_name, cons
 #endif
 }
 
+void lcd_driver_reinit()
+{
+    struct app_lcd_s *lcd_s = &lcd_msg_s;
+	struct dsi_device *dsi_dev;
+	dsi_dev = (struct dsi_device *)dev_get(HG_DSI_DEVID); 
+	dev_put((struct dev_obj *)dsi_dev);
+
+    lcd_s->hardware_ready = 1;
+    lcd_s->thread_exit = 0;
+    lcd_s->hardware_auto_ks = 0;
+    lcd_s->get_auto_ks = 0;
+
+    struct lcdc_device *lcd_dev;
+
+    lcd_dev = (struct lcdc_device *)dev_get(HG_LCDC_DEVID);
+	dev_put((struct dev_obj *)lcd_dev);
+    lcd_s->lcd_dev = lcd_dev;
+	lcd_s->lcd_dsi_dev = dsi_dev;
+
+    lcdc_set_video_size(lcd_dev, lcdstruct.video_w, lcdstruct.video_h);
+
+    lcdc_set_rotate_p0_up(lcd_dev, 0);
+    lcdc_set_rotate_p0p1_start_location(lcd_dev, 0, 0, 0, 0);
+
+    lcdc_set_rotate_linebuf_num(lcd_dev, LCD_ROTATE_LINE);
+    lcd_s->line_buf_num = LCD_ROTATE_LINE;
+    lcdc_set_video_data_from(lcd_dev, VIDEO_FROM_MEMORY_ROTATE);
+
+    lcdc_set_video_start_location(lcd_dev, lcdstruct.video_x, lcdstruct.video_y);
+    lcdc_set_video_en(lcd_dev, 0);
+
+    // 设置默认值,因为这个一定要配置,并且地址与p1的地址范围要一样(就是全部是psram或者全部是sram,所以这里最好都是设置psram)
+    lcdc_set_p0_rotate_y_src_addr(lcd_dev, (uint32)0x28000000);
+    lcdc_set_p0_rotate_u_src_addr(lcd_dev, (uint32)0x28000000);
+    lcdc_set_p0_rotate_v_src_addr(lcd_dev, (uint32)0x28000000);
+
+    lcdc_set_osd_start_location(lcd_dev, lcdstruct.osd_x, lcdstruct.osd_y);
+    lcdc_set_osd_size(lcd_dev, lcdstruct.osd_w, lcdstruct.osd_h);
+    lcdc_set_osd_format(lcd_dev, OSD_RGB_565);
+    // 仅仅测试新框架
+    // lcdc_set_osd_dma_addr(lcd_dev,(uint32)osd565_encode_test);
+
+    lcdc_set_osd_alpha(lcd_dev, 0x100);
+    lcdc_set_osd_enc_cfg(lcd_dev, 0xFFFFFF, 0x000000);
+    lcdc_osd_spec_color_alpha(lcd_dev, 0, 0xffffff, 0x00);
+    lcdc_osd_enc_en(lcd_dev, 1);
+    lcdc_set_osd_en(lcd_dev, 0);
+    lcdc_osd_trans_en(lcd_dev, 1);
+
+    lcdc_video_enable_auto_ks(lcd_dev, 0);
+    lcdc_set_timeout_info(lcd_dev, 1, 3);
+
+    lcdc_request_irq(lcd_dev, LCD_DONE_IRQ, (lcdc_irq_hdl)&lcd_squralbuf_done1, (uint32)lcd_s);
+#if LCD_SCREEN_RECORD_EN
+    uint8_t *video_psram_screen = (uint8_t *)av_psram_zalloc(SCALE_CONFIG_W*SCALE_HIGH+SCALE_CONFIG_W*SCALE_HIGH/2);
+    os_printf("LCD_SCREEN_RECORD_EN psram addr:%x\n",video_psram_screen);
+    lcdc_screen_yuv_addr(lcd_dev,video_psram_screen,video_psram_screen+SCALE_CONFIG_W*SCALE_HIGH,video_psram_screen+SCALE_CONFIG_W*SCALE_HIGH+SCALE_CONFIG_W*SCALE_HIGH/4);
+    lcdc_request_irq(lcd_dev,SCREEN_DONE_IRQ,(lcdc_irq_hdl )&lcd_screen_finish,(uint32)lcd_s);
+#endif
+    // lcdc_request_irq(lcd_dev, OSD_EN_IRQ, (lcdc_irq_hdl)&lcd_osd_isr1_msi, (uint32)lcd_s);
+    lcdc_request_irq(lcd_dev, TIMEOUT_IRQ, (lcdc_irq_hdl)&lcd_timeout1, (uint32)lcd_s);
+    if (MACRO_PIN(LCD_TE) != 255) {
+        lcdc_te_edge_cfg(lcd_dev, 1);
+        lcdc_request_irq(lcd_dev, LCD_TE_IRQ, (lcdc_irq_hdl)&lcd_te_isr1, (uint32)lcd_s);
+    }
+    lcdc_open(lcd_dev);
+
+    lcd_s->rekick_lcd = 1;
+    OS_WORK_REINIT(&lcd_s->work);
+    os_run_work_delay(&lcd_s->work, 1);
+}
+
 void wait_lcd_exit()
 {
     struct app_lcd_s *lcd_s = &lcd_msg_s;
@@ -510,117 +596,26 @@ void wait_lcd_exit()
     }
 }
 
-// 重复初始化,一般用于意外断电或者说休眠起来后使用
-void lcd_driver_reinit()
+void lcd_driver_suspend()
 {
-#if 0
     struct app_lcd_s *lcd_s = &lcd_msg_s;
-    lcd_s->hardware_ready = 1;
-    lcd_s->thread_exit = 0;
-    lcd_s->hardware_auto_ks = 0;
-    lcd_s->get_auto_ks = 0;
-    struct lcdc_device *lcd_dev;
-
-    lcd_dev = (struct lcdc_device *)dev_get(HG_LCDC_DEVID);
-
-    lcd_s->lcd_dev = lcd_dev;
-
-    lcdc_set_video_size(lcd_dev, lcdstruct.video_w, lcdstruct.video_h);
-
-    // VIDEO
-    lcdc_set_rotate_p0_up(lcd_dev, 0);
-    lcdc_set_rotate_p0p1_start_location(lcd_dev, 0, 0, 0, 0);
-    // line_buf后续再分配
-    lcdc_set_rotate_linebuf_num(lcd_dev, LCD_ROTATE_LINE);
-    lcdc_set_video_data_from(lcd_dev, VIDEO_FROM_MEMORY_ROTATE);
-    lcdc_set_video_start_location(lcd_dev, lcdstruct.video_x, lcdstruct.video_y);
-    lcdc_set_video_en(lcd_dev, 0);
-
-    // 设置默认值,因为这个一定要配置,并且地址与p1的地址范围要一样(就是全部是psram或者全部是sram,所以这里最好都是设置psram)
-    lcdc_set_p0_rotate_y_src_addr(lcd_dev, (uint32)0x38000000);
-    lcdc_set_p0_rotate_u_src_addr(lcd_dev, (uint32)0x38000000);
-    lcdc_set_p0_rotate_v_src_addr(lcd_dev, (uint32)0x38000000);
-
-    // OSD
-    lcdc_set_osd_start_location(lcd_dev, lcdstruct.osd_x, lcdstruct.osd_y);
-    lcdc_set_osd_size(lcd_dev, lcdstruct.osd_w, lcdstruct.osd_h);
-    lcdc_set_osd_format(lcd_dev, OSD_RGB_565);
-    lcdc_set_osd_alpha(lcd_dev, 0x100);
-    lcdc_set_osd_enc_head(lcd_dev, 0xFFFFFF, 0xFFFBFF);
-    lcdc_set_osd_enc_diap(lcd_dev, 0x000000, 0x000000);
-    lcdc_set_osd_en(lcd_dev, 0);
-
-    lcdc_video_enable_auto_ks(lcd_dev, 0);
-    lcdc_set_timeout_info(lcd_dev, 1, 3);
-
-    lcdc_request_irq(lcd_dev, LCD_DONE_IRQ, (lcdc_irq_hdl)&lcd_squralbuf_done1, (uint32)lcd_s);
-
-    lcdc_request_irq(lcd_dev, OSD_EN_IRQ, (lcdc_irq_hdl)&lcd_osd_isr1_msi, (uint32)lcd_s);
-    lcdc_request_irq(lcd_dev, TIMEOUT_IRQ, (lcdc_irq_hdl)&lcd_timeout1, (uint32)lcd_s);
-    if (MACRO_PIN(LCD_TE) != 255) {
-        lcdc_set_te_edge(lcd_dev, 1);
-        lcdc_request_irq(lcd_dev, LCD_TE_IRQ, (lcdc_irq_hdl)&lcd_te_isr1, (uint32)lcd_s);
+    lcdc_close(lcd_s->lcd_dev);
+    if (lcdstruct.lcd_bus_type == LCD_BUS_MIPI) {
+        dsi_close(lcd_s->lcd_dsi_dev);
     }
-    lcdc_open(lcd_dev);
-    // lcdc_set_start_run(lcd_dev);
-
-    extern void lcd_thread(void *d);
-    lcd_s->thread_hdl = os_task_create("lcd_thread", lcd_thread, (void *)lcd_s, OS_TASK_PRIORITY_NORMAL, 0, NULL, 1024);
-#endif
+    os_work_cancle2(&lcd_s->work, 1);
 }
 
-#if 0
-
-void lcd_module_run2(){
-	uint32_t rbuf[4];
-	uint8_t *pt8;
-	uint8 pixel_dot_num = 1;
-	uint32_t *osd_sram_fifo;
-	struct lcdc_device *lcd_dev;	
-	struct spi_device *spi_dev;
-	struct scale_device *scale_dev;
-	struct vpp_device *vpp_dev;
-	struct jpg_device *jpg_dev;
-	jpg_dev = (struct jpg_device *)dev_get(HG_JPG1_DEVID);		
-	vpp_dev = (struct vpp_device *)dev_get(HG_VPP_DEVID);	
-	scale_dev = (struct scale_device *)dev_get(HG_SCALE2_DEVID);	
-	lcd_dev = (struct lcdc_device *)dev_get(HG_LCDC_DEVID);	
-	spi_dev = (struct spi_device * )dev_get(HG_SPI0_DEVID);		
-
-	lcdc_set_video_size(lcd_dev,lcdstruct.video_w,lcdstruct.video_h);
+void lcd_driver_resume()
+{
+    uint16_t osd_w, osd_h;
+    uint16_t screen_w, screen_h;
+	uint16_t video_w, video_h;
+    uint8_t rotate, video_rotate;
 
 
-
-	lcdc_set_osd_start_location(lcd_dev,lcdstruct.osd_x,lcdstruct.osd_y);
-
-	lcdc_set_osd_size(lcd_dev,lcdstruct.osd_w,lcdstruct.osd_h);
-	lcdc_set_osd_dma_addr(lcd_dev,(uint32)osd565_encode_test);   
-	lcdc_set_osd_format(lcd_dev,OSD_RGB_565);
-
-	lcdc_set_osd_alpha(lcd_dev,0x100);
-	lcdc_set_osd_enc_cfg(lcd_dev,0xFFFFFF,0x000000);
-	lcdc_osd_spec_color_alpha(lcd_dev,0,0xffffff,0x00);
-	lcdc_osd_enc_en(lcd_dev,1);
-	lcdc_set_osd_en(lcd_dev,1);
-	lcdc_osd_trans_en(lcd_dev,1);
-
-
-	if((lcdstruct.lcd_bus_type == LCD_BUS_RGB)||(lcdstruct.lcd_bus_type == LCD_BUS_MIPI)||(lcdstruct.lcd_bus_type == LCD_BUS_QSPI)){
-		lcdc_clock_alway_on(lcd_dev,1);
-	}
-	lcdc_rot_burst_dw16(lcd_dev,0);
-	
-	lcdc_video_enable_auto_ks(lcd_dev,0);
-	lcdc_set_timeout_info(lcd_dev,1,3);
-
-	lcdc_request_irq(lcd_dev,LCD_DONE_IRQ,(lcdc_irq_hdl )&lcd_squralbuf_done1,(uint32)lcd_dev);	
-
-
-	lcdc_open(lcd_dev);
-	os_sleep_ms(10);
-	lcdc_set_start_run(lcd_dev);
-	
+    lcd_hardware_init(&osd_w, &osd_h, &rotate, &screen_w, &screen_h,&video_w, &video_h, &video_rotate);
+    lcd_driver_reinit();
 }
-#endif
 
 #endif

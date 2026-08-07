@@ -203,7 +203,10 @@ __init static void sys_app_init(void)
 
 #ifdef SYS_APP_FPV
     sys_app_fpv_init();
+#elif defined(SYS_DOUBLE_SENSOR_SPICE_DEMO)
+    sys_app_double_sensor_splice_init();
 #endif
+
 
 #ifdef SYS_APP_DEMO
     sys_app_demo_init();
@@ -280,7 +283,7 @@ int main(void)
         OS_WORK_INIT(&main_wk, sys_main_loop, 0);
         os_run_work_delay(&main_wk, 1000);
     }
-    pmu_watchdog_timeout(0); //打开或关闭PMU看门狗, 放在sys_wifi_init之后！！
+    pmu_watchdog_timeout(8); //打开或关闭PMU看门狗, 放在sys_wifi_init之后！！
     return 0;
 }
 

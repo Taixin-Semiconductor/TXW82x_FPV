@@ -64,15 +64,19 @@ typedef struct {
 	uint8 w_cmd,r_cmd,id,addr_num,data_num;
 	uint16 id_reg;//id ¼Ä´æÆ÷µØÖ·
 	uint8 *init;
+	uint8 *slave_init;
+	uint8 *nigth_mode_init;
+	uint8 *sensor_stop_stream;
 	uint32 init_len;
 	uint8 *preset;
-	
 	uint16 typ; //0: raw 1:yuv 2:mipi
 	uint32 mclk;
 	uint32 pclk_fir_en;
 	uint16 pixelw; 
 	uint16 pixelh;
     uint8  mipi_lane_num;
+	uint16 vts_reg[3];//FRAME_LENGTH: H - L
+	uint8  vts_reg_num; 
 	uint8 colrarray; 
 	bool hsyn; 
 	bool vsyn;
@@ -145,11 +149,20 @@ struct i2c_setting
 	uint8 u8DevReadAddr;
 };
 
+typedef struct {
+   const _Sensor_Ident_ *ident;
+   const _Sensor_Adpt_  *adpt;
+} SensorTable;
 
 
-#define ALIGNED(x) 				__attribute__ ((aligned(x)))
-#define SENSOR_INIT_SECTION     ALIGNED(32)
-#define SENSOR_OP_SECTION       ALIGNED(32)
+
+// #define ALIGNED(x) 				__attribute__ ((aligned(x)))
+// #define SENSOR_INIT_SECTION     ALIGNED(32)
+// #define SENSOR_OP_SECTION       ALIGNED(32)
+
+#define SENSOR_INIT_SECTION    __attribute__ ((aligned(32)))
+#define SENSOR_OP_SECTION      __attribute__ ((aligned(32)))
+
 #define  CMOS_INIT_LEN
 
 
@@ -401,6 +414,12 @@ extern const _Sensor_Ident_ gc0308_init;
 extern SENSOR_OP_SECTION const _Sensor_Adpt_ gc0308_cmd;
 #endif
 
+#if DEV_SENSOR_JXV3
+extern const _Sensor_Ident_ jxv3_init;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ jxv3_cmd;
+#endif
+
+
 #if DEV_SENSOR_BF20A6
 extern const _Sensor_Ident_ bf20a6_init;
 extern SENSOR_OP_SECTION const _Sensor_Adpt_ bf20a6_cmd;
@@ -592,7 +611,12 @@ extern const _Sensor_Ident_ gc20C3_init;
 extern SENSOR_OP_SECTION const _Sensor_Adpt_ gc20C3_cmd;
 #endif
 
-#if DEV_SENSOR_IMX912
+#if DEV_SENSOR_H63S
+extern const _Sensor_Ident_ h63s_init;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ h63s_cmd;
+#endif
+
+#if DEV_SENSOR_IMX219
 extern const _Sensor_Ident_ imx219_init;
 extern SENSOR_OP_SECTION const _Sensor_Adpt_ imx219_cmd;
 #endif
@@ -606,6 +630,22 @@ extern SENSOR_OP_SECTION const _Sensor_Adpt_ cv2008_cmd;
 extern const _Sensor_Ident_ cv2005_init;
 extern SENSOR_OP_SECTION const _Sensor_Adpt_ cv2005_cmd;
 #endif
+
+#if DEV_SENSOR_XS9950
+extern const _Sensor_Ident_ xs9950_init;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ xs9950_cmd;
+#endif
+
+#if DEV_SENSOR_GC1084_CSI1
+extern const _Sensor_Ident_ gc1084_init_csi1;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ gc1084_cmd_csi1;
+#endif
+
+#if DEV_SENSOR_GC2053_CSI1
+extern const _Sensor_Ident_ gc2053_init_csi1;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ gc2053_cmd_csi1;
+#endif
+
 
 #endif
 

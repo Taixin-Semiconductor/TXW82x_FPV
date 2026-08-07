@@ -127,10 +127,11 @@ int32 isp_sensor_iic_devid_init(struct isp_device *isp, uint32 devid_id, enum se
     return RET_ERR;
 }
 
-int32 isp_sensor_iic_cmd_init(struct isp_device *isp, uint32 cmd_id, enum sensor_type type)
+int32 isp_sensor_iic_cmd_init(struct isp_device *isp, uint32 cmd_id, uint32 addr_len, uint32 data_len , enum sensor_type type)
 {
+    uint32 param[] = {cmd_id, addr_len, data_len};
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
-        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_SENSOR_IIC_OPTCMD, type, (uint32)cmd_id);
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_SENSOR_IIC_OPTCMD, type, (uint32)param);
     }
     return RET_ERR;
 }
@@ -337,6 +338,13 @@ int32 isp_awb_gain_constraint(struct isp_device *isp, uint32 addr, enum sensor_t
     return RET_ERR;
 }
 
+/*
+ * Get AWB YCbCr statistics mean value
+ * Valid only when awb_meas_mode = 0 or 2 (white point method)
+ * arr_ycbcr[0] = Y mean
+ * arr_ycbcr[1] = Cb mean
+ * arr_ycbcr[2] = Cr mean
+ */
 int32 isp_get_awb_ycbcr(struct isp_device *isp, uint32 *arr_ycbcr, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
@@ -345,6 +353,11 @@ int32 isp_get_awb_ycbcr(struct isp_device *isp, uint32 *arr_ycbcr, enum sensor_t
     return RET_ERR;
 }
 
+/*
+ * Get AWB white balance RB gain
+ * arr_gain[0] = R gain
+ * arr_gain[1] = B gain
+ */
 int32 isp_get_awb_rb_gain(struct isp_device *isp, uint32 *arr_gain, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
@@ -353,7 +366,14 @@ int32 isp_get_awb_rb_gain(struct isp_device *isp, uint32 *arr_gain, enum sensor_
     return RET_ERR;
 }
 
-int32 isp_get_awb_rgb(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type)
+/*
+ * Get AWB RGB statistics mean value
+ * Valid only when awb_meas_mode = 1 (gray world method)
+ * arr_rgb[0] = R mean
+ * arr_rgb[1] = G mean
+ * arr_rgb[2] = B mean
+ */
+int32 isp_get_awb_rgb_mean(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AWB_RGB, type, (uint32)arr_rgb);
@@ -361,15 +381,29 @@ int32 isp_get_awb_rgb(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type 
     return RET_ERR;
 }
 
+/*
+ * Get RGB histogram mean value
+ * arr_rgb[0] = R mean
+ * arr_rgb[1] = G mean
+ * arr_rgb[2] = B mean
+ */
+int32 isp_get_hist_rgb_mean(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_HIST_RGB, type, (uint32)arr_rgb);
+    }
+    return RET_ERR;
+}
+
+
 int32 isp_get_isp_ircut_statistics(struct isp_device *isp, ISP_IRCUT_STAT *isp_stat, enum sensor_type type)
 {
-    
-    // uint32 param[] = {isp_stat,23};
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_ISP_IRCUT_STAT, type, (uint32)isp_stat);
     }
     return RET_ERR;
 }
+
 
 int32 isp_get_current_bv(struct isp_device *isp, uint32 *bv, enum sensor_type type)
 {
@@ -932,6 +966,14 @@ int32 isp_sensor_func_enable(struct isp_device *isp, uint32 channel, uint32 data
     return RET_ERR;
 }
 
+int32 isp_setting_bayer_patten(struct isp_device *isp, enum isp_bayer_format format, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_SETTING_BAYER_PATTEN, type, format);
+    }
+    return RET_ERR;
+}
+
 int32 isp_wdr_en_config(struct isp_device *isp, uint32 wdr_en, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
@@ -961,6 +1003,14 @@ int32 isp_yuv_range(struct isp_device *isp, enum isp_yuv_range range_type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_YUV_RANGE, range_type, 0);
+    }
+    return RET_ERR;
+}
+
+int32 isp_set_camera_mode(struct isp_device *isp, enum camera_mode camera_mode)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_CAMERA_MODE, camera_mode, 0);
     }
     return RET_ERR;
 }
@@ -1003,6 +1053,65 @@ int32 isp_dyn_gamma_param(struct isp_device *isp, uint32 dyn_gamma_en, uint32 yg
     uint32 param[] = {dyn_gamma_en, ygamma_opt};
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_DYN_YGAMMA_OPT, type, (uint32)param);
+    }
+    return RET_ERR;
+}
+
+/*
+ * Get sensor_iic_dev
+ * iic_dev[0] = iic_id
+ * iic_dev[1] = addr_len
+ * iic_dev[2] = data_len
+ */
+int32 isp_get_sensor_iic_dev(struct isp_device *isp,  uint32 *iic_dev, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_SENSOR_IIC_DEV, type, (uint32)iic_dev);
+    }
+    return RET_ERR;
+}
+
+int32 isp_get_ae_awb_info(struct isp_device *isp,  ISP_AE_AWB_INFO *data, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AE_AWB_INFO, type, (uint32)data);
+    }
+    return RET_ERR;
+}
+
+
+int32 isp_sensor_set_frame_len(struct isp_device *isp,  uint32 frame_len, uint32 isfirst, enum sensor_type type)
+{
+    uint32 param[] = {frame_len, isfirst};
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_SET_FRAME_LEN, type, (uint32)param);
+    }
+    return RET_ERR;   
+}
+
+int32 isp_get_sensor_fps(struct isp_device *isp, uint32 *curr_fps_q8, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_CALC_FPS, type, (uint32)curr_fps_q8);
+    }
+    return RET_ERR;
+}
+
+
+int32 isp_get_sensor_opt(struct isp_device *isp, struct isp_sensor_opt *sensor_opt, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_SENSOR_OPT, type, (uint32)sensor_opt);
+    }
+    return RET_ERR;
+}
+
+
+int32 isp_setting_anti_flicker(struct isp_device *isp, uint32 anti_flicker_en, uint32 flicker_freq,  uint32 flicker_gain_th ,enum sensor_type type)
+{
+    uint32 param[] = {anti_flicker_en, flicker_freq, flicker_gain_th};
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_SET_ANTI_FLICKER, type, (uint32)param);
     }
     return RET_ERR;
 }

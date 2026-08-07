@@ -4,6 +4,7 @@
 #include "dev.h"
 #include "devid.h"
 #include "hal/csi2.h"
+#include "hal/isp.h"
 
 
 int32 mipi_csi_open(struct mipi_csi_device *p_mipi_csi){
@@ -132,8 +133,18 @@ int32 mipi_csi_crop_img_end(struct mipi_csi_device *p_mipi_csi,uint32 x,uint32 y
 }
 
 int32 mipi_csi_input_format(struct mipi_csi_device *p_mipi_csi,uint8 format){
+
+	// ISP -> CSI
+	uint8 csi_fmt = 0;
+    switch (format) {
+        case ISP_INPUT_DAT_FORMAT_YUV422: csi_fmt = 0; break;// YUV422
+        case ISP_INPUT_DAT_FORMAT_RAW08:  csi_fmt = 1; break;// RAW8
+        case ISP_INPUT_DAT_FORMAT_RAW10:  csi_fmt = 2; break;// RAW10
+        case ISP_INPUT_DAT_FORMAT_RAW12:  csi_fmt = 3; break;// RAW12
+    }
+
 	if (p_mipi_csi && ((const struct mipi_csi_hal_ops *)p_mipi_csi->dev.ops)->ioctl) {
-		return ((const struct mipi_csi_hal_ops *)p_mipi_csi->dev.ops)->ioctl(p_mipi_csi, MIPI_CSI_FORMAT_INPUT, format, 0);
+		return ((const struct mipi_csi_hal_ops *)p_mipi_csi->dev.ops)->ioctl(p_mipi_csi, MIPI_CSI_FORMAT_INPUT, csi_fmt, 0);
 	}
 	return RET_ERR;
 }

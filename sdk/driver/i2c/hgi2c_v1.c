@@ -684,6 +684,7 @@ static int32 hgi2c_v1_write_table(struct i2c_device *i2c, uint8 cmd_len, uint8 s
     struct hgi2c_v1 *dev = (struct hgi2c_v1 *)i2c;
     struct hgi2c_v1_hw *hw = (struct hgi2c_v1_hw *)dev->hw; 
     int32 ret_sema         = 0;
+    uint32 slave_addr      = 0;
     
     if ((!dev->opened) || (dev->dsleep)) {
         return RET_ERR;
@@ -712,6 +713,7 @@ static int32 hgi2c_v1_write_table(struct i2c_device *i2c, uint8 cmd_len, uint8 s
 
     dev->flag_table_done = 0;
 
+    slave_addr = hgi2c_v1_get_slave_address(hw);
     hgi2c_v1_set_dir_tx(hw);
     hgi2c_v1_set_write_table_cmd_len(hw, cmd_len);
     hgi2c_v1_set_slave_addr(hw, (slave_id << 1));
@@ -722,6 +724,7 @@ static int32 hgi2c_v1_write_table(struct i2c_device *i2c, uint8 cmd_len, uint8 s
     hw->CON1 |= LL_IIC_CON1_DMA_EN; /* kick DMA */
 
     ret_sema = os_sema_down(&dev->i2c_done, 6*1000);
+    hgi2c_v1_set_slave_addr(hw, slave_addr);
     if (!ret_sema) {
         _os_printf("***IIC modoule info: M send err, write_talbe timeout!\r\n");
         goto err_handle;

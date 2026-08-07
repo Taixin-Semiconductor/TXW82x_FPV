@@ -6,14 +6,15 @@
 
 enum{
 	MMCSD_NO_ERR      = 0,
-    MMCSD_CMD_ERR     = BIT(0),
-    MMCSD_DAT_ERR     = BIT(1),
-    MMCSD_STP_ERR     = BIT(2),
-	MMCSD_INT_VLE     = BIT(3),
-    MMCSD_BUF_ERR     = BIT(6),
-    MMCSD_SMP_ERR     = BIT(7),
-    MMCSD_CMP_TIMEOUT = BIT(8),
-    MMCSD_CMP_DATERR  = BIT(9),
+    MMCSD_CMD_ERR     = BIT( 0),
+    MMCSD_DAT_ERR     = BIT( 1),
+    MMCSD_STP_ERR     = BIT( 2),
+	MMCSD_INT_VLE     = BIT( 3),
+    MMCSD_BUF_ERR     = BIT( 6),
+    MMCSD_SMP_ERR     = BIT( 7),
+    MMCSD_CMP_TIMEOUT = BIT( 8),
+    MMCSD_CMP_DATERR  = BIT( 9),
+    MMCSD_CMD_SWITCH  = BIT(10),
 }TYPE_ENUM_MMCSD_ERR;
 
 enum{

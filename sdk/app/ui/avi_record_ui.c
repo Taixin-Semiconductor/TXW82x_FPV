@@ -15,6 +15,7 @@ S_PREVIEW_SCALE3   ---->   R_VIDEO_P0(320x180)
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
 #include "record/avi_record_msi.h"
+#include "audio_msi/audio_adc.h"
 
 //data申请空间函数
 #define STREAM_MALLOC     av_psram_malloc
@@ -39,6 +40,8 @@ struct avi_record_ui_s
     lv_obj_t    *now_ui;
 
     struct msi *s;
+    struct msi *avi_record_s;
+    struct msi *jpg_s;
 
     uint32_t record_time;
 
@@ -78,16 +81,9 @@ static uint32_t self_key(uint32_t val)
     return key_ret;
 }
 
-static void avi_record_end_callback(void *user_priv)
-{
-    struct avi_record_ui_s *ui_s = (struct avi_record_ui_s *)user_priv;
-
-    lv_obj_clear_flag(ui_s->now_ui, LV_OBJ_AVI_RECORD_FLAG);
-}
-
 static void start_avi_record_ui(lv_event_t * e)
 {
-    uint32_t *ret = NULL;
+    struct msi *ret = NULL;
     int32_t c = *((int32_t *)lv_event_get_param(e));
     struct avi_record_ui_s *ui_s = (struct avi_record_ui_s *)lv_event_get_user_data(e);
     if(c == LV_KEY_ENTER)
@@ -96,12 +92,21 @@ static void start_avi_record_ui(lv_event_t * e)
         {
             lv_obj_add_flag(ui_s->now_ui, LV_OBJ_AVI_RECORD_FLAG); 
             #if AUDIO_EN
-            ret = avi_record_msi_init(1280, 720, 30, 8000, 60*1, avi_record_end_callback, ui_s);
+            auadc_msi_add_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
+            ret = avi_record_msi_init(R_AVI_ENCODE_MSI, FRAMEBUFF_SOURCE_CAMERA0, (uint8_t)~0, 60 * 1, 1, NULL, 0);
             #else
-            ret = avi_record_msi_init(1280, 720, 30, 0, 60*1, avi_record_end_callback, ui_s);
+            ret = avi_record_msi_init(R_AVI_ENCODE_MSI, FRAMEBUFF_SOURCE_CAMERA0, (uint8_t)~0, 60 * 1, 0, NULL, 0);
             #endif
             if (!ret) {
+                #if AUDIO_EN
+                auadc_msi_del_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
+                #endif
                 lv_obj_clear_flag(ui_s->now_ui, LV_OBJ_AVI_RECORD_FLAG);
+            }
+            else
+            {
+                msi_do_cmd(ret, MSI_CMD_MEDIA_CTRL, MSI_MEDIA_CTRL_RECORD_START, 0);
+                ui_s->avi_record_s = ret;
             }
         }
         else
@@ -122,7 +127,20 @@ static void exit_avi_record_ui(lv_event_t * e)
         lv_obj_clear_flag(ui_s->base_ui, LV_OBJ_FLAG_HIDDEN);
         lv_group_del(ui_s->now_group);
         ui_s->now_group = NULL;
-        avi_record_msi_deinit();
+        #if AUDIO_EN
+        auadc_msi_del_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
+        #endif
+        if (ui_s->jpg_s)
+        {
+            msi_del_output(ui_s->jpg_s, NULL, R_AVI_ENCODE_MSI);
+            msi_put(ui_s->jpg_s);
+            ui_s->jpg_s = NULL;
+        }
+        if (ui_s->avi_record_s)
+        {
+            msi_destroy(ui_s->avi_record_s);
+            ui_s->avi_record_s = NULL;
+        }
         msi_destroy(ui_s->s);
         //关闭VIDEO P0的使能，释放占住的scale3的fb
         msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 0);   
@@ -149,6 +167,12 @@ static void enter_avi_record_ui(lv_event_t * e)
         msi_add_output(ui_s->s, NULL, R_VIDEO_P0);
         msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 1);
         ui_s->s->enable = 1;
+    }
+
+    ui_s->jpg_s = msi_find(AUTO_JPG, 1);
+    if (ui_s->jpg_s)
+    {
+        msi_add_output(ui_s->jpg_s, NULL, R_AVI_ENCODE_MSI);
     }
 
     lv_group_t *group;

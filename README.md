@@ -6,9 +6,9 @@ This repository contains the software development kit for the Taixin Semiconduct
 
 ## Release information
 
-- Version: `v2.7.0.7-42229`
-- Source: SVN release `v2.7.0.7-42229`
-- Fix known issues and improve the BBM, walkie-talkie, and dashcam solution code.
+- Version: `v2.7.0.7-43482`
+- Source: SVN release `v2.7.0.7-43482`
+- Fix known issues, add project ID 12, and support MIPI CSI image stitching for two 720p cameras.
 
 ## Development environment
 

@@ -230,6 +230,7 @@ struct dsleep_cfg{
     uint32                      sys_wdt_ms;
     uint32                      lp_wdt_ms;
     uint32                      rtc_wkio;
+    uint8                       wkio_pupd_dis;
 };
 
 enum DSLEEP_MODE {
@@ -434,6 +435,13 @@ struct dsleep_priv {
     struct os_task              dsleep_task;
     struct os_mutex             null_tx_mutex;
     uint32 wkcon_bak[3];
+
+    //software timer
+    //uint32                      trim_pre;//上一次校准的RC参数
+    uint64                      tmrao_pre;//上一次tmrao的计数值
+    uint64                      tmrao_hosc;//软件计时高频晶振counter
+    uint64                      tmrao_hosc_wk;//开始休眠的高频时刻
+    uint64                      tmrao_dbg[5];
 };
 
 //#define ETH_P_ARP       0x0806      /* Address Resolution packet */

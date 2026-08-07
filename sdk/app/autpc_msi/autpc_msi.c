@@ -200,7 +200,6 @@ static int32_t autpc_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param
 
 struct msi *autpc_msi_init(uint32_t samplerate, uint32_t speed, uint32_t pitch, uint32_t max_inputSamples, AUDIO_TRACK *audio_track)
 {
-    struct framebuff *frame_buf = NULL;
 	struct msi *msi = NULL;
     char *msi_name = NULL;
 
@@ -223,10 +222,6 @@ struct msi *autpc_msi_init(uint32_t samplerate, uint32_t speed, uint32_t pitch, 
 		return NULL;        
     }
     fbpool_init(&autpc_s->tx_pool, MAX_AUTPC_TXBUF); 
-    for(uint32_t i=0; i<MAX_AUTPC_TXBUF; i++) {
-		frame_buf = (autpc_s->tx_pool.pool)+i;
-        frame_buf->data = NULL;
-    } 
     msi->priv = autpc_s;
 	autpc_s->msi = msi;
     autpc_s->msi_name = msi_name;

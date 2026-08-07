@@ -82,7 +82,7 @@ static DRESULT flashdisk_ioctl(void *init_dev, BYTE cmd, void* buf)
 		case CTRL_SYNC:
 			break;
 		case GET_SECTOR_COUNT:
-			*(DWORD *)buf = disk->size/flash->sector_size;	
+			*(QWORD *)buf = disk->size/flash->sector_size;	
 			ret = RES_OK;
 			break;
 
@@ -200,7 +200,9 @@ void flash_fatfs_init()
                 os_printf("%s mkfs malloc space err:%d\n",__FUNCTION__,res);
                 return;
             }
-            res = f_mkfs("FLASH:", FM_ANY | FM_SFD, 4096,work, 4096);
+            MKFS_PARM opt = {0};
+            opt.fmt = FM_ANY | FM_SFD;
+            res = f_mkfs("FLASH:", &opt, work, 4096);
             os_free(work);
             if(res)
             {

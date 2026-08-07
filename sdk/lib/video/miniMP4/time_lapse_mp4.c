@@ -14,6 +14,7 @@
 
 #include "audio_media_ctrl/audio_code_ctrl.h"
 #include "audio_msi/audio_adc.h"
+#include "app/record/mux_file.h"
 #include "mp4/mp4_encode.h"
 // 结构体申请空间函数
 #define STREAM_MALLOC av_psram_malloc
@@ -176,7 +177,9 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time)
     struct mp4_encode_msi_s *mp4_encode    = (struct mp4_encode_msi_s *) msi->priv;
     //struct msi              *mp4_thumb_msi = NULL;
     void                    *mp4_msg       = NULL;
+    void                    *mux_file      = NULL;
     void                    *fp            = NULL;
+    file_ops_t               file_ops;
     struct framebuff        *fb            = NULL;
     int                      error         = 0;
     uint8_t                  nal_head_size;
@@ -205,7 +208,12 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time)
         goto mp4_encode_thread_end;
     }
 
-    mp4_msg = MP4_open_init(fp, 0);
+    mux_file = mux_file_open((F_FILE *) fp, 0, MUX_FILE_ALIGN_EN);
+    if (mux_file)
+    {
+        mux_file_get_ops(mux_file, &file_ops);
+        mp4_msg = MP4_open_init_with_file((F_FILE *) fp, &file_ops, 0);
+    }
     if (!mp4_msg)
     {
         goto mp4_encode_thread_end;
@@ -273,7 +281,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time)
             }
 
             // 同步,缩时录影直接同步,不需要考虑定时,因为本身就是很久才录制一次
-            error |= mp4_syn(mp4_msg);
+            error |= mp4_sync(mp4_msg);
             if (0 != error)
             {
                 os_printf("%s:%d\n", __FUNCTION__, __LINE__);
@@ -297,6 +305,12 @@ mp4_encode_thread_end:
     if (mp4_msg)
     {
         mp4_deinit(mp4_msg);
+    }
+
+    if (mux_file)
+    {
+        mux_file_close(mux_file);
+        mux_file = NULL;
     }
 
     if (fp)

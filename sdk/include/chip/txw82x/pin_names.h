@@ -834,6 +834,10 @@ extern "C" {
 #define PIN_CAPTURE_CHANNEL_1 255
 #endif
 
+#ifndef PIN_CAPTURE_CHANNEL_2
+#define PIN_CAPTURE_CHANNEL_2 255
+#endif
+
 /* LED_TIMER0 */
 #ifndef PIN_PWM_CHANNEL_2
 #define PIN_PWM_CHANNEL_2 255

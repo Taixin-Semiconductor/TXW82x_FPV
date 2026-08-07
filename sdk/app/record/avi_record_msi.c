@@ -1,79 +1,507 @@
 #include "basic_include.h"
-#include "osal_file.h"
-#include "stream_frame.h"
-#include "lib/multimedia/msi.h"
+#include "fatfs/osal_file.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "lib/multimedia/msi.h"
+#include "stream_define.h"
 #include "openDML.h"
-#include "media.h"
-#include "jpg_concat_msi.h"
+#include "app/recorder/file_process.h"
+#include "app/video_app/file_thumb.h"
 #include "audio_msi/audio_adc.h"
 #include "avi_record_msi.h"
-#include "lib/video/dvp/jpeg/jpg.h"
-#include "audio_msi/audio_adc.h"
 
-//data申请空间函数
-#define STREAM_MALLOC     av_psram_malloc
-#define STREAM_FREE       av_psram_free
-#define STREAM_ZALLOC     av_psram_zalloc
+int ex_parse_jpg(uint8_t *jpg_buf, uint32_t maxsize, uint32_t *w, uint32_t *h);
+struct msi *avi_thumb_msi_init(const char *filename, uint8_t srcID, uint8_t filter);
 
-//结构体申请空间函数
-#define STREAM_LIBC_MALLOC     av_malloc
-#define STREAM_LIBC_FREE       av_free
-#define STREAM_LIBC_ZALLOC     av_zalloc
+#define STREAM_MALLOC av_psram_malloc
+#define STREAM_FREE   av_psram_free
+#define STREAM_ZALLOC av_psram_zalloc
 
-#define RECORD_END_EVENT        (1 << 0)
+#define STREAM_LIBC_MALLOC os_malloc
+#define STREAM_LIBC_FREE   os_free
+#define STREAM_LIBC_ZALLOC os_zalloc
 
-#define AVI_DEBUG(fmt, ...)    os_printf(fmt, ##__VA_ARGS__)   
+#ifndef MAX_SINGLE_AVI_SIZE
+#define MAX_SINGLE_AVI_SIZE	(100 * 1024 * 1024)
+#endif
 
-#define AVI_RECORD_DIR         "0:/AVI"
+#define AVI_RECORD_FPS 25U
 
+#define AVI_DEBUG(fmt, ...) os_printf(fmt, ##__VA_ARGS__)
 
-struct avi_record_msi_priv
+enum
 {
-    struct os_event event;
-    uint32_t video_width;
-    uint32_t video_height;
-    uint8_t video_fps;
-    uint32_t audio_frq;
-    uint32_t record_time;       //时间单位为秒
-    struct msi* jpg_msi;
-    struct msi* avi_record_video_msi;
-    struct msi* avi_record_audio_msi;
-    user_callback   cb;
-    void *user_priv;
-    uint8_t thread_exit     : 1,
-            thread_done     : 1,
-            thread_running  : 1,
-            reserve         : 5;
+    MSI_AVI_START       = BIT(0),
+    MSI_AVI_STOP        = BIT(1),
+    MSI_AVI_THREAD_DEAD = BIT(2),
 };
 
-static struct avi_record_msi_priv *g_priv = NULL;
-
-static int avi_record_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
+enum
 {
-    int32_t ret = RET_OK;
-//    struct avi_record_msi_priv *priv = (struct avi_record_msi_priv *)msi->priv;
+    AVI_RECORD_ERR_NONE,
+    AVI_RECORD_ERR_STOP,
+    AVI_RECORD_ERR_NO_SD,
+    AVI_RECORD_ERR_NO_BUF,
+};
+
+struct avi_record_msi_s
+{
+    struct msi         *msi;
+    struct os_event     evt;
+    struct file_process file_process;
+    uint8_t             filter_type;
+    uint8_t             srcID;
+    uint8_t             mode;
+    uint32_t            rec_time;
+    uint32_t            rec_second;
+    uint32_t            file_size;
+    uint32_t            audio_encode;
+};
+
+static int avi_record_write_cb(void *fp, void *data, int flen)
+{
+    return osal_fwrite(data, 1, flen, (F_FILE *)fp);
+}
+
+static int pre_avi_seek(F_FILE *fp, uint32_t offset)
+{
+    int ret = RET_OK;
+    uint32_t filesize  = osal_fsize(fp);
+    if(filesize != offset)
+    {
+        ret = osal_fseek(fp, offset);
+        if(ret != FR_OK)
+        {
+            _os_printf("%s %d fseek failed, ret: %d\n", __FUNCTION__, __LINE__, ret);
+            return ret;
+        }
+        ret = osal_ftruncate(fp);
+        if(ret != FR_OK)
+        {
+            _os_printf("%s %d ftruncate failed, ret: %d\n", __FUNCTION__, __LINE__, ret);
+            return ret;
+        }
+        _os_printf("avi size: %d\n", osal_fsize(fp));
+        ret = osal_fseek(fp, 0);
+        if(ret != FR_OK)
+        {
+            _os_printf("%s %d fseek failed, ret: %d\n", __FUNCTION__, __LINE__, ret);
+        }
+    }
+    return ret;
+}
+
+static void avi_seek(F_FILE *fp, int32_t offset)
+{
+    if(!fp)
+    {
+        return;
+    }
+
+    osal_fseek(fp, offset);
+}
+
+static int avi_record_running(struct msi *msi, uint32_t save_time, void *fp, const char *avi_filename, uint32_t filesize)
+{
+    int                      ret                = AVI_RECORD_ERR_NONE;
+    uint32_t                 avi_status         = 0;
+    uint32_t                 write_start_time   = 0;
+    uint32_t                 sys_start_time     = os_jiffies();
+    uint32_t                 already_save_time  = 0;
+    uint32_t                 last_sync_time     = os_jiffies();
+    uint32_t                 fbtime             = 0;
+    uint32_t                 video_count        = 0;
+    uint32_t                 audio_count        = 0;
+    uint32_t                 video_insert_count = 0;
+    int                      timeouts           = 0;
+    float                    time_diff          = 0;
+    uint32_t                 width              = 0;
+    uint32_t                 height             = 0;
+    uint32_t                 fps                = AVI_RECORD_FPS;
+    uint32_t                 audio_frq          = 0;
+    int                      odml_ret           = 0;
+    struct msi              *avi_thumb_msi      = NULL;
+    struct framebuff        *fb                 = NULL;
+    struct avi_record_msi_s *avi_record         = (struct avi_record_msi_s *)msi->priv;
+    uint8_t                 *odml_header_buf    = NULL;
+    AVI_INFO                *odml_msg           = NULL;
+    ODMLBUFF                *odml_buff          = NULL;
+
+    if (!fp)
+    {
+        os_sleep_ms(1);
+        return AVI_RECORD_ERR_NO_SD;
+    }
+
+    avi_record->rec_second = 0;
+
+    odml_header_buf = (uint8_t *)STREAM_LIBC_ZALLOC(_ODML_AVI_HEAD_SIZE__);
+    odml_msg        = (AVI_INFO *)STREAM_LIBC_ZALLOC(sizeof(AVI_INFO));
+    odml_buff       = (ODMLBUFF *)STREAM_LIBC_ZALLOC(sizeof(ODMLBUFF));
+    if (!odml_header_buf || !odml_msg || !odml_buff)
+    {
+        AVI_DEBUG(KERN_ERR "%s %d malloc failed!\n", __FUNCTION__, __LINE__);
+        ret = AVI_RECORD_ERR_NO_BUF;
+        goto avi_record_running_end;
+    }
+
+    if (pre_avi_seek(fp, filesize) != RET_OK)
+    {
+        AVI_DEBUG(KERN_ERR "%s %d prepare file failed!\n", __FUNCTION__, __LINE__);
+        ret = AVI_RECORD_ERR_NO_SD;
+        goto avi_record_running_end;
+    }
+
+    if (avi_filename && avi_filename[0])
+    {
+        avi_thumb_msi = avi_thumb_msi_init(avi_filename, FRAMEBUFF_SOURCE_USB, FSTYPE_NONE);
+    }
+    msi->enable = 1;
+
+    while (fp)
+    {
+        os_event_wait(&avi_record->evt, MSI_AVI_STOP, &avi_status, OS_EVENT_WMODE_OR, 0);
+        if (avi_status & MSI_AVI_STOP)
+        {
+            ret = AVI_RECORD_ERR_STOP;
+            goto avi_record_running_end;
+        }
+
+        fb = msi_get_fb(msi, 0);
+
+        if (fb && fb->mtype == F_JPG)
+        {
+            timeouts = 0;
+
+            if (write_start_time == 0)
+            {
+                write_start_time = fb->time;
+                if (ex_parse_jpg(fb->data, fb->len, &width, &height))
+                {
+                    AVI_DEBUG(KERN_ERR "%s %d parse jpg failed!\n", __FUNCTION__, __LINE__);
+                    ret = AVI_RECORD_ERR_NO_SD;
+                    goto avi_record_running_end;
+                }
+
+                audio_frq            = avi_record->audio_encode ? audio_adc_get_samplerate(AUSYS_AUAD) : 0;
+                odml_msg->win_w      = width;
+                odml_msg->win_h      = height;
+                odml_msg->frame_rate = fps;
+                if (audio_frq)
+                {
+                    odml_msg->audiofrq = audio_frq;
+                    odml_msg->pcm      = 1;
+                }
+
+                ODMLbuff_init(odml_buff);
+                odml_buff->ef_time      = 1000 / fps;
+                odml_buff->ef_fps       = fps;
+                odml_buff->vframecnt    = 0;
+                odml_buff->aframecnt    = 0;
+                odml_buff->aframeSample = 0;
+                odml_buff->sync_buf     = odml_header_buf;
+
+                odml_ret = OMDLvideo_header_write(NULL, fp, odml_msg, (ODMLAVIFILEHEADER *)odml_header_buf);
+                if (odml_ret < 0)
+                {
+                    AVI_DEBUG(KERN_ERR "%s %d opendml write head failed!\n", __FUNCTION__, __LINE__);
+                    ret = AVI_RECORD_ERR_NO_SD;
+                    goto avi_record_running_end;
+                }
+            }
+
+            video_count++;
+            _os_printf(KERN_INFO "O");
+            odml_buff->cur_timestamp = fb->time;
+            odml_ret                 = opendml_write_video2(odml_buff, fp, avi_record_write_cb, fb->len, fb->data);
+            if (odml_ret < 0)
+            {
+                AVI_DEBUG(KERN_ERR "%s %d opendml write video failed!\n", __FUNCTION__, __LINE__);
+                ret = AVI_RECORD_ERR_NO_SD;
+                goto avi_record_running_end;
+            }
+
+            msi_delete_fb(NULL, fb);
+            fb = NULL;
+
+            video_insert_count = insert_frame(odml_buff, fp, &time_diff);
+            video_count += video_insert_count;
+            odml_buff->last_timestamp = odml_buff->cur_timestamp;
+            fbtime                    = odml_buff->cur_timestamp;
+
+            already_save_time      = odml_buff->cur_timestamp - write_start_time;
+            avi_record->rec_second = already_save_time / 1000U;
+
+            if (already_save_time >= save_time)
+            {
+                goto avi_record_running_end;
+            }
+        }
+        else if (avi_record->audio_encode && write_start_time && fb && fb->mtype == F_AUDIO)
+        {
+            timeouts = 0;
+            audio_count++;
+            _os_printf(KERN_INFO "A");
+            if (!odml_buff->aframeSample)
+            {
+                odml_buff->aframeSample = fb->len;
+            }
+            odml_ret = opendml_write_audio(odml_buff, fp, avi_record_write_cb, fb->len, fb->data);
+            if (odml_ret < 0)
+            {
+                AVI_DEBUG(KERN_ERR "%s %d opendml write audio failed!\n", __FUNCTION__, __LINE__);
+                ret = AVI_RECORD_ERR_NO_SD;
+                goto avi_record_running_end;
+            }
+            msi_delete_fb(NULL, fb);
+            fb = NULL;
+        }
+        else if (fb)
+        {
+            msi_delete_fb(NULL, fb);
+            fb = NULL;
+        }
+        else
+        {
+            os_sleep_ms(1);
+            timeouts++;
+            if (write_start_time && timeouts > 1000)
+            {
+                AVI_DEBUG(KERN_ERR "%s %d timeout\n", __FUNCTION__, __LINE__);
+                break;
+            }
+        }
+
+        if (os_jiffies() - sys_start_time >= save_time + 30 * 1000U)
+        {
+            break;
+        }
+
+        if (fbtime && fbtime - last_sync_time > 1000U)
+        {
+            last_sync_time = fbtime;
+            already_save_time = fbtime - write_start_time;
+            avi_record->rec_second = already_save_time / 1000U;
+            os_printf(KERN_DEBUG "avi second: %d\n", avi_record->rec_second);
+        }
+
+        os_sleep_ms(1);
+    }
+
+avi_record_running_end:
+    avi_record->rec_second = 0;
+
+    if (fb)
+    {
+        msi_delete_fb(NULL, fb);
+        fb = NULL;
+    }
+
+    if (odml_buff && odml_msg && write_start_time)
+    {
+        uint32_t file_end = osal_ftell((F_FILE *)fp);
+        uint32_t final_end;
+
+        avi_seek(fp, file_end);
+
+        if (!audio_count)
+        {
+            odml_msg->pcm = 0;
+        }
+        stdindx_updata(fp, odml_buff);
+        final_end = osal_ftell((F_FILE *)fp);
+        ODMLUpdateAVIInfo(fp, odml_buff, odml_msg->pcm, NULL, (ODMLAVIFILEHEADER *)odml_header_buf);
+        avi_seek(fp, final_end);
+    }
+    else if (fp)
+    {
+        avi_seek(fp, 0);
+    }
+
+    if (avi_thumb_msi)
+    {
+        msi_destroy(avi_thumb_msi);
+    }
+
+    if (odml_header_buf)
+    {
+        STREAM_LIBC_FREE(odml_header_buf);
+    }
+
+    if (odml_msg)
+    {
+        STREAM_LIBC_FREE(odml_msg);
+    }
+
+    if (odml_buff)
+    {
+        STREAM_LIBC_FREE(odml_buff);
+    }
+
+    if (fp)
+    {
+        osal_fclose(fp);
+    }
+
+    AVI_DEBUG(KERN_INFO "%s end ret:%d v:%d a:%d\n", __FUNCTION__, ret, video_count, audio_count);
+    return ret;
+}
+
+static void avi_record_thread(void *d)
+{
+    int                      ret          = 0;
+    uint32_t                 avi_status   = 0;
+    struct msi              *msi          = (struct msi *)d;
+    struct avi_record_msi_s *avi_record   = (struct avi_record_msi_s *)msi->priv;
+    struct file_process     *file_process = &avi_record->file_process;
+    void                    *fp           = NULL;
+    char                     filename[64];
+    char                     filepath[64];
+    uint32_t                 filesize     = 0;
+
+    msi_get(msi);
+    os_event_wait(&avi_record->evt, MSI_AVI_START | MSI_AVI_STOP, &avi_status, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, -1);
+    if (avi_status & MSI_AVI_STOP)
+    {
+        goto avi_record_thread_end;
+    }
+
+    while (msi)
+    {
+        filesize    = ((avi_record->rec_time / 60) + (avi_record->rec_time % 60 ? 1 : 0)) * avi_record->file_size;
+        msi->enable = 1;
+
+        if (file_process->create_file)
+        {
+            fp = file_process->create_file(file_process, filename, filepath, filesize);
+        }
+
+        ret = avi_record_running(msi, avi_record->rec_time * 1000U, fp, filename, filesize);
+
+        msi->enable = 0;
+
+        if (file_process->lock_file && ret != AVI_RECORD_ERR_NO_SD)
+        {
+            file_process->lock_file(filename, filepath);
+        }
+
+        if (ret)
+        {
+            if (file_process->loop_free)
+            {
+                file_process->loop_free(&file_process->loop);
+            }
+
+            if (ret == AVI_RECORD_ERR_NO_SD || ret == AVI_RECORD_ERR_NO_BUF)
+            {
+                avi_status = 0;
+                os_event_wait(&avi_record->evt, MSI_AVI_STOP, &avi_status, OS_EVENT_WMODE_OR, 1000);
+                if (avi_status & MSI_AVI_STOP)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+avi_record_thread_end:
+    while (1)
+    {
+        struct framebuff *fb = msi_get_fb(msi, 0);
+        if (fb)
+        {
+            msi_delete_fb(NULL, fb);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    os_event_set(&avi_record->evt, MSI_AVI_THREAD_DEAD, NULL);
+    msi_put(msi);
+}
+
+static int32_t avi_record_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
+{
+    int32_t                  ret        = RET_OK;
+    struct avi_record_msi_s *avi_record = (struct avi_record_msi_s *)msi->priv;
 
     switch (cmd_id)
     {
-        case MSI_CMD_PRE_DESTROY:
-        {
-
-        }
-            break;
-
         case MSI_CMD_POST_DESTROY:
-        {
-
-        }
+            os_event_wait(&avi_record->evt, MSI_AVI_THREAD_DEAD, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, -1);
+            os_event_del(&avi_record->evt);
+            STREAM_LIBC_FREE(avi_record);
             break;
-        
-        case MSI_CMD_FREE_FB:
-        {
 
-        }
+        case MSI_CMD_PRE_DESTROY:
+            os_event_set(&avi_record->evt, MSI_AVI_STOP, NULL);
             break;
+
+        case MSI_CMD_TRANS_FB:
+        {
+            struct framebuff *fb = (struct framebuff *)param1;
+
+            if (fb->mtype == F_JPG && avi_record->filter_type != (uint8_t)~0)
+            {
+                if (avi_record->srcID != 0 && fb->srcID != avi_record->srcID)
+                {
+                    ret = RET_ERR;
+                    break;
+                }
+
+                ret = RET_ERR;
+                if (avi_record->filter_type == fb->stype)
+                {
+                    ret = RET_OK;
+                }
+            }
+        }
+        break;
+
+        case MSI_CMD_GET_RUNNING:
+        {
+            uint32_t rflags = 0;
+            os_event_wait(&avi_record->evt, MSI_AVI_THREAD_DEAD | MSI_AVI_STOP, &rflags, OS_EVENT_WMODE_OR, 0);
+            if (param1)
+            {
+                *(uint32_t *)param1 = (rflags & (MSI_AVI_THREAD_DEAD | MSI_AVI_STOP)) ? 0 : 1;
+            }
+        }
+        break;
+
+        case MSI_CMD_MEDIA_CTRL:
+        {
+            uint32_t cmd_self = (uint32_t)param1;
+            uint32_t arg      = (uint32_t)param2;
+            switch (cmd_self)
+            {
+                case MSI_MEDIA_CTRL_GET_RECTIME:
+                    *(uint32_t *)arg = avi_record->rec_second;
+                    break;
+
+                case MSI_MEDIA_CTRL_RECORD_START:
+                    os_event_set(&avi_record->evt, MSI_AVI_START, NULL);
+                    break;
+
+                case MSI_MEDIA_CTRL_SET_RECORD_SIZE:
+                    avi_record->file_size = arg;
+                    break;
+
+                case MSI_MEDIA_CTRL_SET_RECORD_SEC:
+                    avi_record->rec_time = arg;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+        break;
 
         default:
             break;
@@ -82,330 +510,61 @@ static int avi_record_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
     return ret;
 }
 
-static int avi_record_video_msi_cb(void *fp, void *data, int flen)
+struct msi *avi_record_msi_init(const char *avi_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time,
+                                uint32_t audio_encode, struct file_process *file_process, uint8_t mode)
 {
-    return osal_fwrite(data, 1, flen, (F_FILE *)fp);
-}
+    uint8_t                  is_new     = 0;
+    struct avi_record_msi_s *avi_record = NULL;
+    struct msi              *msi        = msi_new(avi_msi_name, 64, &is_new);
 
-static int avi_record_audio_msi_cb(void *fp, void *data, int flen)
-{
-    return osal_fwrite(data, 1, flen, (F_FILE *)fp);
-}
-
-static void avi_record_msi_thread(void *arg)
-{
-    int ret = 0;
-    void *fp = NULL;
-    float time_diff = 0;
-    int timeouts = 0;
-    int video_insert_count = 0;
-    int video_record_count = 0;
-    int audio_record_count = 0;
-    struct avi_record_msi_priv *priv = (struct avi_record_msi_priv *)arg;
-    struct framebuff *video_fb = NULL;
-    struct framebuff *audio_fb = NULL;
-
-	uint8_t  *odml_header_buf = NULL;
-	AVI_INFO *odml_msg        = NULL;
-	ODMLBUFF *odml_buff       = NULL;
-
-    odml_header_buf = (uint8_t  *)STREAM_LIBC_ZALLOC(_ODML_AVI_HEAD_SIZE__);
-    odml_msg        = (AVI_INFO *)STREAM_LIBC_ZALLOC(sizeof(AVI_INFO));
-    odml_buff       = (ODMLBUFF *)STREAM_LIBC_ZALLOC(sizeof(ODMLBUFF));
-    if(!odml_header_buf || !odml_msg || !odml_buff)
+    if (is_new)
     {
-        AVI_DEBUG(KERN_ERR"%s %d malloc failed!\n",__FUNCTION__,__LINE__);
-        goto __avi_record_end;
+        avi_record = (struct avi_record_msi_s *)STREAM_LIBC_ZALLOC(sizeof(struct avi_record_msi_s));
+        ASSERT(avi_record);
+        avi_record->filter_type  = filter_type;
+        avi_record->srcID        = srcID;
+        avi_record->mode         = mode;
+        avi_record->rec_time     = (uint32_t)rec_time * 60U;
+        avi_record->file_size    = MAX_SINGLE_AVI_SIZE;
+        avi_record->audio_encode = audio_encode;
+
+        if (file_process == NULL)
+        {
+            avi_record->file_process.loop        = NULL;
+            avi_record->file_process.rec_path    = REC_PATH;
+            avi_record->file_process.ext_name    = AVI_EXTENSION_NAME;
+            avi_record->file_process.create_file = rec_create_file;
+            avi_record->file_process.loop_free   = rec_loop_free;
+            avi_record->file_process.lock_file   = NULL;
+        }
+        else
+        {
+            os_memcpy(&avi_record->file_process, file_process, sizeof(struct file_process));
+        }
+
+        msi->priv       = avi_record;
+        msi->action     = avi_record_msi_action;
+        msi->enable     = 1;
+        avi_record->msi = msi;
+        os_event_init(&avi_record->evt);
     }
-    AVI_DEBUG(KERN_INFO"%s %d\n",__FUNCTION__,__LINE__);
-    fp = create_video_file(AVI_RECORD_DIR);
-    if (!fp)
+    else
     {
-        AVI_DEBUG(KERN_ERR"%s %d create video file failed!\n",__FUNCTION__,__LINE__);
-        goto __avi_record_end;
+        if (msi)
+        {
+            msi_destroy(msi);
+            msi = NULL;
+        }
+        goto avi_record_msi_init_end;
     }
 
-	ODMLbuff_init(odml_buff);
-	odml_buff->ef_time = 1000 / priv->video_fps;
-	odml_buff->ef_fps = priv->video_fps;
-	odml_buff->vframecnt = 0;
-	odml_buff->aframecnt = 0;
-	odml_buff->aframeSample = 0;                    //这里不赋值,等到第一帧音频帧来了才赋值
-	odml_buff->sync_buf = odml_header_buf;
-    
-    if(priv->audio_frq)
+    void *avi_hdl = os_task_create("avi_record_msi", avi_record_thread, msi, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 2048);
+    AVI_DEBUG("avi_hdl:%X\n", avi_hdl);
+    if (!avi_hdl && avi_record)
     {
-        odml_msg->audiofrq = priv->audio_frq; 
-        odml_msg->pcm = 1;
+        os_event_set(&avi_record->evt, MSI_AVI_THREAD_DEAD, NULL);
     }
 
-    odml_msg->win_w = priv->video_width;
-    odml_msg->win_h = priv->video_height;
-    AVI_DEBUG(KERN_INFO"%s %d\n",__FUNCTION__,__LINE__);
-    ret = OMDLvideo_header_write(NULL, fp, odml_msg, (ODMLAVIFILEHEADER *)odml_header_buf);
-    if (ret < 0) {
-        AVI_DEBUG(KERN_ERR"%s %d opendml write head failed!\n",__FUNCTION__,__LINE__);
-        goto __avi_record_end;
-    }
-    AVI_DEBUG(KERN_INFO"%s %d\n",__FUNCTION__,__LINE__);
-    while(!priv->thread_exit)
-    {
-        if (priv->avi_record_video_msi)
-        {
-            video_fb = msi_get_fb(priv->avi_record_video_msi, 0);
-
-            if (video_fb)
-            {
-                timeouts = 0;
-                video_record_count ++;
-                odml_buff->cur_timestamp = os_jiffies();
-                ret = opendml_write_video2(odml_buff, fp, avi_record_video_msi_cb, video_fb->len,video_fb->data);
-                if (ret < 0) {
-                    AVI_DEBUG(KERN_ERR"%s %d opendml write VIDEO failed!\n",__FUNCTION__,__LINE__);
-                    goto __avi_record_end;
-                }
-                msi_delete_fb(NULL, video_fb);
-                video_insert_count = insert_frame(odml_buff,fp,&time_diff);
-                video_record_count += video_insert_count;
-                odml_buff->last_timestamp = odml_buff->cur_timestamp;
-            }
-
-        }
-
-        if (priv->avi_record_audio_msi)
-        {
-            audio_fb = msi_get_fb(priv->avi_record_audio_msi, 0);
-
-            if (audio_fb)
-            {
-                timeouts = 0;
-                audio_record_count ++;
-                if (!odml_buff->aframeSample) {
-                    odml_buff->aframeSample = audio_fb->len;
-                    os_printf("audio flen:%d\n",audio_fb->len);
-                }
-                ret = opendml_write_audio(odml_buff, fp, avi_record_audio_msi_cb, audio_fb->len, audio_fb->data);
-                if (ret < 0) {
-                    AVI_DEBUG(KERN_ERR"%s %d opendml write AUDIO failed!\n",__FUNCTION__,__LINE__);
-                    goto __avi_record_end;
-                }
-                msi_delete_fb(NULL, audio_fb);        
-            }
-        }
-
-
-        if (!video_fb && !audio_fb)
-        {
-            os_sleep_ms(1);
-            if (fp)
-            {
-                timeouts++;
-                if (timeouts > 1000)
-                {
-                    video_fb = NULL;
-                    audio_fb = NULL;
-                    AVI_DEBUG(KERN_ERR"%s %d timeout\n",__FUNCTION__,__LINE__);
-                    break;
-                }
-            }
-        }
-
-        video_fb = NULL;
-        audio_fb = NULL;
-
-        if (video_record_count > 30 * priv->record_time)
-        {
-            AVI_DEBUG(KERN_INFO"%s %d success\n",__FUNCTION__,__LINE__);
-            break;
-        }
-
-    }
-
-    if (!audio_record_count) {
-        odml_msg->pcm = 0;
-    }
-
-    stdindx_updata(fp, odml_buff);
-    ODMLUpdateAVIInfo(fp, odml_buff, odml_msg->pcm, NULL, (ODMLAVIFILEHEADER *)odml_header_buf);
-
-    AVI_DEBUG(KERN_INFO"%s %d video_count:%d audio_count:%d\n",__FUNCTION__,__LINE__,video_record_count,audio_record_count);
-
-__avi_record_end:
-
-    AVI_DEBUG(KERN_INFO"%s %d avi record end\n",__FUNCTION__,__LINE__);
-
-    if (odml_header_buf) {
-        STREAM_LIBC_FREE(odml_header_buf);
-        odml_header_buf = NULL;
-    }
-
-    if (odml_msg) {
-        STREAM_LIBC_FREE(odml_msg);
-        odml_msg = NULL;
-    }
-
-    if (odml_buff) {
-        STREAM_LIBC_FREE(odml_buff);
-        odml_buff = NULL;
-    }
-
-    if (video_fb) {
-        msi_delete_fb(NULL, video_fb);
-        video_fb = NULL;
-    }
-
-    if (audio_fb) {
-        msi_delete_fb(NULL, audio_fb);
-        audio_fb = NULL;
-    }
-
-    if (priv->jpg_msi) {
-        msi_del_output(priv->jpg_msi, NULL, R_RECORD_JPEG);
-        msi_put(priv->jpg_msi);
-        priv->jpg_msi = NULL;
-    }
-
-    if (priv->avi_record_audio_msi) {
-        msi_destroy(priv->avi_record_audio_msi);
-        priv->avi_record_audio_msi = NULL;
-    }
-
-    if (priv->avi_record_video_msi) {
-        msi_destroy(priv->avi_record_video_msi);
-        priv->avi_record_video_msi = NULL;
-    }
-
-    if(fp)
-	{
-		osal_fclose(fp);
-		fp = NULL;
-	}
-
-    priv->thread_done = 1;
-    priv->thread_running = 0;
-    os_event_set(&priv->event, RECORD_END_EVENT, NULL);
-
-    if (priv->cb) {
-        priv->cb(priv->user_priv);
-    }
-
-}
-
-
-uint32_t* avi_record_msi_init(uint32_t video_width, uint32_t video_height, uint8_t video_fps, uint32_t audio_frq, uint32_t record_time, user_callback cb, void *user_priv)
-{
-    AVI_DEBUG("video_width:%d video_height:%d video_fps:%d audio_frq:%d record_time:%d\n",video_width,video_height,video_fps,audio_frq,record_time);
-    void *ret = NULL;
-    struct avi_record_msi_priv *priv = NULL;
-    if (!g_priv) {
-        priv = (struct avi_record_msi_priv *)STREAM_LIBC_ZALLOC(sizeof(struct avi_record_msi_priv)); 
-        AVI_DEBUG("priv:%x\n",priv);
-        if (!priv) {
-            AVI_DEBUG(KERN_ERR"%s %d malloc failed!\n",__FUNCTION__,__LINE__);
-            return NULL;
-        }
-
-        os_event_init(&priv->event);
-        
-        g_priv = priv;
-    } else {
-        priv = g_priv;
-
-        if (os_event_wait(&priv->event, RECORD_END_EVENT, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 0)) {
-            AVI_DEBUG(KERN_INFO"%s %d thread is running\n",__FUNCTION__,__LINE__);
-            return (uint32_t*)priv;
-        }
-    }
-
-    priv->thread_exit    = 0;
-    priv->thread_done    = 0;
-    priv->thread_running = 1;
-    priv->video_width    = video_width;
-    priv->video_height   = video_height;
-    priv->video_fps      = video_fps;
-    priv->audio_frq      = audio_frq;
-    priv->record_time    = record_time;
-    if (cb) {
-        priv->cb = cb;
-        priv->user_priv = user_priv;
-    }
-
-
-    if (video_fps) {
-        priv->avi_record_video_msi = msi_new(R_RECORD_JPEG, 2, 0);
-        if (priv->avi_record_video_msi)
-        {
-            priv->avi_record_video_msi->priv = priv;
-            priv->avi_record_video_msi->action = avi_record_msi_action;
-            priv->avi_record_video_msi->enable = 1;
-        }
-
-        //MJPEG 默认从 VPP BUF0 接收数据
-        priv->jpg_msi = msi_find(AUTO_JPG, 1);
-        if (priv->jpg_msi)
-        {
-            msi_add_output(priv->jpg_msi, NULL, R_RECORD_JPEG);
-            priv->jpg_msi->enable = 1;
-        }
-    }
-
-    if (audio_frq) {
-        priv->avi_record_audio_msi = msi_new(R_RECORD_AUDIO, 8, 0);
-        if (priv->avi_record_audio_msi)
-        {
-            //默认已经打开audio adc msi数据流，此处只做绑定操作
-            auadc_msi_add_output(AUSYS_AUAD, R_RECORD_AUDIO);
-            priv->avi_record_audio_msi->priv = priv;
-            priv->avi_record_audio_msi->action = avi_record_msi_action;
-            priv->avi_record_audio_msi->enable = 1;
-        }
-    }
-    AVI_DEBUG(KERN_INFO"%s %d\n",__FUNCTION__,__LINE__);
-    AVI_DEBUG(KERN_INFO"%s %d jpg_msi:%x video_msi:%x audio_msi:%x\n",__FUNCTION__,__LINE__,priv->jpg_msi,priv->avi_record_video_msi,priv->avi_record_audio_msi);
-    ret = os_task_create("avi_record_msi", avi_record_msi_thread, priv, OS_TASK_PRIORITY_NORMAL, 0, NULL, 2048);
-    if (!ret) {
-        os_event_set(&priv->event, RECORD_END_EVENT, NULL);
-        priv = NULL;
-    }
-
-    return (uint32_t*)priv;
-}
-
-int avi_record_msi_deinit()
-{
-    int timeout = 1000;
-    struct avi_record_msi_priv *priv = g_priv;
-    if (priv) {
-        priv->thread_exit = 1;
-        while (os_event_wait(&priv->event, RECORD_END_EVENT, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 0)) {
-            os_sleep_ms(1);
-            timeout--;
-            if (!timeout) {
-                AVI_DEBUG(KERN_ERR"%s %d timeout!\n",__FUNCTION__,__LINE__);
-                return -2;
-            }
-        }
-
-        if (priv->jpg_msi) {
-            msi_del_output(priv->jpg_msi, NULL, R_RECORD_JPEG);
-            msi_put(priv->jpg_msi);
-            priv->jpg_msi = NULL;
-        }
-    
-        if (priv->avi_record_audio_msi) {
-            auadc_msi_del_output(AUSYS_AUAD, R_RECORD_AUDIO);
-            msi_destroy(priv->avi_record_audio_msi);
-            priv->avi_record_audio_msi = NULL;
-        }
-    
-        if (priv->avi_record_video_msi) {
-            msi_destroy(priv->avi_record_video_msi);
-            priv->avi_record_video_msi = NULL;
-        }
-
-        g_priv = NULL;
-        STREAM_LIBC_FREE(priv);
-        return 0;
-    }
-    return -1;
+avi_record_msi_init_end:
+    return msi;
 }

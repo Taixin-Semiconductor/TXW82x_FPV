@@ -12,6 +12,8 @@
 
 #define LOOP_REMAIN_CAP (256) // 循环录像剩余空间控制
 
+struct mult_record mult_record = {0};
+
 void *rec_create_file(struct file_process *file_process, char *file_name, char *file_path, uint32_t file_size)
 {
     void        *fp             = NULL;
@@ -26,12 +28,25 @@ void *rec_create_file(struct file_process *file_process, char *file_name, char *
     void        **loop          = &file_process->loop;
     char        *main_path      = file_process->rec_path;
     char        *extension_name = file_process->ext_name;
+    uint8_t     try_counts      = 0;
     char        sub_path[32];
     char        thumb_path[64];
-
+    
+get_again:
     res = osal_fatfsfree("0:", NULL, &sd_cap);
-    os_printf(KERN_INFO"sd_cap: %d, file_size: %d\r\n", sd_cap, file_size);
-    if (res != 0) {
+    if (res == FR_OK) {
+        os_printf(KERN_INFO"sd_cap: %d, file_size: %d\r\n", sd_cap, file_size);
+    } else if (res == FR_TIMEOUT) {
+        try_counts++;
+        if(try_counts <= 3) {
+            os_printf("get sd free size timeout, try again\r\n");
+            os_sleep_ms(500);
+            goto get_again;
+        } else {
+            os_printf("get sd free size timeout, exit\r\n");
+            goto rec_create_file_end;
+        }
+    } else {
         goto rec_create_file_end;
     }
 

@@ -6,7 +6,7 @@
 #include "dev.h"
 #include "hal/isp.h"
 
-#if DEV_SENSOR_IMX912
+#if DEV_SENSOR_IMX219
 
 #define IMX219MIPI_MaxGainIndex (98)
 
@@ -657,6 +657,8 @@ SENSOR_OP_SECTION const _Sensor_Adpt_ imx219_cmd=
 	.init = (uint8 *)IMX219InitTable,
     .init_len = sizeof(IMX219InitTable),
     .mipi_lane_num = 2,
+    .vts_reg = {0x0160,0x0161},
+    .vts_reg_num = 2,
 	.rotate_adapt = {0},
 	.hvb_adapt = {0x80,0x0a,0x80,0x0a},
 	.mclk = 24000000,

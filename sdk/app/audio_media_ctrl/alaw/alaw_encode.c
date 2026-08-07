@@ -281,10 +281,6 @@ struct msi *alaw_encode_init(uint32_t samplerate, AUENC_INIT *auenc_init)
         msi->priv = alaw_encode_s;
         msi->action = (msi_action)alaw_encode_msi_action;
         fbpool_init(&alaw_encode_s->tx_pool, MAX_ALAW_ENCODE_TXBUF);
-        for(uint32_t i=0; i<MAX_ALAW_ENCODE_TXBUF; i++) {
-            struct framebuff *frame_buf = (alaw_encode_s->tx_pool.pool)+i;
-            frame_buf->data = NULL;
-        }
         if(os_event_init(&alaw_encode_s->event) != RET_OK) {
             ALAW_INFO("create alaw encode event fail!\r\n");
             goto alaw_encode_init_err;

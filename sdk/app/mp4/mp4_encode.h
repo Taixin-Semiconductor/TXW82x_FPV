@@ -3,6 +3,7 @@
 
 #include "basic_include.h"
 #include "fatfs/osal_file.h"
+#include "record/muxer_file_ops.h"
 #define mp4_moov mp4_common_box_s
 #define mp4_trak mp4_common_box_s
 #define mp4_mdia mp4_common_box_s
@@ -45,25 +46,22 @@
 
 enum
 {
-    MP4_OK,
-    MP4_INIT_ERR,
-    MP4_FULL_ERR,
-    MP4_V_TYPE_ERR,
-    MP4_I_ERR,
-    MP4_B_ERR,
-    MP4_P_ERR,
-    MP4_WRITE_ERR,
-    MP4_AUDIO_ERR,
+    MP4_OK         = 0,
+    MP4_INIT_ERR   = BIT(1),
+    MP4_FULL_ERR   = BIT(2),
+    MP4_V_TYPE_ERR = BIT(3),
+    MP4_I_ERR      = BIT(4),
+    MP4_B_ERR      = BIT(5),
+    MP4_P_ERR      = BIT(6),
+    MP4_WRITE_ERR  = BIT(7),
+    MP4_AUDIO_ERR  = BIT(8),
 };
-
-
 
 typedef struct
 {
     uint32_t sample_count;
     uint32_t delta;
 } stts_entries;
-
 
 // 这里记录的都是对应表格的起始地址,分配的缓冲区长度都是512?
 // 如果512写入完毕,则offset+512,
@@ -109,11 +107,9 @@ typedef struct
 
 } trak_key_msg;
 
-
 // pps和sps预分配空间,就不动态申请了,考虑用psram,多几十字节
 typedef struct
 {
-    uint8_t     cache[512];
     uint8_t  init;
     uint8_t  audio_enable;
     uint16_t asps_len;
@@ -121,9 +117,10 @@ typedef struct
     uint16_t video_w;
     uint16_t video_h;
     uint32_t msg_end;
+    uint32_t syn_time;
 
-    uint16_t pps_len;
     uint16_t sps_len;
+    uint16_t pps_len;
     uint8_t *sps_data;
     uint8_t *pps_data;
 
@@ -135,10 +132,14 @@ typedef struct
     uint32_t     mdat_nowoffset;
     uint32_t     mvhd_duration_offset;
     F_FILE      *fp;
+    uint32_t    *fast_seek_tbl;
+    uint8_t      mdat_writer_init;
+    uint8_t      ops_init;
+    uint32_t     io_offset;
+    file_ops_t   ops;
     // 设置缓冲区
     trak_key_msg trak[2];
 } mp4_key_msg;
-
 
 typedef struct
 {
@@ -285,26 +286,18 @@ typedef struct __attribute__((packed))
     uint8_t  profile_compatibility; // sps[4]
     uint8_t  AVCLevelIndication;    // sps[5]
     uint8_t  lengthSizeMinusOne;    // 0xff
-#if 0
-    uint8_t numOfSPS;
-    uint8_t *sps_data;
-    uint16_t sps_data_size;
-    uint8_t numOfPPS;
-    uint8_t *pps_data;
-    uint16_t pps_data_size;
-#endif
 } mp4_avcC;
 
 typedef struct __attribute__((packed))
 {
-    uint32_t size;                      // 盒子大小
-    char boxname[4];                    // 固定为'colr'
-    char colour_type[4];                // 颜色类型: 'nclc', 'prof', 'rICC'
+    uint32_t size;           // 盒子大小
+    char     boxname[4];     // 固定为'colr'
+    char     colour_type[4]; // 颜色类型: 'nclc', 'prof', 'rICC'
 
-    uint16_t colour_primaries;          // 颜色原色
-    uint16_t transfer_characteristics;  // 传输特性
-    uint16_t matrix_coefficients;       // 矩阵系数
-    uint8_t  full_range_flag;           // 颜色范围标志 (bit 7)
+    uint16_t colour_primaries;         // 颜色原色
+    uint16_t transfer_characteristics; // 传输特性
+    uint16_t matrix_coefficients;      // 矩阵系数
+    uint8_t  full_range_flag;          // 颜色范围标志 (bit 7)
 } mp4_colr;
 
 typedef struct
@@ -424,12 +417,14 @@ typedef struct
     mp4_func func;
 } mp4_func_stack;
 
-
-
-
 uint32_t write_aac_data(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t size, uint32_t duration);
-uint32_t mp4_syn(mp4_key_msg *msg);
+uint32_t write_aac_data_batch(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t total_size,
+                              uint32_t *sizes, uint32_t *durations, uint32_t frame_count);
+uint32_t mp4_sync(mp4_key_msg *msg);
+uint32_t mp4_sync_time(mp4_key_msg *msg, uint32_t time_ms);
 void *MP4_open_init(F_FILE *fp, uint8_t audio_en);
+void *MP4_open_init_with_file(F_FILE *fp, const file_ops_t *ops, uint8_t audio_en);
+uint32_t mp4_set_file(mp4_key_msg *msg, const file_ops_t *ops);
 uint32_t mp4_audio_cfg_init(mp4_key_msg *msg, uint8_t *asps_data, uint8_t len);
 uint32_t mp4_set_max_size(mp4_key_msg *msg, uint32_t max_size);
 uint32_t mp4_video_cfg_init(mp4_key_msg *msg, uint16_t w, uint16_t h);

@@ -64,6 +64,7 @@ enum
 #define R_GEN420_THUMB_JPG          "gen420_thumb_jpg"
 #define R_GEN420_THUMB_JPG_USB      "gen420_thumb_jpg_usb"
 #define R_GEN420_THUMB_JPG_OVER_DPI "gen420_thumb_jpg_over_dpi"
+#define R_GEN420_MP4_THUMB_JPG      "gen420_mp4_thumb_jpg"
 #define R_GEN420_JPG_RECODE         "gen420_JPG_RECODE"
 #define R_SCALE1_JPG_RECODE         "scale1_JPG_RECODE"
 #define R_DEBUG_STREAM              "debug_stream"
@@ -83,6 +84,7 @@ enum
 #define R_RTP_H264                  "rtp-h264" // 图传的视频
 #define R_AVI_ENCODE_MSI            "avi_encode_msi"
 #define R_CSC_MSI                   "csc_msi"
+#define R_YUV_THUMB                 "YUV_THUMB"
 // S
 #define S_PDM                       "pdm"
 #define S_ADC_AUDIO                 "adc_audio"
@@ -114,11 +116,10 @@ enum
 #define S_ZBAR_FROM_SD              "zbar_read_sd"
 #define S_LVGL_PHOTO                "lvgl_photo"
 #define S_LVGL_OSD                  "lvgl_osd"
-#define S_SCALE3_OVER_DPI           "scale3_over_dpi"
 #define S_H264                      "h264"
-#define S_SCALE3_720P               "scale3_720p"
 #define S_AVI_PLAYER                "avi_player"
 #define S_DEBUG_STREAM              "s_debug_stream"
+#define S_MP4_THUMB                 "mp4_thumb"
 
 // SR
 #define SR_OTHER_JPG                "other_jpg"
@@ -126,11 +127,17 @@ enum
 #define SR_OTHER_JPG_USB2           "other_jpg_usb2"
 #define SR_OTHER_JPG_USB3           "other_jpg_usb3"
 #define SR_USB_RECODE_DEOCDE        "usb_recode_decode"
-#define SR_YUV_WATERMARK            "YUV_watermark"
+#define SR_YUV_WATERMARK            "yuv_watermark"
+#define SR_LCD_YUV_WATERMARK        "lcd_yuv_watermark"
+#define SR_LCD_YUV_SCALE2           "lcd_yuv_scale2"
+#define USB_ODPI_TAKEPHOTO_CTRL     "usb_odpi_takephoto"
+#define USB_OVER_DPI_NORMAL_DECODE  "usb_odpi_normal_decode"
+#define USB_OVER_DPI_THUMB_DECODE   "usb_odpi_thumb_decode"
 #define SR_VIDEO_USB                "video_usb"
 #define SR_ZBAR_JPG                 "zbar_parse"
 #define SR_OVER_DPI_JPG             "over_dpi_jpg"
 #define SR_OVER_DPI_THUMB_JPG       "over_dpi_thumb"
+#define SR_USB_OVER_DPI_THUMB_JPG   "usb_over_dpi_thumb"
 #define SR_GEN420_720P_JPG          "GEN420_720P_MJPG"
 #define ROUTE_USB                   "route-usb"
 #define AUTO_JPG                    "auto-jpg"
@@ -229,8 +236,9 @@ struct yuv_arg_s
     uint16_t x, y;
     uint8_t *del;
     uint32_t dispcnt;
-    uint32_t magic; // 一个类似随机数?有些msi可以通过识别这个magic来判断是否为自己所需要的数据};
-    uint8_t video_only; //多屏显示层专用，用于只显示当前层画面
+    uint32_t magic;          // 一个类似随机数?有些msi可以通过识别这个magic来判断是否为自己所需要的数据};
+    uint8_t  video_only;     // 多屏显示层专用，用于只显示当前层画面
+    uint8_t  extern_fb_flag; // 临时增加,用于scale3使用
 };
 
 // 解码,yuv通用参数放前面,与yuv_arg_s保持一致
@@ -247,7 +255,7 @@ struct jpg_decode_arg_s
 struct takephoto_yuv_arg_s
 {
     struct yuv_arg_s yuv_arg;
-    char          name[64];
+    char             name[64];
 };
 
 enum YUV_data_type2
@@ -298,8 +306,8 @@ enum MSI_SELF_CMDs
 enum MSI_SCALE3_NORMAL_CMD
 {
     MSI_SCALE3_START,
-    MSI_SCLAE3_NORMAL_ADD_DPI,  //从scale3增加一个获取某个分辨率的yuv数据,暂定内部只有一个buf,
-                                //用于分时复用,考虑连拍的问题,如果采用一次性全部获取,会导致推屏丢帧严重
+    MSI_SCLAE3_NORMAL_ADD_DPI, // 从scale3增加一个获取某个分辨率的yuv数据,暂定内部只有一个buf,
+                               // 用于分时复用,考虑连拍的问题,如果采用一次性全部获取,会导致推屏丢帧严重
 
 };
 
@@ -365,13 +373,13 @@ enum MSI_JPEG_HARDWARE
 
 enum MSI_AUTO_JPG
 {
-    MSI_AUTO_JPG_SWITCH_ENCODE_SRC,  
+    MSI_AUTO_JPG_SWITCH_ENCODE_SRC,
 };
 
 enum MSI_AUTO_H264
 {
-    MSI_AUTO_H264_MODE,             //切换模式,0:默认模式 1:缩时录影模式(如果修改帧率,需要先停止再设置时间)
-    MSI_AUTO_H264_TIMELAPSE_TIME,  //设置缩时录影时间
+    MSI_AUTO_H264_MODE,           // 切换模式,0:默认模式 1:缩时录影模式(如果修改帧率,需要先停止再设置时间)
+    MSI_AUTO_H264_TIMELAPSE_TIME, // 设置缩时录影时间
 
 };
 
@@ -425,7 +433,7 @@ enum MSI_MEDIA_CTRL_CMD
 {
     MSI_MEDIA_CTRL_PLAY,
     MSI_MEDIA_CTRL_PLAY_1FPS,
-	MSI_MEDIA_CTRL_RECORD_START,
+    MSI_MEDIA_CTRL_RECORD_START,
     MSI_MEDIA_CTRL_EVENT_START,
     MSI_MEDIA_CTRL_EVENT_STOP,
     MSI_MEDIA_CTRL_GET_RECTIME,
@@ -441,7 +449,7 @@ enum MSI_VIDEO_DEMUX_CTRL_CMD
     MSI_VIDEO_DEMUX_SET_STATUS,
     MSI_VIDEO_DEMUX_GET_STATUS,
     MSI_VIDEO_DEMUX_START,
-	MSI_VIDEO_DEMUX_STOP,
+    MSI_VIDEO_DEMUX_STOP,
     MSI_VIDEO_DEMUX_PAUSE,
 };
 
@@ -454,6 +462,13 @@ enum MSI_TAKEPHOTO_SCALE3_CMD
 enum MSI_CSC_CMD
 {
     MSI_CSC_MSI_ENABLE,
+};
+
+enum MSI_WATERMARK_CMD
+{
+    MSI_WATERMARK_SET_X_Y,
+    MSI_WATERMARK_SET_COLOR,
+    MSI_WATERMARK_SET_ENABLE,
 };
 
 #endif

@@ -1,5 +1,5 @@
-#ifndef _ISP_PARAM_H_
-#define _ISP_PARAM_H_
+#ifndef _ISP_TUNING_H_
+#define _ISP_TUNING_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,12 +28,46 @@ enum {
 
 #define TUNNING_IMG_MSI    "tunning_video_msi"
 
+typedef struct {
+    //AE statistical information
+    struct {
+        float bv;      
+        float exposure_value; 
+        uint32_t  exposure_line; 
+        uint16_t  analog_gain;
+        uint16_t  final_luma_target; 
+        uint16_t  ae_luma_avg;    
+    } ae_info;
+    //AWB statistical information
+    struct {
+        uint16_t    delta_cb, delta_cr;     
+        uint16_t    color_temp;
+        uint32_t    awb_back_wp_cnt; 
+        uint32_t    awb_front_wp_cnt;
+        uint16_t    awb_rgb_mean[3];       
+        uint16_t    back_smooth_mean[3];       
+        uint16_t    front_smooth_mean[3]; 
+        uint16_t    r_gain;
+        uint16_t    b_gain;
+    } awb_info;
+
+} ISP_AE_AWB_INFO;
+
+typedef struct {
+    uint8_t     rw_mode;
+    uint8_t     reg_length;
+    uint16_t    reg_adrr;
+    uint8_t     reg_data;
+} TUNING_SENSOR_IIC;
+
+
 struct isp_tunnning_dev {
     struct os_semaphore     usb_write_sema;
     struct os_semaphore     usb_cmd_sema;
     scatter_data            write_data;
     struct isp_device       *p_isp;
     struct dual_device      *p_dual;
+    struct vpp_device       *p_vpp;
     struct msi              *video_msi;
     struct msi              *v_msi;
     rt_device_t             device;
@@ -50,7 +84,9 @@ struct isp_tunnning_dev {
     uint16                  response[6];
     uint16                  message_head[8];
 };
-void isp_tunning_init();
+
+
+void isp_tunning_init(uint32 img_w, uint32 img_h);
 #ifdef __cplusplus
 }
 #endif

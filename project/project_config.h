@@ -2,22 +2,23 @@
 #define __SDK_PROJECT_CONFIG_H__
 
 
-#define CUSTOMER_ID 1
+#define CUSTOMER_ID 3
 
 /*
  * CUSTOMER_ID :
  *
- * 1 82xApp_Demo
+ * 1 82xApp_Demo (SDK打包专用,不保证应用功能是否正常)
  * 2 82xApp_ISP_Tunning_Demo
  * 3 82xApp_720P_Demo
  * 4 82xApp_1080P_Demo
  * 5 82xApp_720P_to_1080P_Demo
  * 6 82xApp_UVC_Demo
- * 7 82xApp_walkie_talkie_Demo 
+ * 7 82xApp_walkie_talkie_fem_Demo (只能方案板使用，同时需修改io配置文件)
  * 8 82xApp_LCD_Demo
- * 9 82xApp_baby_monitor_lcd_Demo
- * 10 82xApp_baby_monitor_cam_Demo
+ * 9 82xApp_baby_monitor_lcd_fem_Demo
+ * 10 82xApp_baby_monitor_cam_fem_Demo
  * 11 82xApp_LCD_MP4_Player_Demo
+ * 12 82xApp_Double_Sensor_Splice_Demo
 */
 #if (CUSTOMER_ID == 1)
 #define SYS_APP_FPV
@@ -285,21 +286,6 @@
 #define DEV_SENSOR_GC2053               1
 #define DEV_SENSOR_GC1084               1
 
-/************************************************************ 
- * mipi相关
-INPUT_MODE:
-#define YUV422                          0
-#define RAW8                            1
-#define RAW10                           2
-#define RAW12                           3
-
-DOUBLE_LANE ：
-1 : 双个数据lane 
-0 : 单个数据lane
-************************************************************/
-#define INPUT_MODE                      2   //RAW10
-#define DOUBLE_CSI                      0
-#define DOUBLE_LANE                     0
 
 /***********************************************************
  * USB相关宏配置（必须打开）
@@ -504,20 +490,6 @@ MJPG(1路):  MJPG:  10-30(mjpg节点)*16K = 160K-480K  (不同分辨率以及质
 //#define DEV_SENSOR_SC1346               1
 #define DEV_SENSOR_GC1084               1
 #define DEV_SENSOR_GC2053               1
-
-
-
-/************************************************************ 
- * mipi相关
-INPUT_MODE:
-#define YUV422                          0
-#define RAW8                            1
-#define RAW10                           2
-#define RAW12                           3
-************************************************************/
-#define INPUT_MODE                      2   //RAW10
-#define DOUBLE_CSI                      0
-#define DOUBLE_LANE                     0
 
 
 /***********************************************************
@@ -740,18 +712,6 @@ MJPG(1路):  MJPG:  10-30(mjpg节点)*16K = 160K-480K  (不同分辨率以及质
 
 
 
-/************************************************************ 
- * mipi相关
-INPUT_MODE:
-#define YUV422                          0
-#define RAW8                            1
-#define RAW10                           2
-#define RAW12                           3
-************************************************************/
-#define INPUT_MODE                      2   //RAW10
-#define DOUBLE_CSI                      0
-#define DOUBLE_LANE                     0
-
 
 /***********************************************************
  *音频及功放使能io配置
@@ -972,20 +932,6 @@ MJPG(1路):  MJPG:  10-30(mjpg节点)*16K = 160K-480K  (不同分辨率以及质
 //#define DEV_SENSOR_SC1346               1
 #define DEV_SENSOR_GC1084               1
 #define DEV_SENSOR_GC2053               1
-
-
-
-/************************************************************ 
- * mipi相关
-INPUT_MODE:
-#define YUV422                          0
-#define RAW8                            1
-#define RAW10                           2
-#define RAW12                           3
-************************************************************/
-#define INPUT_MODE                      2   //RAW10
-#define DOUBLE_CSI                      0
-#define DOUBLE_LANE                     0
 
 
 /***********************************************************
@@ -1257,6 +1203,8 @@ UVC的配置
 #define FLASHDISK_EN                    1
 
 #define AUDIO_EN                        1
+#define AUDIO_PROCESS         			1
+#define AUDAC_RESAMPLERATE              1
 #define LOW_BITRATE_MODE        		1
 #define INTERCOM_HALF_DUPLEX            0
 #define MAGIC_VOICE_EN          		1
@@ -1358,7 +1306,6 @@ UVC的配置
 #define WIFI_BSSBW_DEFAULT              10
 #define BSS_MAX_IDLE_DEFAULT            10
 
-//是能5m/20m共存和自动带宽切换，
 #define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
 #define LMAC_BGN_PCF
 
@@ -1528,17 +1475,6 @@ UVC的配置
 #define DEV_SENSOR_GC2053               1
 #define DEV_SENSOR_GC1084               1
 
-/************************************************************ 
- * mipi相关
-INPUT_MODE:
-#define YUV422                          0
-#define RAW8                            1
-#define RAW10                           2
-#define RAW12                           3
-************************************************************/
-#define INPUT_MODE                      2   //RAW10
-#define DOUBLE_CSI                      0
-#define DOUBLE_LANE                     0
 
 #define VPP_BUF1_EN 					0
 
@@ -1605,6 +1541,8 @@ INPUT_MODE:
 #define FLASHDISK_EN                    0
 
 #define AUDIO_EN                        1
+#define AUDIO_PROCESS         			1
+#define AUDAC_RESAMPLERATE              1
 #define ONE_TO_MANY                     1
 /* AUDIO CODE */
 /* 0: AUCODER_NO_RUN  1: AUCODER_RUN_IN_CPU0  2: AUCODER_RUN_IN_CPU1*/
@@ -1675,8 +1613,7 @@ INPUT_MODE:
 
 #define RATE_CONTROL_SELECT             RATE_CONTROL_BABYMPNITOR
 
-//是能5m/20m共存和自动带宽切换，
-//#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
+#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
 #define LMAC_BGN_PCF
 
 #define WIFI_MODE_DEFAULT               WIFI_MODE_AP
@@ -1717,6 +1654,8 @@ INPUT_MODE:
 #define FLASHDISK_EN                    0
 
 #define AUDIO_EN                        1
+#define AUDIO_PROCESS         			1
+#define AUDAC_RESAMPLERATE              1
 /* AUDIO CODE */
 /* 0: AUCODER_NO_RUN  1: AUCODER_RUN_IN_CPU0  2: AUCODER_RUN_IN_CPU1*/
 #define AAC_ENC_CTRL 					1
@@ -1802,8 +1741,7 @@ INPUT_MODE:
 #define VIDEO_YUV_RANGE_TYPE            (0)  
 
 
-//是能5m/20m共存和自动带宽切换，
-//#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
+#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
 #define LMAC_BGN_PCF
 
 #define WIFI_MODE_DEFAULT               WIFI_MODE_STA
@@ -1970,20 +1908,6 @@ MJPG(1路):  MJPG:  10-30(mjpg节点)*16K = 160K-480K  (不同分辨率以及质
 #define DEV_SENSOR_GC2053               1
 
 
-
-/************************************************************ 
- * mipi相关
-INPUT_MODE:
-#define YUV422                          0
-#define RAW8                            1
-#define RAW10                           2
-#define RAW12                           3
-************************************************************/
-#define INPUT_MODE                      2   //RAW10
-#define DOUBLE_CSI                      0
-#define DOUBLE_LANE                     0
-
-
 /***********************************************************
  *音频及功放使能io配置
  * ********************************************************/
@@ -2043,6 +1967,235 @@ INPUT_MODE:
 
 #define LCD_ST7701S_MIPI_EN 			1
 #define LCD_ST7735_EN                   0
+
+#elif (CUSTOMER_ID == 12)
+/*****************************************************************************
+ * 720P摄像头(帧率主要看摄像头配置表,SDK默认1084 25帧)
+ * 主码流(H264):1280x720 @ 25fps
+ * 辅码流(H264):640x360  @ 25fps
+ * 录卡(MP4):主码流+aac音频(8KHz/16bit)
+ * 拍照(MJPG):1280x720
+ * 图传:RTSP  辅码流  默认地址:rtsp://ip:554/h264?1
+ * 回放:录风者采用下载模式去解码mp4回放
+ * 文件系统:FAT32、EXFAT(配合ffconf.h设置)
+ ****************************************************************************/
+
+/***************************************************************
+ * 打开PIN_FROM_PARAM,通过脚本和config.cfg去生成对应的io配置信息
+ * 请查看重要的文件:pin_param.h、config.cfg两个文件
+ *************************************************************/
+#define PIN_FROM_PARAM
+/*****************************************
+ * 打开对应demo的宏
+ ****************************************/
+#define SYS_DOUBLE_SENSOR_SPICE_DEMO
+
+/**********************************************************************
+ * 系统必要信息宏
+ * CONFIG_PSRAM_AVHEAP_SIZE:为应用分配的psram宏,需要根据应用场景分配
+ * PSRAM_HEAP:如果需要用到psram,需要打开PSRAM_HEAP
+ ********************************************************************/
+#define DEFAULT_SYS_CLK                 (192*1000000) 
+#define PSRAM_HEAP          //如果需要psram当作heap,需要打开这个宏
+#define AV_PSRAM_HEAP    
+#define AV_HEAP
+
+
+/*******************************************************************************************************************************************
+1080P摄像头空间分配(如果没有其他要求,会将大部分空间给到视频)
+H264：  I/P帧:3.1M+0.5M(默认,根据I帧P帧最大值进行调整)
+		纯I帧:0.5M
+		h264数据缓冲size: 64帧(最大缓冲)*100K(平局每一帧size) = 6M左右  (如果终端应用不会卡太久,这里可以分配2M-3M左右,这个是动态的)
+		(64帧是最大缓冲数量,100K需要根据自己h264配置调整,缓冲帧数大是解决录卡不会轻易丢帧,参数都是可以调整,根据产品来调整)
+
+MJPG(1路):  MJPG:  10-30(mjpg节点)*16K = 160K-480K  (不同分辨率以及质量需要调整,如果是大分辨率拍照4K、8K,需要1M
+
+所以这里需要空间粗略计算就是 3.1M+0.5M+0.5M + 3M(h264+mjpg数据共用动态) ≈ 7M
+
+由于MJPG与H264共用,会造成一定碎片化,可以适当将空间h264和MJPG独立分开,默认SDK没有分开
+*********************************************************************************************************************************************/
+#define CONFIG_PSRAM_AVHEAP_SIZE        (5*1024*1024+512*1024)
+
+/**********************************************************************************************************************************************
+ * 不同镜头以及功能不一样
+ * 没有考虑大分辨拍照模式
+ * 720P镜头:  60K(VPP_DATA0)(1080P h264) = 60k
+			  辅码流:  12K(gen420) = 12K
+			  其他:  10K(解码) + 其他(某些结构体用到) ≈ 15K
+				
+    total:  95K(没有额外功能,可以运行,如果空间足够,尽量到100K)
+	
+				
+ 
+ *********************************************************************************************************************************************/
+#define CONFIG_AVHEAP_SIZE              (100*1024 + 30*1024)
+
+/******************************************************************************
+ * wifi的必要参数配置
+ ******************************************************************************/
+///////////////wifi parameter////////////
+#define WIFI_RF_PWR_LEVEL               0           //选择WIFI功率
+#define WIFI_RTS_THRESHOLD              -1          //RTS阈值，-1等效于不用RTS
+#define WIFI_RTS_MAX_RETRY              2           //RTS重试次数，范围为2~16
+#define WIFI_TX_MAX_RETRY               15          //最大传输次数，范围为1~31
+
+#define WIFI_TX_SUPP_RATE               0x0FFFFF    //TX速率支持，每1bit对应一种速率
+#define WIFI_MULICAST_RETRY             0           //组播帧传输次数
+#define WIFI_ACS_CHAN_LISTS             0x1FFF      //要扫描的信道。每1bit对应1个信道(bit 0~11 -> chan 1~12)
+#define WIFI_ACS_SCAN_TIME              150         //每个信道的扫描时间，单位ms
+#define CHANNEL_DEFAULT                 0
+#define SSID_DEFAULT                    "150X1-"    //"150X1-0768c1a3"
+#define WIFI_TX_DUTY_CYCLE              100         //tx发送占空比，单位是%，范围是0~100
+#define WIFI_SSID_FILTER_EN             0           //是否使能SSID过滤功能。使能后，只有隐藏SSID和指定SSID的beacon才会上传
+#define WIFI_PREVENT_PS_MODE_EN         1           //是否尽可能的阻止sta进入休眠
+#define WIFI_TX_AGG_EN                  1           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
+#define NET_IP_ADDR_DEFAULT             0x01A9A8C0  //192.168.169.1
+#define NET_MASK_DEFAULT                0x00FFFFFF  //255.255.255.0
+#define NET_GW_IP_DEFAULT               0x01A9A8C0  //192.168.169.1
+#define DHCPD_START_IP_DEFAULT          0x64A9A8C0  //192.168.169.100
+#define DHCPD_END_IP_DEFAULT            0xFEA9A8C0  //192.168.169.254
+#define DHCPD_DNS1_DEFAULT              0x01A9A8C0  //192.168.169.1
+#define DHCPD_DNS2_DEFAULT              0x01A9A8C0  //192.168.169.1
+#define DHCPD_ROUTER_DEFAULT            0x01A9A8C0  //192.168.169.1
+
+
+#define VPP_BUF0_LINEBUF_NUM           7
+/***************************************************************
+ * 蓝牙
+ **************************************************************/
+//#define BLE_SUPPORT                 1
+
+/****************************************************************
+ * wifi速率配置,根据不同场景需要距离等去配置特定速率算法
+#define RATE_CONTROL_ERSHAO         1
+#define RATE_CONTROL_HANGPAI        2
+#define RATE_CONTROL_IPC            3
+#define RATE_CONTROL_BABYMPNITOR    4
+ ***************************************************************/
+#define RATE_CONTROL_SELECT             3
+
+
+/*****************************************************************
+ * VCAM开关,部分io电源域需要打开才有电
+ *****************************************************************/
+#define VCAM_EN                         1
+#define VCCSD_33                        0
+
+/*******************************************************************
+ * 图像编码相关参数
+ ******************************************************************/
+#define MIPI_CSI_EN                     1
+#define VPP_EN                          1
+#define H264_EN                         1
+#define ISP_EN                          1
+#define JPG_EN                          1
+#define SCALE_EN                        1
+
+/*******************************************************************
+ * 打开拍照模式(紧紧支持录风者模式)
+ ******************************************************************/
+#define TAKEPHOTO_EN                      1
+
+
+/*******************************************************************
+ * 支持h264的副码流
+ ******************************************************************/
+#define SUB_STREAM_EN 					1
+
+
+/*****************************************************************
+ * sd使能
+ ***************************************************************/
+#define SDH_EN                          1
+#define FS_EN                           1
+
+
+
+/************************************************************************************************************************
+ * sensor型号配置,配置多个,支持自动识别(当前SDK只能支持全部单line或者双line,包含单line和双line需要对sdk初始化修改)
+#define DEV_SENSOR_OV7725               0
+#define DEV_SENSOR_OV7670               0
+#define DEV_SENSOR_GC0308               0
+#define DEV_SENSOR_OV2640               0
+#define DEV_SENSOR_BF3A03               0
+#define DEV_SENSOR_BF2013               0
+#define DEV_SENSOR_OV2685               0
+#define DEV_SENSOR_BF30A2               0
+#define DEV_SENSOR_H62                  0
+#define DEV_SENSOR_H63P                 0
+#define DEV_SENSOR_SC1346               0
+#define DEV_SENSOR_GC1084               0
+#define DEV_SENSOR_GC2083               0
+#define DEV_SENSOR_GC2053               0
+#define DEV_SENSOR_SC2336P              0
+#define DEV_SENSOR_SC2331               0
+#define DEV_SENSOR_F38P                 0
+#define DEV_SENSOR_F37P                 0
+#define DEV_SENSOR_TP9950               0
+ ***************************************************************************************************************************/
+//#define DEV_SENSOR_SC1346               1
+#define DEV_SENSOR_GC1084               1
+#define DEV_SENSOR_GC2053               1
+#define DEV_SENSOR_GC1084_CSI1 			1
+
+
+/***********************************************************
+ *音频及功放使能io配置
+ * ********************************************************/
+#define AUDIO_EN                        1
+#define AAC_ENC_CTRL 					1
+
+/***********************************************************
+ *默认mjpeg的节点数量,要根据mjpeg启动的分辨率去考虑
+ 默认节点大小:16*1024
+ 720P:算mjpeg大小50-80K,给10个节点足够
+ 1080P:算mjpeg大小100-150K,给20个节点足够
+ 其他分辨率,根据实际情况去配置
+ * ********************************************************/
+#define JPG_NODE_COUNT 30
+
+/*************************************************************
+ * 节省sram内存,将部分模块强制使用psram
+ * 优点:节省sram内存
+ * 缺点:psram读写慢,可能会影响性能
+ 
+ 1080P的sram内存不足,将部分数据放到了psram
+ ************************************************************/
+#define MORE_SRAM
+
+/*************************************************************
+ * 720P摄像头的mjpeg辅码流需要打开VPP_BUF1_EN
+ * 720P的辅码流是h264(gen420),注意SUB_STREAM_WIDTH需要是与镜头
+   等比例关系,包括是H(sdk默认这个是等比例,所以不需要配置H)
+ ************************************************************/
+#define VPP_BUF1_EN 1
+#define PSRAM_FRAME_SAVE 1
+#define SUB_STREAM_WIDTH    640
+
+/************************************************************************
+* 配置解码最大的size,如果不需要特殊size解码,这个配置320x180(缩略图用)
+* 配置解码缓冲区节点数量(预分配空间,没有解码要求,默认1个节点就够了)
+ ************************************************************************/
+#define DECODE_MAX_W    320
+#define DECODE_MAX_H    180
+#define MAX_DECODE_YUV_TX 1
+
+/************************************************************************
+* 配置MP4录制最大文件的size
+ ************************************************************************/
+#define MAX_SINGLE_MP4_SIZE (100 * 1024 * 1024)
+#define MP4_THUMB_SPLICE_EN 1 //开启MP4 THUMB拼接功能
+
+/************************************************************************
+ * 720P摄像头的H264辅码流
+ * 录风者设置图传是H264,则RECORDER_MODE等于0即可
+ ************************************************************************/
+#define RECORDER_MODE 0
+
+/************************************************************************
+* 开启文件系统优化
+ ************************************************************************/
+#define USE_FAT_CACHE 1
 #endif
 
 #endif

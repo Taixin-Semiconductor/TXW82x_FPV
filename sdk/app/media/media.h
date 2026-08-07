@@ -1,7 +1,6 @@
 #ifndef __MEDIA_H
 #define __MEDIA_H
 #include "diskio.h"
-#include "integer.h"
 
 bool create_jpg_file(char *dir_name);
 void *create_video_file(char *dir_name);

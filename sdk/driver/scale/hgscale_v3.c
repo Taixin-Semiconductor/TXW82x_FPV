@@ -5,6 +5,7 @@
 #include "dev/scale/hgscale.h"
 #include "osal/string.h"
 #include "osal/sleep.h"
+#include "video_err.h"
 uint32_t in_disable_irq(void);
 
 
@@ -698,18 +699,19 @@ void SCALE3_IRQHandler_action(void *p_scale)
 	struct hgscale *scale_hw = (struct hgscale*)p_scale; 
 	struct hgscale3_hw *hw  = (struct hgscale3_hw *)scale_hw->hw;
 	sta = hw->SCALESTA;
+	uint8_t isp_err;
 //	printf("STA:%08x  CNT:%08x\r\n",hw->SCALESTA,hw->SHEIGH_CNT);
 	for(loop = 0;loop < SCALE_IRQ_NUM;loop++){
 		if(sta&BIT(loop)){
 			hw->SCALESTA = BIT(loop);
 			
 			if(scaleirq3_vector_table[loop] != NULL){
-				if(scaler3_lost){
+				isp_err = (isp_ov_err &(BIT(ISP_SCALE3_ERR)));
+				isp_ov_err &= (~BIT(ISP_SCALE3_ERR));
+				if(isp_err){
 					os_printf("isp error,scaler3 drop\r\n");
-					scaler3_lost = 0;
-				}else{
-					scaleirq3_vector_table[loop] (loop,scaleirq3_dev_table[loop],0);
 				}
+				scaleirq3_vector_table[loop] (loop,scaleirq3_dev_table[loop],isp_err);
 			}
 		}
 	}
@@ -828,7 +830,7 @@ static int32 hgscale3_close(struct scale_device *p_scale){
 	}
 	else
 	{
-		while(hw->SCALESTA &BIT(16)); 
+		//while(hw->SCALESTA &BIT(16)); 
 	}
 	hw->SCALECON &= ~BIT(0);  //disable
 	hw->SCALESTA = hw->SCALESTA;

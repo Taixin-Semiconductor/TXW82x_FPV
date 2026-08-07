@@ -3640,13 +3640,8 @@
 
 /* Platform options */
 #define MBEDTLS_PLATFORM_STD_MEM_HDR   "osal/string.h" /**< Header to include if MBEDTLS_PLATFORM_NO_STD_FUNCTIONS is defined. Don't define if no header is needed. */
-#ifdef PSRAM_HEAP
-#define MBEDTLS_PLATFORM_STD_CALLOC        _os_calloc_psram /**< Default allocator to use, can be undefined */
-#define MBEDTLS_PLATFORM_STD_FREE          _os_free_psram /**< Default free to use, can be undefined */
-#else
-#define MBEDTLS_PLATFORM_STD_CALLOC        _os_calloc /**< Default allocator to use, can be undefined */
-#define MBEDTLS_PLATFORM_STD_FREE          _os_free /**< Default free to use, can be undefined */
-#endif
+#define MBEDTLS_PLATFORM_STD_CALLOC         mbedtls_calloc_wrapper
+#define MBEDTLS_PLATFORM_STD_FREE           mbedtls_free_wrapper
 
 //#define MBEDTLS_PLATFORM_STD_SETBUF      setbuf /**< Default setbuf to use, can be undefined */
 //#define MBEDTLS_PLATFORM_STD_EXIT            exit /**< Default exit to use, can be undefined */

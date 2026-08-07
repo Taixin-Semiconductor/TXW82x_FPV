@@ -835,7 +835,8 @@ extern uint16 sysctrl_get_chip_id();
 
 
 /* EFUSE_CON */
-#define sysctrl_efuse_pwron_init()                 SYSCTRL_REG_SET_BITS(SYSCTRL->EFUSE_CON, BIT(1)|BIT(0))
+#define sysctrl_efuse_pwron_init()                 SYSCTRL_REG_SET_BITS(SYSCTRL->EFUSE_CON, BIT(1))
+#define sysctrl_efuse_get_lock_sta()               ((SYSCTRL->EFUSE_CON & BIT(0)))
 
 
 /* SYS_ERR0 */
@@ -1308,7 +1309,7 @@ uint32 sysctrl_efuse_get_aes_key(void);
 
 uint32 sysctrl_efuse_validity_get(void);
 
-void sysctrl_efuse_validity_handle(void);
+void sysctrl_efuse_validity_handle(int32 printf_en);
 void sysctrl_efuse_info_show(void);
 
 uint32 sysctrl_efuse_vddi_get(void);

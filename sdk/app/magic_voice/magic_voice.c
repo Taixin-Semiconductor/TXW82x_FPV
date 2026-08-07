@@ -220,7 +220,6 @@ int32_t magic_voice_deinit(void)
 struct msi *magic_voice_init(uint32_t samplerate, uint32_t size)
 {
     uint8_t msi_isnew = 0;
-    struct framebuff *frame_buf = NULL;
 	struct msi *msi = NULL;
 
     if((samplerate != 8000) || (size != 160)) {
@@ -243,10 +242,6 @@ struct msi *magic_voice_init(uint32_t samplerate, uint32_t size)
         return NULL;
     }
     fbpool_init(&magic_voice_s->tx_pool, MAX_MAGIC_VOICE_TXBUF); 
-    for(uint32_t i=0; i<MAX_MAGIC_VOICE_TXBUF; i++) {
-		frame_buf = (magic_voice_s->tx_pool.pool)+i;
-        frame_buf->data = NULL;
-    } 
     msi->priv = magic_voice_s;
 	magic_voice_s->msi = msi;
     magic_voice_s->msi->enable = 1;

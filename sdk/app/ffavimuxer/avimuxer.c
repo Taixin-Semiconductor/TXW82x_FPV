@@ -6,7 +6,6 @@
 #include "stream_define.h"
 
 const uint8_t avi_zero = 0;
-#define CONTENT_MAX_SIZE (512 * 1024 * 1024)
 
 #ifndef SEEK_SET
 #define SEEK_SET 0 /* set file offset to offset */
@@ -17,12 +16,6 @@ const uint8_t avi_zero = 0;
 #ifndef SEEK_END
 #define SEEK_END 2 /* set file offset to EOF plus offset */
 #endif
-
-
-static uint32_t avi_tell(F_FILE *fp)
-{
-    return osal_ftell(fp);
-}
 
 static void pre_avi_seek(F_FILE *fp, uint32_t offset)
 {
@@ -65,12 +58,7 @@ static uint32_t avi_write(void *buf, uint32_t size, uint32_t n, F_FILE *fp)
     uint32_t ret              = 1;
     uint32_t write_size_total = size * n;
     ret                       = osal_fwrite(buf, 1, write_size_total, fp);
-    return !ret;
-}
-
-static F_FILE *avi_open(const char *filename, char *mode)
-{
-    return osal_fopen(filename, mode);
+    return ret != write_size_total;
 }
 
 static void avi_close(F_FILE *fp)
@@ -78,20 +66,134 @@ static void avi_close(F_FILE *fp)
     osal_fclose(fp);
 }
 
-static void avi_truncate(F_FILE *fp, uint32_t offset)
+static int av_write(void *file, const void *buf, uint32_t len)
 {
-    avi_seek(fp, offset, SEEK_CUR); // 预留的的空间
-    osal_ftruncate(fp);
+    F_FILE *fp = (F_FILE *) file;
+
+    if (!fp || (!buf && len))
+    {
+        return -1;
+    }
+
+    return avi_write((void *) buf, 1, len, fp) ? -1 : 0;
+}
+
+static int avi_skip(void *file, uint32_t len)
+{
+    F_FILE *fp = (F_FILE *) file;
+    uint32_t offset;
+
+    if (!fp)
+    {
+        return -1;
+    }
+
+    offset = osal_ftell(fp) + len;
+    osal_fseek(fp, offset);
+    if (osal_fsize(fp) < offset)
+    {
+        osal_ftruncate(fp);
+    }
+    return 0;
+}
+
+static uint32_t avi_tell(void *file)
+{
+    F_FILE *fp = (F_FILE *) file;
+    return fp ? osal_ftell(fp) : 0;
+}
+
+static int avi_write_at(void *file, uint32_t offset, const void *buf, uint32_t len)
+{
+    F_FILE *fp = (F_FILE *) file;
+    uint32_t restore_offset;
+
+    if (!fp || (!buf && len))
+    {
+        return -1;
+    }
+
+    restore_offset = osal_ftell(fp);
+    osal_fseek(fp, offset);
+    if (avi_write((void *) buf, 1, len, fp))
+    {
+        return -1;
+    }
+    osal_fseek(fp, restore_offset);
+    return 0;
+}
+
+static int avi_flush(void *file)
+{
+    F_FILE *fp = (F_FILE *) file;
+
+    if (!fp)
+    {
+        return -1;
+    }
+
+    return osal_fsync(fp) == 0 ? 0 : -1;
+}
+
+static int avi_finish(void *file)
+{
+    return avi_flush(file);
+}
+
+static int avi_tail(void *file, const void *tail, uint32_t tail_len,
+                                uint32_t logical_end, uint32_t reserved_end)
+{
+    F_FILE *fp = (F_FILE *) file;
+    uint8_t zero[64] = {0};
+    uint32_t remain;
+    uint32_t restore_offset;
+
+    if (!fp || (!tail && tail_len) || reserved_end < logical_end)
+    {
+        return -1;
+    }
+
+    remain = reserved_end - logical_end;
+    if (tail_len > remain)
+    {
+        return -1;
+    }
+
+    restore_offset = osal_ftell(fp);
+    osal_fseek(fp, logical_end);
+    if (avi_write((void *) tail, 1, tail_len, fp))
+    {
+        return -1;
+    }
+    remain -= tail_len;
+    while (remain)
+    {
+        uint32_t write_len = remain > sizeof(zero) ? sizeof(zero) : remain;
+        if (avi_write(zero, 1, write_len, fp))
+        {
+            return -1;
+        }
+        remain -= write_len;
+    }
+    osal_fseek(fp, restore_offset);
+    return 0;
+}
+
+static void avi_default_ops_init(F_FILE *fp, file_ops_t *ops)
+{
+    os_memset(ops, 0, sizeof(*ops));
+    ops->file     = fp;
+    ops->write    = av_write;
+    ops->skip     = avi_skip;
+    ops->tell     = avi_tell;
+    ops->write_at = avi_write_at;
+    ops->flush    = avi_flush;
+    ops->finish   = avi_finish;
+    ops->tail     = avi_tail;
 }
 
 
-static void avi_file_syn(F_FILE *fp)
-{
-    osal_fsync(fp);
-}
-
-
-// 结构体申请空间函数
+// data s申请空间函数
 #define STREAM_MALLOC av_psram_malloc
 #define STREAM_FREE   av_psram_free
 #define STREAM_ZALLOC av_psram_zalloc
@@ -106,17 +208,16 @@ static void avi_file_syn(F_FILE *fp)
 #define AVIF_ISINTERLEAVED (1 << 8)
 #define AVIIF_KEYFRAME     (1 << 4)
 
-#define AVI_AUDIO_FRAME  (0 << 31)
-#define AVI_VIDEO_FRAME  (1 << 31)
-#define AVI_KEY_FRAME    (1 << 30)
-#define AVI_INSERT_FRAME (1 << 29)
-
 #ifndef offsetof
 #define offsetof(type, member) ((size_t) &((type *) 0)->member)
 #endif
 
 #define AVI_LIST_EMP (512)
 #define IDX_MAX_SIZE (1024*1024)
+#define AVI_IDX_ENTRY_SIZE (16U)
+#define AVI_IDX_TMP_ENTRIES (AVI_LIST_EMP / sizeof(uint32_t))
+#define AVI_FOURCC(a, b, c, d) (((uint32_t)(a) << 0) | ((uint32_t)(b) << 8) | \
+                                ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 
 #pragma pack(1)
 typedef struct
@@ -184,45 +285,62 @@ typedef struct
 
 typedef struct
 {
-    uint32_t *framesize_lst;
-    uint32_t  framesize_fix;
-    uint32_t  framesize_idx;
-    uint32_t  framesize_max;
-    uint32_t  movi_addr;
-    uint32_t  movi_addr_end;
-    uint32_t  cur_addr;
-    uint32_t  frame_base_addr;
-    uint32_t  max_size;
-    uint32_t  curpos;
+    uint32_t    *framesize_lst;
+    uint32_t    framesize_fix;
+    uint32_t    framesize_idx;
+    uint32_t    framesize_max;
+    uint32_t    idx1_addr;
+    uint32_t    idx1_size_addr;
+    uint32_t    idx1_data_addr;
+    uint32_t    idx1_end_addr;
+    uint32_t    idx1_data_size;
+    uint32_t    idx1_write_addr;
+    uint32_t    total_idx;
+    uint32_t    tmp_idx_offset;
+    uint8_t     tmp_idx_data[AVI_IDX_TMP_ENTRIES * AVI_IDX_ENTRY_SIZE];
+    
+    file_ops_t  ops;
+    uint8_t     ops_init;
+    uint32_t    movi_addr;
+    uint32_t    movi_data_addr;
+    uint32_t    movi_addr_end;
+    uint32_t    movi_data_size;
+    uint32_t    cur_addr;
+    uint32_t    movi_guard_block_end;
+    uint32_t    last_video_offset;
+    uint32_t    last_video_size;
+    uint32_t    last_video_flags;
+    
+    F_FILE      *fp;
+    uint32_t    extern_fp;
+    uint32_t    syn_time;
+    uint32_t    *fast_seek_tbl;
+    uint32_t    audio_enable;
+    char        video_tag[4];
+    uint32_t    riff_size_offset;
+    uint32_t    total_frames_offset;
+    uint32_t    audio_length_offset;
+    uint32_t    video_length_offset;
+    uint32_t    movi_size_offset;
 
-    uint32_t now_idx;
-    uint32_t cache_idx;
-    uint32_t total_idx;
-    uint32_t frame_list[AVI_LIST_EMP / 4];
+    char        riff[4];
+    uint32_t    riff_size;
+    char        type_avi[4];
 
-    uint32_t tmp_idx_offset;
-    uint8_t  tmp_idx_data[AVI_LIST_EMP / 4 * 16];
-    F_FILE  *fp;
-    uint32_t extern_fp;
+    char        hlist[4];
+    uint32_t    hlist_size;
+    char        type_hdrl[4];
 
-    char     riff[4];
-    uint32_t riff_size;
-    char     type_avi[4];
-
-    char     hlist[4];
-    uint32_t hlist_size;
-    char     type_hdrl[4];
-
-    char       avih[4];
-    uint32_t   avih_size;
-    AVI_HEADER avi_header;
+    char        avih[4];
+    uint32_t    avih_size;
+    AVI_HEADER  avi_header;
 #if 1
-    char     slist1[4];
-    uint32_t slist1_size;
-    char     type_str1[4];
+    char        slist1[4];
+    uint32_t    slist1_size;
+    char        type_str1[4];
 
-    char          strhdr1[4];
-    uint32_t      strhdr1_size;
+    char        strhdr1[4];
+    uint32_t    strhdr1_size;
     STREAM_HEADER strhdr_audio;
 
     char        strfmt1[4];
@@ -230,44 +348,660 @@ typedef struct
     WAVE_FORMAT strfmt_audio;
 #endif
 
-    char     slist2[4];
-    uint32_t slist2_size;
-    char     type_str2[4];
+    char        slist2[4];
+    uint32_t    slist2_size;
+    char        type_str2[4];
 
-    char          strhdr2[4];
-    uint32_t      strhdr2_size;
+    char        strhdr2[4];
+    uint32_t    strhdr2_size;
     STREAM_HEADER strhdr_video;
 
-    char          strfmt2[4];
-    uint32_t      strfmt2_size;
+    char        strfmt2[4];
+    uint32_t    strfmt2_size;
     BITMAP_FORMAT strfmt_video;
 
-    char     mlist[4];
-    uint32_t mlist_size;
-    char     type_movi[4];
+    char        mlist[4];
+    uint32_t    mlist_size;
+    char        type_movi[4];
 
 } AVI_FILE;
 #pragma pack()
+
+#if FF_USE_FASTSEEK
+#define AVI_FAST_SEEK_CLMT_ITEMS_MIN 64U
+
+static uint32_t *avi_fast_seek_create(F_FILE *fp)
+{
+    uint32_t *cltbl;
+    uint32_t  table_items = AVI_FAST_SEEK_CLMT_ITEMS_MIN;
+    FRESULT   res;
+
+    if (!fp)
+    {
+        return NULL;
+    }
+
+    while (1)
+    {
+        cltbl = (uint32_t *) STREAM_MALLOC(table_items * sizeof(uint32_t));
+        if (!cltbl)
+        {
+            fp->cltbl = NULL;
+            os_printf(KERN_WARNING "avi fast seek alloc failed, items:%d\n", table_items);
+            return NULL;
+        }
+
+        cltbl[0]  = table_items;
+        fp->cltbl = (DWORD *) cltbl;
+        res       = f_lseek(fp, CREATE_LINKMAP);
+        if (res == FR_OK)
+        {
+            os_printf(KERN_INFO "avi fast seek enabled, items:%d\n", cltbl[0]);
+            return cltbl;
+        }
+
+        if (res == FR_NOT_ENOUGH_CORE && cltbl[0] > table_items)
+        {
+            table_items = cltbl[0];
+            fp->cltbl   = NULL;
+            STREAM_FREE(cltbl);
+            continue;
+        }
+
+        os_printf(KERN_WARNING "avi fast seek disabled, res:%d, items:%d\n", res, cltbl[0]);
+        fp->cltbl = NULL;
+        STREAM_FREE(cltbl);
+        return NULL;
+    }
+}
+
+static void avi_fast_seek_destroy(F_FILE *fp, uint32_t **cltbl)
+{
+    if (!cltbl || !*cltbl)
+    {
+        return;
+    }
+
+    if (fp)
+    {
+        fp->cltbl = NULL;
+    }
+    STREAM_FREE(*cltbl);
+    *cltbl = NULL;
+}
+#else
+static uint32_t *avi_fast_seek_create(F_FILE *fp)
+{
+    (void) fp;
+    return NULL;
+}
+
+static void avi_fast_seek_destroy(F_FILE *fp, uint32_t **cltbl)
+{
+    (void) fp;
+    (void) cltbl;
+}
+#endif
 
 static uint32_t avi_write_idx_tmp(void *buf, uint32_t size, uint32_t n, AVI_FILE *avi)
 {
     // 返回值0是代表异常
     uint32_t ret              = 0;
     uint32_t write_size_total = size * n;
+    if (!avi || !buf || avi->tmp_idx_offset + write_size_total > sizeof(avi->tmp_idx_data))
+    {
+        return 1;
+    }
     os_memcpy(avi->tmp_idx_data + avi->tmp_idx_offset, buf, write_size_total);
     avi->tmp_idx_offset += write_size_total;
-    return !ret;
+    return ret;
+}
+
+static uint32_t avi_movi_write_data(AVI_FILE *avi, const void *buf, uint32_t len)
+{
+    if (!avi || !avi->ops_init || !avi->ops.write)
+    {
+        return 1;
+    }
+
+    return avi->ops.write(avi->ops.file, buf, len) ? 1 : 0;
 }
 
 static uint32_t avi_write_idx_syn(AVI_FILE *avi)
 {
-    // 返回值0是代表异常
-    uint32_t ret        = avi_write(avi->tmp_idx_data, 1, avi->tmp_idx_offset, avi->fp);
-    avi->tmp_idx_offset = 0;
-    return !ret;
+    uint32_t ret;
+
+    if (!avi || !avi->fp || avi->tmp_idx_offset == 0)
+    {
+        return 0;
+    }
+
+    if (avi->idx1_write_addr + avi->tmp_idx_offset > avi->idx1_end_addr)
+    {
+        return 1;
+    }
+
+    if (!avi->ops_init || !avi->ops.write_at)
+    {
+        return 1;
+    }
+
+    ret = avi->ops.write_at(avi->ops.file, avi->idx1_write_addr, avi->tmp_idx_data, avi->tmp_idx_offset) ? 1 : 0;
+    if (!ret)
+    {
+        avi->idx1_write_addr += avi->tmp_idx_offset;
+        avi->tmp_idx_offset = 0;
+    }
+    return ret;
 }
 
-void *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int gop, int h265, int sampnum)
+static uint8_t avi_idx_entry_fits(AVI_FILE *avi)
+{
+    uint32_t remain;
+    uint32_t next_offset;
+
+    if (!avi || avi->idx1_write_addr >= avi->idx1_end_addr)
+    {
+        return 0;
+    }
+
+    next_offset = avi->idx1_write_addr + avi->tmp_idx_offset;
+    if (next_offset >= avi->idx1_end_addr)
+    {
+        return 0;
+    }
+
+    remain = avi->idx1_end_addr - next_offset;
+    if (remain < AVI_IDX_ENTRY_SIZE)
+    {
+        return 0;
+    }
+
+    remain -= AVI_IDX_ENTRY_SIZE;
+    return (remain == 0 || remain >= 8);
+}
+
+static uint32_t avi_idx_write_entry(AVI_FILE *avi, const char *tag, uint32_t flags, uint32_t offset, uint32_t size)
+{
+    uint32_t ret = 0;
+
+    if (!avi)
+    {
+        return 1;
+    }
+
+    if (avi->tmp_idx_offset + AVI_IDX_ENTRY_SIZE > sizeof(avi->tmp_idx_data))
+    {
+        if (avi_write_idx_syn(avi))
+        {
+            return 1;
+        }
+    }
+
+    if (!avi_idx_entry_fits(avi))
+    {
+        return 1;
+    }
+
+    ret |= avi_write_idx_tmp((void *) tag, 4, 1, avi);
+    ret |= avi_write_idx_tmp(&flags, sizeof(flags), 1, avi);
+    ret |= avi_write_idx_tmp(&offset, sizeof(offset), 1, avi);
+    ret |= avi_write_idx_tmp(&size, sizeof(size), 1, avi);
+    if (!ret)
+    {
+        avi->idx1_data_size += AVI_IDX_ENTRY_SIZE;
+    }
+
+    return ret;
+}
+
+static uint32_t avimuxer_written_duration_ms(AVI_FILE *avi)
+{
+    uint32_t video_ms = 0;
+    uint32_t audio_ms = 0;
+
+    if (!avi)
+    {
+        return 0;
+    }
+
+    if (avi->avi_header.microsec_per_frame)
+    {
+        video_ms = (uint32_t) (((unsigned long long) avi->strhdr_video.length *
+                                avi->avi_header.microsec_per_frame) /
+                               1000);
+    }
+
+    if (avi->strhdr_audio.rate)
+    {
+        audio_ms = (uint32_t) (((unsigned long long) avi->strhdr_audio.length * 1000) /
+                               avi->strhdr_audio.rate);
+    }
+
+    return video_ms > audio_ms ? video_ms : audio_ms;
+}
+
+static uint8_t avi_chunk_fits(AVI_FILE *avi, uint32_t chunk_size)
+{
+    uint32_t remain;
+
+    if (!avi || avi->cur_addr >= avi->movi_addr_end)
+    {
+        return 0;
+    }
+
+    remain = avi->movi_addr_end - avi->cur_addr;
+    if (chunk_size > remain)
+    {
+        return 0;
+    }
+
+    remain -= chunk_size;
+    return (remain == 0 || remain >= 8);
+}
+
+static uint32_t avi_write_movi_snapshot_tail(AVI_FILE *avi);
+static uint32_t avi_write_idx_snapshot_tail(AVI_FILE *avi);
+
+static uint32_t avi_write_movi_chunk(AVI_FILE *avi, const char *tag, uint32_t flags,
+                                     unsigned char *buf, uint32_t len,
+                                     uint32_t *chunk_offset)
+{
+    uint32_t alignlen;
+    uint32_t offset;
+
+    if (!avi || !tag || !buf)
+    {
+        return AVIMUXER_ERR;
+    }
+
+    alignlen = (len & 1) ? len + 1 : len;
+    offset   = avi->cur_addr - avi->movi_addr + 4;
+
+    if (!avi_chunk_fits(avi, 8 + alignlen) || !avi_idx_entry_fits(avi))
+    {
+        return AVIMUXER_FULL;
+    }
+
+    if (avi_movi_write_data(avi, tag, 4) ||
+        avi_movi_write_data(avi, &alignlen, 4) ||
+        avi_movi_write_data(avi, buf, len) ||
+        ((len & 1) && avi_movi_write_data(avi, (void *) &avi_zero, 1)))
+    {
+        return AVIMUXER_ERR;
+    }
+
+    if (avi_idx_write_entry(avi, tag, flags, offset, alignlen))
+    {
+        return AVIMUXER_ERR;
+    }
+
+    avi->cur_addr += 8 + alignlen;
+    avi->total_idx++;
+    if (chunk_offset)
+    {
+        *chunk_offset = offset;
+    }
+
+    return AVIMUXER_OK;
+}
+
+static uint32_t avi_movi_write_zero(AVI_FILE *avi, uint32_t len)
+{
+    static const uint8_t zero[64] = {0};
+
+    if (!avi || !avi->ops_init || !avi->ops.write)
+    {
+        return 1;
+    }
+
+    while (len)
+    {
+        uint32_t write_len = len > sizeof(zero) ? sizeof(zero) : len;
+        if (avi->ops.write(avi->ops.file, zero, write_len))
+        {
+            return 1;
+        }
+        len -= write_len;
+    }
+
+    return 0;
+}
+
+static uint32_t avi_movi_skip(AVI_FILE *avi, uint32_t len)
+{
+    if (!avi || !avi->ops_init || !avi->ops.skip)
+    {
+        return 1;
+    }
+
+    return avi->ops.skip(avi->ops.file, len) ? 1 : 0;
+}
+
+static uint32_t avi_write_movi_junk_chunk(AVI_FILE *avi, uint32_t chunk_size)
+{
+    uint32_t junk_size;
+
+    if (!avi || chunk_size < 8)
+    {
+        return 1;
+    }
+
+    junk_size = chunk_size - 8;
+    if (avi_movi_write_data(avi, "JUNK", 4) ||
+        avi_movi_write_data(avi, &junk_size, 4) ||
+        avi_movi_skip(avi, junk_size))
+    {
+        return 1;
+    }
+
+    avi->cur_addr += chunk_size;
+    return 0;
+}
+
+static uint32_t avi_write_movi_snapshot_tail(AVI_FILE *avi)
+{
+    uint32_t remain;
+    uint32_t junk_size;
+    uint8_t  junk_hdr[8];
+
+    if (!avi || !avi->ops_init || !avi->ops.tail || avi->cur_addr >= avi->movi_addr_end)
+    {
+        return 0;
+    }
+
+    if (avi->ops.tell && avi->ops.tell(avi->ops.file) != avi->cur_addr)
+    {
+        return 1;
+    }
+
+    remain = avi->movi_addr_end - avi->cur_addr;
+    if (remain < 8)
+    {
+        return 1;
+    }
+
+    junk_size = remain - 8;
+    os_memcpy(junk_hdr, "JUNK", 4);
+    os_memcpy(junk_hdr + 4, &junk_size, 4);
+
+    return avi->ops.tail(avi->ops.file, junk_hdr, sizeof(junk_hdr), avi->cur_addr, avi->movi_addr_end) ? 1 : 0;
+}
+
+static uint32_t avi_movi_guard_block_end(AVI_FILE *avi)
+{
+    uint32_t block_end;
+
+    if (!avi)
+    {
+        return 0;
+    }
+
+    block_end = muxer_file_align_up(avi->cur_addr);
+    if (block_end == avi->cur_addr)
+    {
+        block_end += MUXER_FILE_ALIGN_SIZE;
+    }
+
+    return block_end;
+}
+
+static uint32_t avi_write_movi_guard(AVI_FILE *avi)
+{
+    uint32_t cur_block_end;
+
+    if (!avi || !avi->ops_init || !avi->ops.write_at || avi->cur_addr <= avi->movi_data_addr)
+    {
+        return 0;
+    }
+
+    cur_block_end = avi_movi_guard_block_end(avi);
+    if (cur_block_end <= avi->movi_guard_block_end)
+    {
+        return 0;
+    }
+
+    if (avi_write_movi_snapshot_tail(avi))
+    {
+        return 1;
+    }
+
+    avi->movi_guard_block_end = cur_block_end;
+    return 0;
+}
+
+static uint32_t avi_write_movi_tail_junk(AVI_FILE *avi)
+{
+    uint32_t remain;
+
+    if (!avi || avi->cur_addr >= avi->movi_addr_end)
+    {
+        return 0;
+    }
+
+    remain = avi->movi_addr_end - avi->cur_addr;
+    if (remain == 0)
+    {
+        return 0;
+    }
+
+    if (remain < 8)
+    {
+        if (avi_movi_write_zero(avi, remain))
+        {
+            return 1;
+        }
+        avi->cur_addr += remain;
+        return 0;
+    }
+
+    return avi_write_movi_junk_chunk(avi, remain);
+}
+
+static uint32_t avi_write_idx_tail_junk(AVI_FILE *avi)
+{
+    uint32_t remain;
+
+    if (!avi || !avi->ops_init || !avi->ops.write_at || avi->idx1_write_addr >= avi->idx1_end_addr)
+    {
+        return 0;
+    }
+
+    if (avi_write_idx_syn(avi))
+    {
+        return 1;
+    }
+
+    if (avi->idx1_write_addr >= avi->idx1_end_addr)
+    {
+        return 0;
+    }
+
+    remain = avi->idx1_end_addr - avi->idx1_write_addr;
+    if (remain == 0)
+    {
+        return 0;
+    }
+
+    if (remain < 8)
+    {
+        uint8_t zero[8] = {0};
+        if (avi->ops.write_at(avi->ops.file, avi->idx1_write_addr, zero, remain))
+        {
+            return 1;
+        }
+        avi->idx1_write_addr = avi->idx1_end_addr;
+        return 0;
+    }
+
+    remain -= 8;
+    if (avi->ops.write_at(avi->ops.file, avi->idx1_write_addr, "JUNK", 4) ||
+        avi->ops.write_at(avi->ops.file, avi->idx1_write_addr + 4, &remain, 4))
+    {
+        return 1;
+    }
+
+    avi->idx1_write_addr = avi->idx1_end_addr;
+
+    return 0;
+}
+
+static uint32_t avi_write_idx_snapshot_tail(AVI_FILE *avi)
+{
+    uint32_t remain;
+    uint32_t junk_size;
+
+    if (!avi || !avi->ops_init || !avi->ops.write_at || avi->idx1_write_addr >= avi->idx1_end_addr)
+    {
+        return 0;
+    }
+
+    remain = avi->idx1_end_addr - avi->idx1_write_addr;
+    if (remain < 8)
+    {
+        return 1;
+    }
+
+    junk_size = remain - 8;
+    if (avi->ops.write_at(avi->ops.file, avi->idx1_write_addr, "JUNK", 4) ||
+        avi->ops.write_at(avi->ops.file, avi->idx1_write_addr + 4, &junk_size, 4))
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+static uint32_t avi_write_align_junk(AVI_FILE *avi, uint32_t start, uint32_t end)
+{
+    uint32_t remain;
+
+    if (!avi || !avi->ops_init || !avi->ops.write || !avi->ops.skip ||
+        !avi->ops.tell || end <= start)
+    {
+        return 0;
+    }
+
+    remain = end - start;
+    if (avi->ops.tell(avi->ops.file) != start)
+    {
+        return 1;
+    }
+
+    if (remain >= 8)
+    {
+        uint32_t size = remain - 8;
+        if (avi->ops.write(avi->ops.file, "JUNK", 4) ||
+            avi->ops.write(avi->ops.file, &size, 4) ||
+            avi->ops.skip(avi->ops.file, size))
+        {
+            return 1;
+        }
+    }
+    else
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+static uint32_t avi_write_header(AVI_FILE *avi)
+{
+    if (!avi || !avi->ops_init || !avi->ops.write || !avi->ops.tell)
+    {
+        return 1;
+    }
+
+    avi->riff_size_offset = avi->ops.tell(avi->ops.file) + 4;
+    if (avi->ops.write(avi->ops.file, avi->riff, 4) ||
+        avi->ops.write(avi->ops.file, &avi->riff_size, 4) ||
+        avi->ops.write(avi->ops.file, avi->type_avi, 4))
+    {
+        return 1;
+    }
+
+    if (avi->ops.write(avi->ops.file, avi->hlist, 4) ||
+        avi->ops.write(avi->ops.file, &avi->hlist_size, 4) ||
+        avi->ops.write(avi->ops.file, avi->type_hdrl, 4))
+    {
+        return 1;
+    }
+
+    avi->total_frames_offset = avi->ops.tell(avi->ops.file) + 8 + offsetof(AVI_HEADER, total_frames);
+    if (avi->ops.write(avi->ops.file, avi->avih, 4) ||
+        avi->ops.write(avi->ops.file, &avi->avih_size, 4) ||
+        avi->ops.write(avi->ops.file, &avi->avi_header, avi->avih_size))
+    {
+        return 1;
+    }
+
+    if (avi->audio_enable)
+    {
+        if (avi->ops.write(avi->ops.file, avi->slist1, 4) ||
+            avi->ops.write(avi->ops.file, &avi->slist1_size, 4) ||
+            avi->ops.write(avi->ops.file, avi->type_str1, 4))
+        {
+            return 1;
+        }
+
+        avi->audio_length_offset = avi->ops.tell(avi->ops.file) + 8 + offsetof(STREAM_HEADER, length);
+        if (avi->ops.write(avi->ops.file, avi->strhdr1, 4) ||
+            avi->ops.write(avi->ops.file, &avi->strhdr1_size, 4) ||
+            avi->ops.write(avi->ops.file, &avi->strhdr_audio, avi->strhdr1_size) ||
+            avi->ops.write(avi->ops.file, avi->strfmt1, 4) ||
+            avi->ops.write(avi->ops.file, &avi->strfmt1_size, 4) ||
+            avi->ops.write(avi->ops.file, &avi->strfmt_audio, avi->strfmt1_size))
+        {
+            return 1;
+        }
+    }
+
+    if (avi->ops.write(avi->ops.file, avi->slist2, 4) ||
+        avi->ops.write(avi->ops.file, &avi->slist2_size, 4) ||
+        avi->ops.write(avi->ops.file, avi->type_str2, 4))
+    {
+        return 1;
+    }
+
+    avi->video_length_offset = avi->ops.tell(avi->ops.file) + 8 + offsetof(STREAM_HEADER, length);
+    if (avi->ops.write(avi->ops.file, avi->strhdr2, 4) ||
+        avi->ops.write(avi->ops.file, &avi->strhdr2_size, 4) ||
+        avi->ops.write(avi->ops.file, &avi->strhdr_video, avi->strhdr2_size) ||
+        avi->ops.write(avi->ops.file, avi->strfmt2, 4) ||
+        avi->ops.write(avi->ops.file, &avi->strfmt2_size, 4) ||
+        avi->ops.write(avi->ops.file, &avi->strfmt_video, avi->strfmt2_size))
+    {
+        return 1;
+    }
+
+    avi->movi_size_offset = avi->ops.tell(avi->ops.file) + 4;
+    if (avi->ops.write(avi->ops.file, avi->mlist, 4) ||
+        avi->ops.write(avi->ops.file, &avi->mlist_size, 4) ||
+        avi->ops.write(avi->ops.file, avi->type_movi, 4))
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+void avimuxer_set_file(void *ctx, const file_ops_t *ops)
+{
+    AVI_FILE *avi = (AVI_FILE *) ctx;
+
+    if (!avi || !ops)
+    {
+        return;
+    }
+
+    os_memcpy(&avi->ops, ops, sizeof(avi->ops));
+    avi->ops_init = (avi->ops.file && avi->ops.write && avi->ops.skip &&
+                     avi->ops.tell && avi->ops.write_at && avi->ops.flush &&
+                     avi->ops.finish && avi->ops.tail) ? 1 : 0;
+}
+
+void *avimuxer_init_with_file(void *fp, const file_ops_t *ops, uint32_t max_size, int w, int h, int frate, int h265, int audio_enable)
 {
     int       samprate = 8000, channels = 1, sampbits = 16;
     AVI_FILE *avi = STREAM_ZALLOC(1 * sizeof(AVI_FILE));
@@ -277,54 +1011,78 @@ void *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int g
     }
     avi->extern_fp = 1;
     avi->fp        = (F_FILE *) fp;
+    avi->audio_enable = audio_enable ? 1 : 0;
     if (!avi->fp)
     {
         goto failed;
     }
 
+    if (ops)
+    {
+        avimuxer_set_file(avi, ops);
+    }
+    else
+    {
+        file_ops_t default_ops;
+        avi_default_ops_init(avi->fp, &default_ops);
+        avimuxer_set_file(avi, &default_ops);
+    }
+    if (!avi->ops_init)
+    {
+        goto failed;
+    }
+
     //预先分配空间
+    max_size = muxer_file_align_up(max_size);
+    if (max_size <= IDX_MAX_SIZE + MUXER_FILE_ALIGN_SIZE)
+    {
+        goto failed;
+    }
     pre_avi_seek(avi->fp, max_size);
+    avi->fast_seek_tbl = avi_fast_seek_create(avi->fp);
 
     //开始写入数据头
     avi_seek(avi->fp, 0, SEEK_SET);
-
 
     memcpy(avi->avih, "avih", 4);
     avi->avih_size                     = sizeof(AVI_HEADER);
     avi->avi_header.microsec_per_frame = 1000000 / frate;
     avi->avi_header.maxbytes_per_Sec   = w * h * 3;
     avi->avi_header.flags              = AVIF_ISINTERLEAVED | AVIF_HASINDEX;
-    avi->avi_header.number_streams     = 1;
+    avi->avi_header.number_streams     = avi->audio_enable ? 2 : 1;
     avi->avi_header.width              = w;
     avi->avi_header.height             = h;
     avi->avi_header.suggested_bufsize  = w * h * 3;
-#if 1
-    memcpy(avi->strhdr1, "strh", 4);
-    memcpy(avi->strhdr_audio.fcc_type, "auds", 4);
-    memcpy(avi->strhdr_audio.fcc_codec, "PCM ", 4);
-    avi->strhdr1_size                   = sizeof(STREAM_HEADER);
-    avi->strhdr_audio.scale             = 1;
-    avi->strhdr_audio.rate              = samprate;
-    avi->strhdr_audio.suggested_bufsize = samprate * channels * sampbits / 8;
-    avi->strhdr_audio.sample_size       = channels * sampbits / 8;
+    memcpy(avi->video_tag, avi->audio_enable ? "01dc" : "00dc", 4);
 
-    memcpy(avi->strfmt1, "strf", 4);
-    avi->strfmt1_size                 = sizeof(WAVE_FORMAT);
-    avi->strfmt_audio.format_tag      = 1;
-    avi->strfmt_audio.channels        = channels;
-    avi->strfmt_audio.sample_per_sec  = samprate;
-    avi->strfmt_audio.avgbyte_per_sec = samprate * channels * sampbits / 8;
-    avi->strfmt_audio.block_align     = channels * sampbits / 8;
-    avi->strfmt_audio.bits_per_sample = sampbits;
+    if (avi->audio_enable)
+    {
+        memcpy(avi->strhdr1, "strh", 4);
+        memcpy(avi->strhdr_audio.fcc_type, "auds", 4);
+        memcpy(avi->strhdr_audio.fcc_codec, "PCM ", 4);
+        avi->strhdr1_size                   = sizeof(STREAM_HEADER);
+        avi->strhdr_audio.scale             = 1;
+        avi->strhdr_audio.rate              = samprate;
+        avi->strhdr_audio.suggested_bufsize = samprate * channels * sampbits / 8;
+        avi->strhdr_audio.sample_size       = channels * sampbits / 8;
 
-    memcpy(avi->slist1, "LIST", 4);
-    memcpy(avi->type_str1, "strl", 4);
-    avi->slist1_size = offsetof(AVI_FILE, slist2) - offsetof(AVI_FILE, type_str1);
-#endif
+        memcpy(avi->strfmt1, "strf", 4);
+        avi->strfmt1_size                 = sizeof(WAVE_FORMAT);
+        avi->strfmt_audio.format_tag      = 1;
+        avi->strfmt_audio.channels        = channels;
+        avi->strfmt_audio.sample_per_sec  = samprate;
+        avi->strfmt_audio.avgbyte_per_sec = samprate * channels * sampbits / 8;
+        avi->strfmt_audio.block_align     = channels * sampbits / 8;
+        avi->strfmt_audio.bits_per_sample = sampbits;
+
+        memcpy(avi->slist1, "LIST", 4);
+        memcpy(avi->type_str1, "strl", 4);
+        avi->slist1_size = 4 + 8 + avi->strhdr1_size + 8 + avi->strfmt1_size;
+    }
 
     memcpy(avi->strhdr2, "strh", 4);
     memcpy(avi->strhdr_video.fcc_type, "vids", 4);
-    memcpy(avi->strhdr_video.fcc_codec, h265 ? "MJPG" : "MJPG", 4);
+    memcpy(avi->strhdr_video.fcc_codec, h265 ? "HEV1" : "MJPG", 4);
     avi->strhdr2_size                   = sizeof(STREAM_HEADER);
     avi->strhdr_video.scale             = 1;
     avi->strhdr_video.rate              = frate;
@@ -340,7 +1098,7 @@ void *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int g
     avi->strfmt_video.height      = h;
     avi->strfmt_video.planes      = 1;
     avi->strfmt_video.bitcount    = 24;
-    avi->strfmt_video.compression = h265 ? (('H' << 0) | ('E' << 8) | ('V' << 16) | ('1' << 24)) : (('M' << 0) | ('J' << 8) | ('P' << 16) | ('G' << 24));
+    avi->strfmt_video.compression = h265 ? AVI_FOURCC('H', 'E', 'V', '1') : AVI_FOURCC('M', 'J', 'P', 'G');
     avi->strfmt_video.image_size  = w * h * 3;
 
     memcpy(avi->slist2, "LIST", 4);
@@ -353,124 +1111,140 @@ void *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int g
     memcpy(avi->type_hdrl, "hdrl", 4);
     memcpy(avi->mlist, "LIST", 4);
     memcpy(avi->type_movi, "movi", 4);
-    avi->hlist_size = sizeof(AVI_FILE) - 12 - offsetof(AVI_FILE, type_hdrl);
+    avi->hlist_size = 4 + 8 + avi->avih_size + 8 + avi->slist2_size;
+    if (avi->audio_enable)
+    {
+        avi->hlist_size += 8 + avi->slist1_size;
+    }
 
-    avi_write(&avi->riff, sizeof(AVI_FILE) - offsetof(AVI_FILE, riff), 1, avi->fp);
+    if (avi_write_header(avi))
+    {
+        goto failed;
+    }
 
-    // 预分配文件空间
-    uint32_t movi_addr = avi_tell(avi->fp);
+    uint32_t movi_addr = avi->ops.tell(avi->ops.file);
     avi->movi_addr     = movi_addr;
+    avi->movi_data_addr = muxer_file_align_up(movi_addr);
+    if (avi->movi_data_addr != movi_addr && avi->movi_data_addr - movi_addr < 8)
+    {
+        avi->movi_data_addr += MUXER_FILE_ALIGN_SIZE;
+    }
 
-    avi->max_size = max_size - movi_addr - 8 - IDX_MAX_SIZE;
+    avi->idx1_addr      = muxer_file_align_up(max_size - IDX_MAX_SIZE);
+    if (avi->idx1_addr >= max_size)
+    {
+        goto failed;
+    }
+    avi->idx1_end_addr  = max_size;
+    avi->idx1_size_addr = avi->idx1_addr + 4;
+    avi->idx1_data_addr = avi->idx1_addr + 8;
+    avi->movi_data_size = avi->idx1_addr - avi->movi_addr;
+    if (avi_write_align_junk(avi, avi->movi_addr, avi->movi_data_addr))
+    {
+        goto failed;
+    }
+    if (avi->ops.skip(avi->ops.file, avi->movi_data_addr - avi->ops.tell(avi->ops.file)))
+    {
+        goto failed;
+    }
+    {
+        uint32_t idx1size = 0;
+        if (avi->ops.write_at(avi->ops.file, avi->idx1_addr, "idx1", 4) ||
+            avi->ops.write_at(avi->ops.file, avi->idx1_addr + 4, &idx1size, 4))
+        {
+            goto failed;
+        }
+    }
 
-    avi->movi_addr_end   = movi_addr + avi->max_size;
-    avi->frame_base_addr = avi->movi_addr_end;
-    avi->cur_addr = movi_addr;
+    avi->movi_addr_end   = avi->idx1_addr;
+    avi->idx1_write_addr = avi->idx1_data_addr;
+    avi->cur_addr = avi->movi_data_addr;
+    avi->movi_guard_block_end = muxer_file_align_up(avi->cur_addr);
+    avi->syn_time = 0;
     return avi;
 
 failed:
     if (avi)
     {
+        avi_fast_seek_destroy(avi->fp, &avi->fast_seek_tbl);
         STREAM_FREE(avi);
     }
     return NULL;
 }
 
-static void avimuxer_fix_data2(AVI_FILE *avi, int writeidx)
+void *avimuxer_init(void *fp, uint32_t max_size, int w, int h, int frate, int h265, int audio_enable)
 {
-    // 只有缓冲区的时候才需要回写
-    if (avi->cache_idx)
+    return avimuxer_init_with_file(fp, NULL, max_size, w, h, frate, h265, audio_enable);
+}
+
+static void avimuxer_fix_data_aligned(AVI_FILE *avi, int final_flush)
+{
+    uint32_t data;
+    uint32_t movisize;
+    uint32_t riffsize;
+
+    if (!avi || !avi->ops_init || !avi->ops.write_at || !avi->ops.flush)
     {
-        uint32_t data, movisize;
-        avi->avi_header.total_frames = avi->strhdr_video.length;
-
-        data = avi->avi_header.total_frames;
-        avi_seek(avi->fp, offsetof(AVI_FILE, avi_header.total_frames) - offsetof(AVI_FILE, riff), SEEK_SET);
-        avi_write(&data, 4, 1, avi->fp);
-
-#if 1
-        data = avi->strhdr_audio.length;
-        avi_seek(avi->fp, offsetof(AVI_FILE, strhdr_audio.length) - offsetof(AVI_FILE, riff), SEEK_SET);
-        avi_write(&data, 4, 1, avi->fp);
-#endif
-
-        data = avi->strhdr_video.length;
-        avi_seek(avi->fp, offsetof(AVI_FILE, strhdr_video.length) - offsetof(AVI_FILE, riff), SEEK_SET);
-        avi_write(&data, 4, 1, avi->fp);
-
-        movisize = avi->max_size + 4;
-        avi_seek(avi->fp, offsetof(AVI_FILE, mlist_size) - offsetof(AVI_FILE, riff), SEEK_SET);
-        avi_write(&movisize, 4, 1, avi->fp);
-
-        data = avi->max_size + sizeof(AVI_FILE) - offsetof(AVI_FILE, riff) + avi->total_idx * 16;
-        avi_seek(avi->fp, offsetof(AVI_FILE, riff_size) - offsetof(AVI_FILE, riff), SEEK_SET);
-        avi_write(&data, 4, 1, avi->fp);
-
-        if (writeidx)
-        {
-
-            // 如果相等,需要写入idx1的头
-            avi_seek(avi->fp, avi->frame_base_addr, SEEK_SET);
-            if (avi->movi_addr_end == avi_tell(avi->fp))
-            {
-                uint32_t idx1size;
-                avi_write("idx1", 4, 1, avi->fp);
-                idx1size = avi->total_idx * sizeof(uint32_t) * 4;
-                avi_write(&idx1size, 4, 1, avi->fp);
-                avi->curpos = 4;
-            }
-            else
-            {
-                uint32_t idx1size;
-                uint32_t seek_tmp = avi_tell(avi->fp);
-                idx1size = avi->total_idx * sizeof(uint32_t) * 4;
-                avi_seek(avi->fp, avi->movi_addr_end+4, SEEK_SET);
-                avi_write(&idx1size, 4, 1, avi->fp);
-                avi_seek(avi->fp, seek_tmp, SEEK_SET);
-            }
-            while (avi->now_idx < avi->cache_idx)
-            {
-                avi_write_idx_tmp((avi->frame_list[avi->now_idx] & AVI_VIDEO_FRAME) ? "01dc" : "00wb", 4, 1, avi);
-                data = (avi->frame_list[avi->now_idx] & AVI_KEY_FRAME) ? AVIIF_KEYFRAME : 0;
-                avi_write_idx_tmp(&data, 4, 1, avi);
-                data = avi->curpos;
-                avi_write_idx_tmp(&data, 4, 1, avi);
-                data = avi->frame_list ? avi->frame_list[avi->now_idx] & 0x0fffffff : 0;
-                avi_write_idx_tmp(&data, 4, 1, avi);
-                // 如果是补帧,则不需要增加偏移?
-                if (avi->frame_list[avi->now_idx] & AVI_INSERT_FRAME)
-                {
-                }
-                else
-                {
-                    avi->curpos += data + 8;
-                }
-
-                avi->now_idx++;
-            }
-
-            // 一次性写入索引
-            avi_write_idx_syn(avi);
-            // 记录当前的位置
-            avi->frame_base_addr = avi_tell(avi->fp);
-
-            //如果有空闲,需要添加junk
-            if(osal_fsize(avi->fp) > avi->frame_base_addr+8)
-            {
-                uint32_t remain = osal_fsize(avi->fp) - avi->frame_base_addr - 8;
-                avi_write("JUNK", 4, 1, avi->fp);
-                avi_write(&remain, 4, 1, avi->fp);
-            }
-            else if(osal_fsize(avi->fp) > avi->frame_base_addr)
-            {
-                avi_write("JUNK", 4, 1, avi->fp);
-            }
-
-            avi->now_idx   = 0;
-            avi->cache_idx = 0;
-        }
-        avi_file_syn(avi->fp);
+        return;
     }
+
+    if (final_flush)
+    {
+        if (avi_write_movi_tail_junk(avi))
+        {
+            return;
+        }
+        if (avi->ops.finish(avi->ops.file))
+        {
+            return;
+        }
+        if (avi_write_idx_tail_junk(avi))
+        {
+            return;
+        }
+    }
+    else
+    {
+        // if (avi_write_movi_snapshot_tail(avi))
+        // {
+        //     return;
+        // }
+        avi->movi_guard_block_end = avi_movi_guard_block_end(avi);
+        if (avi_write_idx_syn(avi))
+        {
+            return;
+        }
+        if (avi_write_idx_snapshot_tail(avi))
+        {
+            return;
+        }
+    }
+
+    avi->avi_header.total_frames = avi->strhdr_video.length;
+
+    data = avi->avi_header.total_frames;
+    avi->ops.write_at(avi->ops.file, avi->total_frames_offset, &data, 4);
+
+    if (avi->audio_enable)
+    {
+        data = avi->strhdr_audio.length;
+        avi->ops.write_at(avi->ops.file, avi->audio_length_offset, &data, 4);
+    }
+
+    data = avi->strhdr_video.length;
+    avi->ops.write_at(avi->ops.file, avi->video_length_offset, &data, 4);
+
+    movisize = avi->movi_data_size + 4;
+    avi->ops.write_at(avi->ops.file, avi->movi_size_offset, &movisize, 4);
+
+    riffsize = final_flush ? (avi->idx1_end_addr - 8) :
+                             (avi->idx1_data_addr + avi->idx1_data_size - 8);
+    avi->ops.write_at(avi->ops.file, avi->riff_size_offset, &riffsize, 4);
+
+    avi->ops.write_at(avi->ops.file, avi->idx1_size_addr, &avi->idx1_data_size, 4);
+
+    avi->ops.flush(avi->ops.file);
+    avi->syn_time = avimuxer_written_duration_ms(avi);
 }
 
 void avimuxer_sync(void *ctx)
@@ -478,12 +1252,37 @@ void avimuxer_sync(void *ctx)
     AVI_FILE *avi = (AVI_FILE *) ctx;
     if (avi && avi->fp)
     {
-        avi_file_syn(avi->fp);
-        avimuxer_fix_data2(avi, 1);
+        avimuxer_fix_data_aligned(avi, 0);
+        avi->syn_time = avimuxer_written_duration_ms(avi);
     }
 }
 
-void avimuxer_exit2(void *ctx)
+void avimuxer_sync_time(void *ctx, uint32_t time_ms)
+{
+    AVI_FILE *avi = (AVI_FILE *) ctx;
+    uint32_t  written_duration;
+
+    if (!avi || !avi->fp)
+    {
+        return;
+    }
+
+    if (time_ms == 0)
+    {
+        avimuxer_sync(ctx);
+        return;
+    }
+
+    written_duration = avimuxer_written_duration_ms(avi);
+    if ((avi->syn_time == 0 && written_duration > 0) ||
+        written_duration < avi->syn_time ||
+        written_duration - avi->syn_time >= time_ms)
+    {
+        avimuxer_sync(ctx);
+    }
+}
+
+void avimuxer_exit(void *ctx)
 {
     AVI_FILE *avi = (AVI_FILE *) ctx;
     if (avi)
@@ -491,7 +1290,8 @@ void avimuxer_exit2(void *ctx)
         os_printf("avi->extern_fp:%d\n", avi->extern_fp);
         if (avi->fp)
         {
-            avimuxer_fix_data2(avi, 1);
+            avimuxer_fix_data_aligned(avi, 1);
+            avi_fast_seek_destroy(avi->fp, &avi->fast_seek_tbl);
             if (!avi->extern_fp)
             {
                 avi_close(avi->fp);
@@ -501,122 +1301,104 @@ void avimuxer_exit2(void *ctx)
         {
             STREAM_FREE(avi->framesize_lst);
         }
-
         STREAM_FREE(avi);
     }
 }
 
-uint32_t avimuxer_video2(void *ctx, unsigned char *buf, int len, int key, unsigned pts, uint8_t insert)
+uint32_t avimuxer_video(void *ctx, unsigned char *buf, int len, int key, uint8_t insert)
 {
     uint32_t ret = AVIMUXER_OK;
     AVI_FILE *avi = (AVI_FILE *) ctx;
     if (avi == NULL)
     {
         ret =  AVIMUXER_ERR;
-        goto avimuxer_video2_end;
+        goto avimuxer_video_end;
     }
     if (avi->fp)
     {
-        int alignlen = (len & 1) ? len + 1 : len;
-        // 补帧,不需要写入数据
+        uint32_t flags          = key ? AVIIF_KEYFRAME : 0;
+        uint32_t chunk_offset   = 0;
+        uint32_t chunk_size     = (len & 1) ? len + 1 : len;
+        uint8_t video_recorded = 0;
+
         if (!insert)
         {
-            avi_seek(avi->fp, avi->cur_addr, SEEK_SET);
-            if (avi_tell(avi->fp) - avi->movi_addr + alignlen > avi->movi_addr_end)
+            ret = avi_write_movi_chunk(avi, avi->video_tag, flags, buf, len, &chunk_offset);
+            if (ret != AVIMUXER_OK)
+            {
+                goto avimuxer_video_end;
+            }
+
+            // if (avi_write_movi_guard(avi))
+            // {
+            //     ret = AVIMUXER_ERR;
+            //     goto avimuxer_video_end;
+            // }
+
+            avi->last_video_offset = chunk_offset;
+            avi->last_video_size   = chunk_size;
+            avi->last_video_flags  = flags;
+            video_recorded         = 1;
+        }
+        else if (avi->last_video_size)
+        {
+            if (!avi_idx_entry_fits(avi))
             {
                 ret = AVIMUXER_FULL;
-                goto avimuxer_video2_end;
+                goto avimuxer_video_end;
             }
 
-            avi_write("01dc", 4, 1, avi->fp);
-            avi_write(&alignlen, 4, 1, avi->fp);
-            avi_write(buf, len, 1, avi->fp);
-            if (len & 1)
+            if (avi_idx_write_entry(avi, avi->video_tag, avi->last_video_flags, avi->last_video_offset, avi->last_video_size))
             {
-                avi_write((void *) &avi_zero, 1, 1, avi->fp);
+                ret = AVIMUXER_ERR;
+                goto avimuxer_video_end;
             }
-            avi->cur_addr = avi_tell(avi->fp);
-            if (avi->movi_addr_end - avi_tell(avi->fp) + 4 > 8)
-            {
-                // 补junk的数据
-                avi_write("JUNK", 4, 1, avi->fp);
-                // 补junk长度
-                uint32_t junklen = avi->movi_addr_end - avi_tell(avi->fp) - 8 + 4;
-                avi_write(&junklen, 4, 1, avi->fp);
-            }
-        }
-        if (avi->cache_idx < sizeof(avi->frame_list) / 4)
-        {
-            if (insert)
-            {
-                avi->frame_list[avi->cache_idx++] = alignlen | AVI_VIDEO_FRAME | AVI_INSERT_FRAME | (key << 30);
-            }
-            else
-            {
-                avi->frame_list[avi->cache_idx++] = alignlen | AVI_VIDEO_FRAME | (key << 30);
-            }
-
             avi->total_idx++;
+            video_recorded = 1;
         }
-        avi->strhdr_video.length++;
-    }
 
-    // 同步一次
-    if (avi->cache_idx == sizeof(avi->frame_list) / 4)
-    {
-        avimuxer_fix_data2(avi, 1);
-        avi->cache_idx = 0;
-        avi->cache_idx = 0;
+        if (video_recorded)
+        {
+            avi->strhdr_video.length++;
+        }
     }
-avimuxer_video2_end:
+avimuxer_video_end:
     return ret;
 }
 
-uint32_t avimuxer_audio2(void *ctx, unsigned char *buf, int len, int key, unsigned pts)
+uint32_t avimuxer_audio(void *ctx, unsigned char *buf, int len)
 {
     uint32_t ret = AVIMUXER_OK;
     AVI_FILE *avi = (AVI_FILE *) ctx;
-    if (avi && avi->fp)
+
+    if (!avi || !avi->fp)
     {
-        int alignlen = (len & 1) ? len + 1 : len;
-        avi_seek(avi->fp, avi->cur_addr, SEEK_SET);
-        if (avi_tell(avi->fp) - avi->movi_addr + alignlen > avi->movi_addr_end)
-        {
-            ret = AVIMUXER_FULL;
-            goto avimuxer_audio2_end;
-        }
-        avi_write("00wb", 4, 1, avi->fp);
-        avi_write(&alignlen, 4, 1, avi->fp);
-        avi_write(buf, len, 1, avi->fp);
-        if (len & 1)
-        {
-            avi_write((void *) &avi_zero, 1, 1, avi->fp);
-        }
-
-        avi->cur_addr = avi_tell(avi->fp);
-        if (avi->movi_addr_end - avi_tell(avi->fp) + 4 > 8)
-        {
-            // 补junk的数据
-            avi_write("JUNK", 4, 1, avi->fp);
-            // 补junk长度
-            uint32_t junklen = avi->movi_addr_end - avi_tell(avi->fp) - 8 + 4;
-            avi_write(&junklen, 4, 1, avi->fp);
-        }
-
-        if (avi->cache_idx < sizeof(avi->frame_list) / 4)
-        {
-            avi->frame_list[avi->cache_idx++] = alignlen | AVI_AUDIO_FRAME;
-            avi->total_idx++;
-        }
-
-        avi->strhdr_audio.length += (len >> 1);
+        return AVIMUXER_ERR;
     }
-    // 同步一次
-    if (avi->cache_idx == sizeof(avi->frame_list) / 4)
+
+    if (!avi->audio_enable)
     {
-        avimuxer_fix_data2(avi, 1);
-        avi->cache_idx = 0;
+        return AVIMUXER_OK;
     }
-avimuxer_audio2_end:
-    return 0;
+
+    if (!buf || len <= 0)
+    {
+        return AVIMUXER_ERR;
+    }
+
+    ret = avi_write_movi_chunk(avi, "00wb", 0, buf, len, NULL);
+    if (ret != AVIMUXER_OK)
+    {
+        goto avimuxer_audio_end;
+    }
+
+    // if (avi_write_movi_guard(avi))
+    // {
+    //     ret = AVIMUXER_ERR;
+    //     goto avimuxer_audio_end;
+    // }
+
+    avi->strhdr_audio.length += (len >> 1);
+avimuxer_audio_end:
+    return ret;
 }

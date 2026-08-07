@@ -31,13 +31,13 @@ fi
 cp parameter.bincfg parameter.cfg
 #[ ! -f loader.bin ] && cp ../../../../sdk/chip/txw81x/loader.bin loader.bin
 
-crc.exe crc_check_corebin.ini
+./crc.exe crc_check_corebin.ini
 if [ $? -ne 0 ]; then
 	echo "!!!txw82xcore code is distroyed!"
 	exit $?
 else
-	BinScript.exe BinScript.BinScript
-	makecode.exe
+	./BinScript.exe BinScript.BinScript
+	./makecode.exe
 	#crc.exe crc.ini
 	#BinScript.exe BinScript_Bin2Hex.BinScript
 fi

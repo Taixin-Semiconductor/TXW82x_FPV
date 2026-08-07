@@ -306,7 +306,7 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 							memset(scaler2buf,0x55,0x20+scale2_p1_w+20*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+11*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+11*SCALE2_SRAMBUF_WLEN*2+128+12);
 						}else{
 							scaler2buf = STREAM_LIBC_MALLOC(0x20+scale2_p1_w+40*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+12);
-							memset(scaler2buf,0x55,0x20+scale2_p1_w+40*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+12);
+							memset(scaler2buf,0x55,0x20+scale2_p1_w+42*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+12);
 						}
 						
 						if(scaler2buf == NULL){
@@ -333,7 +333,13 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 					scale_set_srambuf_wlen(scale2->scale_dev,SCALE2_SRAMBUF_WLEN);
 					scale_request_irq(scale2->scale_dev,FRAME_END,(scale_irq_hdl )&scale2_stream_done,(uint32)scale2);	
 					scale_request_irq(scale2->scale_dev,INBUF_OV,(scale_irq_hdl )&scale2_stream_ov,(uint32)scale2);
-						
+
+					data = (uint8_t *)STREAM_MALLOC(scale2->ow * scale2->oh * 3 / 2);
+					if(data == NULL){
+						_os_printf("no scaler room\r\n");
+						return 0;
+					}
+					sys_dcache_invalid_range((uint32_t*)data, scale2->ow * scale2->oh * 3 / 2);						
 					
                     // 这里分配一下scale2的空间,通过标准接口去分配吧,理论这里一定能获取到,这里就不判断异常情况了
                     struct framebuff *fb;
@@ -343,17 +349,13 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 
 				    if (!fb)
 				    {
+				    	STREAM_FREE(data);
 				        //os_printf("N scale2->now_fb:%X\r\n",scale2->now_fb);
 				        // 找不到新的空间,则返回,使用旧空间
 				        return 0;
 				    }
                     fb->srcID = decfrom;				
-					data = (uint8_t *)STREAM_MALLOC(scale2->ow * scale2->oh * 3 / 2);
-					if(data == NULL){
-						_os_printf("no scaler room\r\n");
-						return 0;
-					}
-					sys_dcache_invalid_range((uint32_t*)data, scale2->ow * scale2->oh * 3 / 2);
+
 					fb->data = data;
 					fb->len  = (scale2->ow * scale2->oh * 3) / 2;
                     p_buf = fb->data;

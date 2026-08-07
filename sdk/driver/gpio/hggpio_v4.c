@@ -715,6 +715,25 @@ int32 hggpio_v4_set_ieen(struct gpio_device *gpio, uint32 pin, int32 val)
     return RET_OK;
 }
 
+int32 hggpio_v4_set_only_mode_bit(struct gpio_device *gpio, uint32 pin, int32 mode)
+{
+    struct hggpio_v4 *dev   = (struct hggpio_v4 *)gpio;
+    struct hggpio_v4_hw *hw = (struct hggpio_v4_hw *)dev->hw;
+    uint32_t mode_pin_pos   = 0;
+
+    if (pin < dev->pin_num[0] || pin > dev->pin_num[1]) {
+        return -EINVAL;
+    }
+    pin = hggpio_v4_pin_num(dev, pin);
+
+    mode_pin_pos = pin << 1;
+
+    hw->MODE = (hw->MODE &~ (0x3U << mode_pin_pos)) | ((mode&0x3U) << mode_pin_pos);
+
+    return RET_OK;
+}
+
+
 #if HGGPIO_V4_LOCK_EN
 static int32 hggpio_v4_lock(struct gpio_device *gpio, uint32 pin)
 {
@@ -1083,6 +1102,10 @@ static int32 hggpio_v4_ioctl(struct gpio_device *gpio, uint32 pin, uint32 cmd, u
             case GPIO_CMD_SET_IEEN:
                 ret_val = hggpio_v4_set_ieen(gpio, pin, param1);
 				break;
+
+            case GPIO_CMD_SET_ONLY_MODE_BIT:
+                ret_val = hggpio_v4_set_only_mode_bit(gpio, pin, param1);
+				break;                
 #ifdef TXW82X
             case GPIO_GET_OUTMAP:
                ret_val = hggpio_v4_get_omap(gpio, pin);

@@ -46,6 +46,7 @@
 #include "audio_media_ctrl/audio_code_ctrl.h"
 #include "loop_record_moudle/loop_record_moudle.h"
 #include "sysevt_usb/sysevt_usb.h"
+#include "takephoto_module/takephoto.h"
 
 
 #ifndef RECORDER_MODE
@@ -163,7 +164,8 @@ static const struct cam_cfg g_cam_configs_f[] = {
             .create_file = rec_create_file,
             .loop_free = rec_loop_free,
             .lock_file = rec_lock_file,
-            .frame_time = 0
+            .frame_time = 0,
+            .need_lock = 0
         },
         .create_func = mp4_encode_msi2_init,
         .get_status = get_mipi_video_status
@@ -194,7 +196,8 @@ static const struct cam_cfg g_cam_configs_f[] = {
             .create_file = rec_create_file,
             .loop_free = rec_loop_free,
             .lock_file = rec_lock_file,
-            .frame_time = 0
+            .frame_time = 0,
+            .need_lock = 0
         },
         .create_func = mp4_encode_msi2_init,
         .get_status = get_mipi_video_status
@@ -225,7 +228,8 @@ static const struct cam_cfg g_cam_configs_f[] = {
             .create_file = rec_create_file,
             .loop_free = rec_loop_free,
             .lock_file = rec_lock_file,
-            .frame_time = 0
+            .frame_time = 0,
+            .need_lock = 0
         },
         .create_func = mp4_encode_msi2_init,
         .get_status = get_mipi2_video_status
@@ -236,7 +240,7 @@ static const struct cam_cfg g_cam_configs_f[] = {
         .src_msi = NULL,
         .src_msi_name = ROUTE_USB,
         .aac_msi = NULL,
-        .srcID = 0,
+        .srcID = FRAMEBUFF_SOURCE_USB,
         .filter_type = (uint8_t) ~0,
         .mode = 0,
         .mask = CAM_MASK_BACK,
@@ -256,7 +260,8 @@ static const struct cam_cfg g_cam_configs_f[] = {
             .create_file = rec_create_file,
             .loop_free = rec_loop_free,
             .lock_file = rec_lock_file,
-            .frame_time = 0
+            .frame_time = 0,
+            .need_lock = 0
         },
         .create_func = avi_encode_msi2_init,
         .get_status = get_usb_video_status
@@ -564,16 +569,18 @@ static const struct items_config items_cfg_f[] = {
         // "NTSC", "PAL"),                                                                               // TV 模式
     // ITEMS_CONFIG_INIT("interval_shot",               0,      0,      ITEM_DISABLE, set_interval_shot,                     
         // "2s", "5s"),                                                                                  // 间隔拍照
-    ITEMS_CONFIG_INIT("switchcam",                   0,      0,     ITEM_DISABLE, set_switchcam,                         
+    ITEMS_CONFIG_INIT("switchcam",                   0,      0,     ITEM_DISABLE, set_switchcam,                            
         NULL),                                                                                        // 切换摄像头，记录状态，不使能
-    ITEMS_CONFIG_INIT("timezone",                    0,      0,     ITEM_DISABLE,          NULL,                         
+    ITEMS_CONFIG_INIT("timezone",                    0,      0,     ITEM_DISABLE,          NULL,                            
         NULL),                                                                                        // 时区，记录状态，不使能
-    ITEMS_CONFIG_INIT("saveflag",                    0,      0,     ITEM_DISABLE,          NULL,                         
+    ITEMS_CONFIG_INIT("saveflag",                    0,      0,     ITEM_DISABLE,          NULL,                            
         NULL),                                                                                        // 保存状态标志位，记录状态，不使能
-    ITEMS_CONFIG_INIT("lockvideo",                   0,      0,     ITEM_DISABLE,          NULL,                         
+    ITEMS_CONFIG_INIT("lockvideo",                   0,      0,     ITEM_DISABLE,          NULL,                            
         NULL),                                                                                        // 锁存，记录状态，不使能
-    ITEMS_CONFIG_INIT("cameranum",                   0,      0,     ITEM_DISABLE,          NULL,                         
+    ITEMS_CONFIG_INIT("cameranum",                   0,      0,     ITEM_DISABLE,          NULL,                            
         NULL),                                                                                        // 镜头数量，记录状态，不使能
+    ITEMS_CONFIG_INIT("sdstatus",                    0,      0,     ITEM_DISABLE,          NULL,                            
+        NULL),                                                                                        // SD卡状态，记录状态，不使能
 };
 
 int get_items_counts(int num) {
@@ -1047,7 +1054,17 @@ void open_rec(void)
 #endif
     int rec_split_duration = items_value_process("rec_split_duration", 0, GET_ITEMS_VALUE);
     int mic_status = items_value_process("mic", 0, GET_ITEMS_VALUE);
-    
+
+    /* 多路录卡时判断是否需要加写卡锁 */
+    uint8_t rec_num = 0;
+    for(int i = 0; i < CAMERAS_CONFIG_COUNT; i++)
+    {
+        if(g_cam_configs[i].enable)
+        {
+            rec_num++;
+        }
+    }
+
     for(int i = 0; i < CAMERAS_CONFIG_COUNT; i++)
     {
         if((g_cam_configs[i].mask & CAM_MASK_ENABLE) && g_cam_configs[i].enable && !g_cam_configs[i].msi)
@@ -1057,10 +1074,17 @@ void open_rec(void)
                 g_cam_configs[i].src_msi = msi_find(g_cam_configs[i].src_msi_name, 1);
                 if(g_cam_configs[i].src_msi)
                 {
+					if(rec_num > 1)
+					{
+						g_cam_configs[i].file_process.need_lock = 1;
+					}
+					else
+					{
+						g_cam_configs[i].file_process.need_lock = 0;
+					}
                     _os_printf("open src msi: %s success\r\n", g_cam_configs[i].src_msi_name);
                     g_cam_configs[i].msi = g_cam_configs[i].create_func(g_cam_configs[i].msi_name, g_cam_configs[i].srcID, 
-                                                                g_cam_configs[i].filter_type, 
-                                                                rec_split_duration, mic_status, 
+                                                                g_cam_configs[i].filter_type, rec_split_duration, mic_status, 
                                                                 &g_cam_configs[i].file_process, g_cam_configs[i].mode);
                     if(g_cam_configs[i].msi)
                     {
@@ -1095,18 +1119,30 @@ void open_rec(void)
 void close_rec(void)
 {
     os_printf("%s\n", __FUNCTION__);
-    
+
+    for(int i = 0; i < CAMERAS_CONFIG_COUNT; i++)
+    {
+        if(g_cam_configs[i].msi)
+        {
+            g_cam_configs[i].msi->enable = 0;
+            msi_do_cmd(g_cam_configs[i].msi, MSI_CMD_PRE_DESTROY, 0, 0);
+            if(g_cam_configs[i].src_msi)
+            {
+                msi_del_output(g_cam_configs[i].src_msi, NULL, g_cam_configs[i].msi->name);
+            }
+        }
+    }
+
     close_audio();
 
     for(int i = 0; i < CAMERAS_CONFIG_COUNT; i++)
     {
         if(g_cam_configs[i].msi)
         {
+            msi_destroy(g_cam_configs[i].msi);
+            g_cam_configs[i].msi = NULL;
             if(g_cam_configs[i].src_msi)
             {
-                msi_del_output(g_cam_configs[i].src_msi, NULL, g_cam_configs[i].msi->name);
-                msi_destroy(g_cam_configs[i].msi);
-                g_cam_configs[i].msi = NULL;
                 msi_put(g_cam_configs[i].src_msi);
                 g_cam_configs[i].src_msi = NULL;
             }
@@ -1853,7 +1889,14 @@ static void set_mic(struct items_config *item, uint8_t value, struct httpClient 
 	else if(value == 1)
 	{
 		// 打开录像声音
-		_os_printf("mic open\r\n");
+        #ifdef AUDIO_EN
+        _os_printf("mic open\r\n");
+        #else
+        _os_printf("audio unable!!!\r\n");
+        item->value = 0;
+        closeRes(httpClient);
+        return;
+        #endif
     }
 	else
 	{
@@ -4068,7 +4111,7 @@ static void http_reponse_sdformat(struct httpClient *httpClient)
     uint8_t *work = STREAM_LIBC_MALLOC(4096);
     ASSERT(work);
     fatfs_unregister();
-    res = f_mkfs("0:", FM_ANY, 0, work, 4096);
+    res = f_mkfs("0:", NULL, work, 4096);
     STREAM_LIBC_FREE(work);
     if (res)
     {
@@ -4393,22 +4436,9 @@ void takephoto_over_dpi_func(uint8_t takephoto_num, uint16_t w, uint16_t h, cons
     if(over_dpi_jpg_msi)
     {
         msi_do_cmd(over_dpi_jpg_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t)path);
+        msi_put(over_dpi_jpg_msi);
     }
-
-    struct msi *over_dpi_recode_msi = msi_find(R_SCALE1_JPG_RECODE, 1);
-    uint32_t    dpi_w_h             = w << 16 | h;
-    if (over_dpi_recode_msi)
-    {
-        msi_do_cmd(over_dpi_recode_msi, MSI_CMD_SCALE1, MSI_SCALE1_RESET_DPI, dpi_w_h);
-        msi_put(over_dpi_recode_msi);
-    }
-
-    struct msi *over_dpi_msi = msi_find(S_SCALE3_OVER_DPI, 1);
-    if (over_dpi_msi)
-    {
-        msi_do_cmd(over_dpi_msi, MSI_CMD_TAKEPHOTO_SCALE3, MSI_TAKEPHOTO_SCALE3_KICK, takephoto_num);
-        msi_put(over_dpi_msi);
-    }
+    common_takephoto_over_api(w,h,320,180,takephoto_num);
 }
 
 //这里的w和h是没有用的,一位内是原来分辨率拍照
@@ -4417,8 +4447,7 @@ void takephoto_normal_func(uint8_t takephoto_num, uint16_t w, uint16_t h, const 
     struct msi *jpg_thumb_msi = msi_find(R_JPG_THUMB, 1); // 需要预先创建,否则不会真正拍照
     if (jpg_thumb_msi)
     {
-        msi_do_cmd(jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t)path);
-        msi_do_cmd(jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO, takephoto_num);
+        common_takephoto_noraml_api_with_path(jpg_thumb_msi,takephoto_num,path);
         msi_put(jpg_thumb_msi);
     }
 }
@@ -4544,34 +4573,48 @@ static uint32_t json_return_sdmsg(cJSON **root2, char **post_content)
     *root2 = cJSON_CreateObject();
     uint32_t totalsize = 0, freesize = 0;
 	int sd_status = 0;
+    uint8_t real_status = 0; // 0：SD 卡正常 1：SD 卡异常或未格式化 2：SD 卡未插入 4: SD 卡存储已满
 #if FS_EN
     sd_status = get_fat_isready() ? 0 : 2;  // 0: 正常 2: 未插入
 #endif
     if(sd_status == 0) {
+        uint8_t try_counts = 0;
+get_again:
         res = osal_fatfsfree("0:", &totalsize, &freesize);
-        if (res) {
-            cJSON_AddNumberToObject(root, "status", 1);
-            cJSON_AddNumberToObject(root, "free", 0);
-            cJSON_AddNumberToObject(root, "total", 0);
-        } else {
+        if (res == FR_OK) {
         #if SD_FREE_SIZE_EN
-            if(freesize < SD_FREE_SIZE_MIN)
-    		    cJSON_AddNumberToObject(root, "status", 4);
-            else
-    		    cJSON_AddNumberToObject(root, "status", 0);
+            if(freesize < SD_FREE_SIZE_MIN) {
+                real_status = 4;
+            } else {
+                real_status = 0;
+            }
         #else
-            cJSON_AddNumberToObject(root, "status", 0);
+            real_status = 0;
         #endif
-			_os_printf("sd free size: %d\ttotal size: %d\r\n", freesize, totalsize);
-            cJSON_AddNumberToObject(root, "free", freesize);
-            cJSON_AddNumberToObject(root, "total", totalsize);
+            os_printf("sd free size: %d, total size: %d\r\n", freesize, totalsize);
+        } else if (res == FR_TIMEOUT) {
+            try_counts++;
+            if (try_counts <= 3) {
+                os_printf("get sd free size timeout, try again\r\n");
+                os_sleep_ms(500);
+                goto get_again;
+            } else {
+                real_status = 1;
+                os_printf("get sd free size timeout, exit\r\n");
+            }
+        } else {
+            real_status = 1;
         }
     } else {
+        real_status = 2;
         _os_printf("sd is not inserted\r\n");
-		cJSON_AddNumberToObject(root, "status", 2); // 0：SD 卡正常 1：SD 卡未格式化 2：SD 卡未插入 4: SD 卡存储已满
-        cJSON_AddNumberToObject(root, "free", 0);
-        cJSON_AddNumberToObject(root, "total", 0);
     }
+
+    items_value_process("sdstatus", real_status, SET_ITEMS_VALUE);
+
+    cJSON_AddNumberToObject(root, "status", real_status);
+    cJSON_AddNumberToObject(root, "free", freesize);
+    cJSON_AddNumberToObject(root, "total", totalsize);
 
     cJSON_AddNumberToObject(*root2, "result", 0);
     cJSON_AddItemToObject(*root2, "info", root);
@@ -4595,8 +4638,10 @@ static void http_reponse_getsdinfo(struct httpClient *httpClient)
     http_add_header(head, httpIndex.Type, "application/json");
     sendlen = json_return_sdmsg(&root, &post_content);
 
-    http_header_send(head, httpIndex.Length, sendlen, fd);
-    send(fd, post_content, sendlen, 0);
+    if(sendlen) {
+        http_header_send(head, httpIndex.Length, sendlen, fd);
+        send(fd, post_content, sendlen, 0);
+    }
 
     closeRes(httpClient);
     cJSON_free(post_content);
@@ -4717,51 +4762,74 @@ static void http_reponse_getparamitems_all(struct httpClient *httpClient)
     cJSON_Delete(root);
 }
 
-void sd_status_push(int fd)
+void sd_status_push2(int fd)
 {
-    static uint8_t sd_status = 0;   // 0：SD 卡正常 1：SD 卡异常或未格式化 2：SD 卡未插入 4: SD 卡存储已满
-	uint8_t sd_status_new = 0;
+	uint8_t new_status = 0;
+    uint8_t real_status = 0;
+    int last_status = items_value_process("sdstatus", 0, GET_ITEMS_VALUE);
+    if(last_status == -1)
+    {
+        os_printf("get sdstatus failed!\r\n");
+        return;
+    }
 #if FS_EN
-    sd_status_new = get_fat_isready() ? 0 : 2;
+    new_status = get_fat_isready() ? 0 : 2;
 #endif
     char *push_content = NULL;
-    if(sd_status != sd_status_new)
     {
+        if(new_status == 0) {
+        #if SD_FREE_SIZE_EN
+            int res = 0;
+            uint32_t freesize = 0;
+            uint8_t try_counts = 0;
+        get_again:
+            res = osal_fatfsfree("0:", NULL, &freesize);
+            if (res == FR_OK) {
+                if(freesize < SD_FREE_SIZE_MIN) {
+                    real_status = 4;
+                } else {
+                    real_status = 0;
+                }
+            } else if (res == FR_TIMEOUT) {
+                try_counts++;
+                if (try_counts <= 3) {
+                    os_printf("get sd free size timeout, try again\r\n");
+                    os_sleep_ms(500);
+                    goto get_again;
+                } else {
+                    real_status = 1;
+                    os_printf("get sd free size timeout, exit\r\n");
+                }
+            } else {
+                real_status = 1;
+                _os_printf("get sd failed\r\n");
+            }
+        #else
+            real_status = 0;
+        #endif
+        } else {
+            real_status = 2;
+        }
+
+        if(last_status == real_status)
+            return;
+
         cJSON *root = NULL;
         struct timeval ptimeval;
+        gettimeofday(&ptimeval, NULL);
         root = cJSON_CreateObject();
         if (!root)
             goto clean_up;
-        cJSON_AddStringToObject(root, "msgid", "sd");
         cJSON *info = cJSON_CreateObject();
         if (!info)
             goto clean_up;
         
-        cJSON_AddItemToObject(root, "info", info);
-        if(sd_status_new == 0) {
-        #if SD_FREE_SIZE_EN
-            int res = 0;
-            uint32_t freesize = 0;
-            res = osal_fatfsfree("0:", NULL, &freesize);
-            if (res) {
-        		_os_printf("get sd failed\r\n");
-        		cJSON_AddNumberToObject(info, "status", 1);
-            } else {
-                if(freesize < SD_FREE_SIZE_MIN)
-        		    cJSON_AddNumberToObject(info, "status", 4); // 存储已满
-                else
-        		    cJSON_AddNumberToObject(info, "status", 0);
-            }
-        #else
-            cJSON_AddNumberToObject(info, "status", 0);
-        #endif
-        } else {
-            cJSON_AddNumberToObject(info, "status", 2);
-        }
-        sd_status = sd_status_new;
+        items_value_process("sdstatus", real_status, SET_ITEMS_VALUE);
 
-        gettimeofday(&ptimeval, NULL);
+        cJSON_AddStringToObject(root, "msgid", "sd");
+        cJSON_AddItemToObject(root, "info", info);
         cJSON_AddNumberToObject(root, "time", ptimeval.tv_sec);
+        cJSON_AddNumberToObject(info, "status", real_status);
         push_content = cJSON_PrintUnformatted(root);
         _os_printf("postcontent: %s\r\n", push_content);
         _os_printf("postlen: %d\r\n", strlen(push_content));
@@ -4773,6 +4841,85 @@ void sd_status_push(int fd)
         if (push_content) cJSON_free(push_content);
         if (root) cJSON_Delete(root);
     }
+}
+
+void sd_status_push(int fd)
+{
+	uint8_t new_status = 0;
+    uint8_t real_status = 0;
+    int last_status = items_value_process("sdstatus", 0, GET_ITEMS_VALUE);
+    if(last_status == -1)
+    {
+        os_printf("get sdstatus failed!\r\n");
+        return;
+    }
+#if FS_EN
+    new_status = get_fat_isready() ? 0 : 2;
+#endif
+    char *push_content = NULL;
+    if(new_status == 0) {
+    #if SD_FREE_SIZE_EN
+        int res = 0;
+        uint32_t freesize = 0;
+        uint8_t try_counts = 0;
+    get_again:
+        res = osal_fatfsfree("0:", NULL, &freesize);
+        if (res == FR_OK) {
+            if(freesize < SD_FREE_SIZE_MIN) {
+                real_status = 4;
+            } else {
+                real_status = 0;
+            }
+        } else if (res == FR_TIMEOUT) {
+            try_counts++;
+            if (try_counts <= 3) {
+                os_printf("get sd free size timeout, try again\r\n");
+                os_sleep_ms(500);
+                goto get_again;
+            } else {
+                real_status = 1;
+                os_printf("get sd free size timeout, exit\r\n");
+            }
+        } else {
+            real_status = 1;
+            _os_printf("get sd failed\r\n");
+        }
+    #else
+        real_status = 0;
+    #endif
+    } else {
+        real_status = 2;
+    }
+
+    if(last_status == real_status)
+        return;
+
+    cJSON *root = NULL;
+    struct timeval ptimeval;
+    gettimeofday(&ptimeval, NULL);
+    root = cJSON_CreateObject();
+    if (!root)
+        goto clean_up;
+    cJSON *info = cJSON_CreateObject();
+    if (!info)
+        goto clean_up;
+    
+    items_value_process("sdstatus", real_status, SET_ITEMS_VALUE);
+
+    cJSON_AddStringToObject(root, "msgid", "sd");
+    cJSON_AddItemToObject(root, "info", info);
+    cJSON_AddNumberToObject(root, "time", ptimeval.tv_sec);
+    cJSON_AddNumberToObject(info, "status", real_status);
+    push_content = cJSON_PrintUnformatted(root);
+    _os_printf("postcontent: %s\r\n", push_content);
+    _os_printf("postlen: %d\r\n", strlen(push_content));
+    if (push_content && fd > 0) {
+        send(fd, push_content, strlen(push_content), 0);
+    }
+
+clean_up:
+    if (push_content) cJSON_free(push_content);
+    if (root) cJSON_Delete(root);
 }
 
 void lock_status_push(int fd)

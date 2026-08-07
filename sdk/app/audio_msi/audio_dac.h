@@ -34,13 +34,20 @@
     MSI_AUDAC_TEST_MODE,
 */
 
-#define AUDAC_SAMPLERATE      8000
-#define AUDAC_QUEUE_NUM       3
+#define AUDAC_QUEUE_NUM         3
 
-#define AUDAC_TIME_INTERVAL   20
-#define AUDAC_LEN             1920  //按48k、20ms为最大长度配置
-#define MAX_AUDAC_RXBUF       24
-#define AUDAC_TASK_PRIORITY   OS_TASK_PRIORITY_ABOVE_NORMAL
+#ifndef AUDAC_RESAMPLERATE
+#define AUDAC_RESAMPLERATE      0
+#endif
+#ifndef AUDAC_SAMPLERATE
+#define AUDAC_SAMPLERATE        8000
+#endif
+#ifndef AUDAC_TIME_INTERVAL
+#define AUDAC_TIME_INTERVAL     20
+#endif
+#define AUDAC_LEN               (AUDAC_TIME_INTERVAL*48*2)  //按48k、20ms为最大长度配置
+#define MAX_AUDAC_RXBUF         24
+#define AUDAC_TASK_PRIORITY     OS_TASK_PRIORITY_ABOVE_NORMAL
 
 extern int32_t audio_dac_init(void);
 extern int32_t audio_dac_deinit(void);

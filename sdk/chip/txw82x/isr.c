@@ -73,6 +73,12 @@ void irq_disable(uint32 irq)
     csi_vic_disable_irq(irq);
 }
 
+uint32 irq_is_enable(uint32 irq)
+{
+    return csi_vic_get_enabled_irq(irq);
+}
+
+
 uint32 disable_irq(void)
 {
     return __disable_irq();

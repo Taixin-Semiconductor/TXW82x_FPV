@@ -7,8 +7,9 @@
 #include "lib/heap/av_psram_heap.h"
 #include "user_work/user_work.h"
 #include "scale3_normal_msi.h"
+#include "hal/isp.h"
 
-extern int32_t takephoto_name_no_dir_time(char *filename, int filename_size,struct timeval *t);
+extern int32_t takephoto_name_no_dir_time(char *filename, int filename_size, struct timeval *t);
 #define EXTERN_RB_COUNT 50
 
 uint32_t yuv_buf_line(uint8_t which);
@@ -38,12 +39,14 @@ struct scale3_normal_msi
     uint8_t                    *buf;
     uint16_t                    iw, ih;
     uint16_t                    ow, oh;
+    uint32_t                    magic;
     struct framebuff           *fb;
     struct framebuff           *extern_fb;
     struct scale3_normal_cmd_s *normal_cmd;
-    uint32_t                    last_time;
+    struct timeval              t;
+    uint32_t                    last_thumb_time;
     uint8_t                     force_stype;
-    uint8_t                     ready : 1, extern_fb_ready : 1, start : 1,exit:1;
+    uint8_t                     ready : 1, extern_fb_ready : 1, start : 1, exit : 1, splice : 1, splice_kick : 1, is_thumb : 1;
     RBUFFER_DEF(extern_rb, struct scale3_normal_cmd_s *, EXTERN_RB_COUNT);
 };
 
@@ -81,14 +84,14 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
                 }
             }
             os_msgq_del(&scale3->msgq);
-            
+
             struct scale3_normal_cmd_s *normal_cmd;
-            if(scale3->normal_cmd)
+            if (scale3->normal_cmd)
             {
                 STREAM_FREE(scale3->normal_cmd);
                 scale3->normal_cmd = NULL;
             }
-            while(RB_GET(&scale3->extern_rb, normal_cmd))
+            while (RB_GET(&scale3->extern_rb, normal_cmd))
             {
                 STREAM_FREE(normal_cmd);
             }
@@ -104,7 +107,7 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
             os_work_cancle2(&scale3->work, 1);
 
             scale3->start = 0;
-            scale3->exit = 1;
+            scale3->exit  = 1;
 
             if (scale3->extern_fb)
             {
@@ -148,7 +151,7 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
                 STREAM_LIBC_FREE(fb->priv);
                 scale3->extern_fb_ready = 1;
             }
-            if(!scale3->exit)
+            if (!scale3->exit)
             {
                 os_run_work(&scale3->work);
             }
@@ -200,63 +203,96 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
 static int32_t scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
     struct scale3_normal_msi   *scale3 = (struct scale3_normal_msi *) irq_data;
-    struct framebuff           *fb;
     struct takephoto_yuv_arg_s *arg;
+    struct framebuff           *fb = NULL;
     uint8_t                    *p_buf;
-    uint32_t                    ow = 0, oh = 0;
-    // 如果是需要额外抽一帧生成特定size的yuv
-    if (scale3->extern_fb)
+    uint16_t                    ow = 0, oh = 0;
+    uint16_t                    r_oh = 0;
+    uint16_t                    iw;
+    uint16_t                    ih;
+    uint8_t                     new_frame_flag = 0;
+    // 报错,直接退出
+    if (param1)
     {
-        arg               = scale3->extern_fb->priv;
-        ow                = arg->yuv_arg.out_w;
-        oh                = arg->yuv_arg.out_h;
-        p_buf             = (uint8_t *) scale3->extern_fb->data;
-        fb                = scale3->extern_fb;
-        scale3->extern_fb = NULL;
+        return 0;
+    }
+
+    // 是否可以获取新的帧
+    if (scale3->splice_kick % 2 == 0)
+    {
+        new_frame_flag = 1;
     }
     else
     {
-        if (scale3->start)
+        fb = scale3->fb;
+    }
+
+    // 获取新的一帧数据
+    if (new_frame_flag)
+    {
+        if (scale3->extern_fb)
         {
-            ow = scale3->ow;
-            oh = scale3->oh;
-            fb = fbpool_get(&scale3->pool, 0, scale3->msi);
+            fb                = scale3->extern_fb;
+            scale3->extern_fb = NULL;
         }
         else
         {
-            fb = NULL;
+            if (scale3->start)
+            {
+                fb = fbpool_get(&scale3->pool, 0, scale3->msi);
+            }
         }
-
-        // 空间不够,则使用原来的空间
-        if (!fb)
-        {
-            scale_close(scale3->scale_dev);
-            goto scale3_stream_done_end;
-        }
-
-        // 配置新的空间地址
-        p_buf = (uint8_t *) fb->data;
     }
 
-    scale_set_in_out_size(scale3->scale_dev, scale3->iw, scale3->ih, ow, oh);
-    scale_set_step(scale3->scale_dev, scale3->iw, scale3->ih, ow, oh);
-    scale_set_out_yaddr(scale3->scale_dev, (uint32) p_buf);
-    scale_set_out_uaddr(scale3->scale_dev, (uint32) p_buf + ow * oh);
-    scale_set_out_vaddr(scale3->scale_dev, (uint32) p_buf + ow * oh + ow * oh / 4);
+    // 空间不够或者说没有需要产生新的帧,则关闭scale3
+    if (!fb)
+    {
+        scale_close(scale3->scale_dev);
+        goto scale3_stream_done_end;
+    }
+    // 如果是extern_fb,则从extern_fb获取ow和ohF
+    arg = (struct takephoto_yuv_arg_s *) fb->priv;
+    if (arg->yuv_arg.extern_fb_flag)
+    {
+        ow = arg->yuv_arg.out_w;
+        oh = arg->yuv_arg.out_h;
+    }
+    else
+    {
+        ow = scale3->ow;
+        oh = scale3->oh;
+    }
+    r_oh  = scale3->splice ? oh / 2 : oh;
+    iw    = scale3->iw;
+    ih    = scale3->splice ? scale3->ih / 2 : scale3->ih;
+    p_buf = (uint8_t *) fb->data;
+    scale_set_in_out_size(scale3->scale_dev, iw, ih, ow, r_oh);
+    scale_set_step(scale3->scale_dev, iw, ih, ow, r_oh);
+    scale_set_out_yaddr(scale3->scale_dev, (uint32) p_buf + ow * r_oh * scale3->splice_kick);
+    scale_set_out_uaddr(scale3->scale_dev, (uint32) p_buf + ow * oh + ow * r_oh / 4 * scale3->splice_kick);
+    scale_set_out_vaddr(scale3->scale_dev, (uint32) p_buf + ow * oh + ow * oh / 4 + ow * r_oh / 4 * scale3->splice_kick);
+
 scale3_stream_done_end:
     // 发送now_data,发送失败也要返回
-    if (os_msgq_put(&scale3->msgq, (uint32_t) scale3->fb, 0))
+    if (scale3->splice_kick % 2 == 0)
     {
-        // 正常不能中断del,但是这个模块是内部,只要del没有一些等待信号量操作,问题不大
-        msi_delete_fb(NULL, scale3->fb);
-        scale3->fb = NULL;
-        // return 0;
+        if (os_msgq_put(&scale3->msgq, (uint32_t) scale3->fb, 0))
+        {
+            // 正常不能中断del,但是这个模块是内部,只要del没有一些等待信号量操作,问题不大
+            msi_delete_fb(NULL, scale3->fb);
+            scale3->fb = NULL;
+        }
     }
+
     if (!fb)
     {
         scale3->ready = 1;
     }
     scale3->fb = fb;
+    if (scale3->splice)
+    {
+        scale3->splice_kick++;
+    }
     os_run_work(&scale3->work);
     return 0;
 }
@@ -265,6 +301,21 @@ static int32_t scale3_stream_ov(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
     os_printf("%s:%d\n", __FUNCTION__, __LINE__);
     return 0;
+}
+
+static int32_t vpp_start_scale3(uint32_t irq_data)
+{
+    struct scale3_normal_msi *scale3 = (struct scale3_normal_msi *) irq_data;
+    // 如果需要拼接,就要等待镜头2完成才能启动
+    if (video_msg.video_type_cur == ISP_VIDEO_1 || video_msg.camera_mode != CAM_DUAL_SPLICE_SLAVE_MODE)
+    {
+        scale_open(scale3->scale_dev);
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
 }
 
 // 如果空间申请不到,就延时去输出
@@ -276,10 +327,9 @@ static int32 scale3_normal_msi_work(struct os_work *work)
     struct framebuff           *fb         = NULL;
     struct framebuff           *e_fb       = NULL;
     struct takephoto_yuv_arg_s *arg        = NULL;
-    uint16_t                    ow = 0;
-	uint16_t                    oh = 0;
-    uint32_t                    magic = 0;
-    int32_t                     err   = -1;
+    uint16_t                    ow         = 0;
+    uint16_t                    oh         = 0;
+    int32_t                     err        = -1;
     // 先去检查是否有需要生成额外的yuv数据没
     // 检查如果没有extern_fb,并且有额外命令,则生成一个fb
     if (scale3->extern_fb_ready && !scale3->extern_fb)
@@ -288,7 +338,6 @@ static int32 scale3_normal_msi_work(struct os_work *work)
         {
             RB_GET(&scale3->extern_rb, scale3->normal_cmd);
         }
-
         if (scale3->normal_cmd)
         {
             if (scale3->normal_cmd->w && scale3->normal_cmd->h)
@@ -301,32 +350,46 @@ static int32 scale3_normal_msi_work(struct os_work *work)
                 ow = scale3->iw;
                 oh = scale3->ih;
             }
-
             uint8_t *data = STREAM_MALLOC(ow * oh * 3 / 2);
             if (data)
             {
-
                 arg  = (struct takephoto_yuv_arg_s *) STREAM_LIBC_ZALLOC(sizeof(struct takephoto_yuv_arg_s));
                 e_fb = fb_alloc(data, ow * oh * 3 / 2, F_YUV << 8 | FSTYPE_NONE, scale3->msi);
                 // 如果w和h其中一个为0,则使用iw和ih
 
-                e_fb->datatag       = ~0; // 设置特殊标志,用于识别是否是额外生成的fb
-                e_fb->priv          = arg;
-                arg->yuv_arg.y_size = ow * oh;
-                arg->yuv_arg.y_off  = 0;
-                arg->yuv_arg.uv_off = 0;
-                arg->yuv_arg.out_w  = ow;
-                arg->yuv_arg.out_h  = oh;
-                arg->yuv_arg.magic  = scale3->normal_cmd->magic;
-                arg->yuv_arg.type   = scale3->normal_cmd->force_type;
-
-                takephoto_name_no_dir_time(arg->name, sizeof(arg->name), &scale3->normal_cmd->t);
+                e_fb->datatag               = ~0; // 设置特殊标志,用于识别是否是额外生成的fb
+                e_fb->priv                  = arg;
+                arg->yuv_arg.y_size         = ow * oh;
+                arg->yuv_arg.y_off          = 0;
+                arg->yuv_arg.uv_off         = 0;
+                arg->yuv_arg.out_w          = ow;
+                arg->yuv_arg.out_h          = oh;
+                arg->yuv_arg.magic          = scale3->normal_cmd->magic;
+                arg->yuv_arg.type           = scale3->normal_cmd->force_type;
+                arg->yuv_arg.extern_fb_flag = 1;
+                // 缩略图更新一下时间
+                if (scale3->normal_cmd->is_thumb)
+                {
+                    gettimeofday(&scale3->t, NULL);
+                    scale3->last_thumb_time = os_jiffies();
+                    scale3->is_thumb = 1;
+                }
+                else
+                {
+                    // 上一张图不是缩略图或者超时,就更新时间
+                    if (!scale3->is_thumb || (uint32_t)os_jiffies() - scale3->last_thumb_time > 500)
+                    {
+                        gettimeofday(&scale3->t, NULL);
+                    }
+                    scale3->is_thumb = 0;
+                    scale3->last_thumb_time = 0;
+                }
+                takephoto_name_no_dir_time(arg->name, sizeof(arg->name), &scale3->t);
                 scale3->extern_fb_ready = 0;
                 scale3->extern_fb       = e_fb;
 
                 sys_dcache_invalid_range((uint32_t *) data, ow * oh * 3 / 2);
                 STREAM_FREE(scale3->normal_cmd);
-
                 scale3->normal_cmd = NULL;
             }
         }
@@ -348,7 +411,6 @@ static int32 scale3_normal_msi_work(struct os_work *work)
             arg->yuv_arg.uv_off = 0;
             arg->yuv_arg.out_w  = ow;
             arg->yuv_arg.out_h  = oh;
-            arg->yuv_arg.magic  = magic;
             arg->yuv_arg.type   = YUV_ARG_NONE;
             msi_output_fb(scale3->msi, fb);
         }
@@ -359,11 +421,9 @@ static int32 scale3_normal_msi_work(struct os_work *work)
 
         fb = NULL;
     }
-
     // scale3可能空间不够关闭了中断,也可能是第一次启动
     if (scale3->ready)
     {
-
         if (scale3->extern_fb)
         {
             arg               = scale3->extern_fb->priv;
@@ -387,7 +447,6 @@ static int32 scale3_normal_msi_work(struct os_work *work)
                 }
             }
         }
-
         if (!scale3->fb)
         {
             _os_printf(KERN_INFO "D");
@@ -396,8 +455,26 @@ static int32 scale3_normal_msi_work(struct os_work *work)
         }
 
         // 暂时用同样的iw ih ow oh
-        scale_set_in_out_size(scale_dev, scale3->iw, scale3->ih, ow, oh);
-        scale_set_step(scale_dev, scale3->iw, scale3->ih, ow, oh);
+        uint16_t iw;
+        uint16_t ih;
+
+        uint16_t r_oh;
+
+        iw = scale3->iw;
+        // 拼接虽然是两个镜头拼接,实际硬件还是一个一个镜头数据输入,所以output偏移修改,硬件寄存器依然按照原来配置
+        if (scale3->splice)
+        {
+            ih   = scale3->ih / 2;
+            r_oh = oh / 2;
+        }
+        else
+        {
+            ih   = scale3->ih;
+            r_oh = oh;
+        }
+
+        scale_set_in_out_size(scale_dev, iw, ih, ow, r_oh);
+        scale_set_step(scale_dev, iw, ih, ow, r_oh);
         scale_set_start_addr(scale_dev, 0, 0);
         // 暂时固定,如果遇到需要动态修改的,可以通过参数之类来切换
         scale_set_dma_to_memory(scale_dev, 1);
@@ -412,8 +489,18 @@ static int32 scale3_normal_msi_work(struct os_work *work)
         scale_set_out_vaddr(scale_dev, (uint32) scale3->fb->data + ow * oh + ow * oh / 4);
         scale_request_irq(scale_dev, FRAME_END, scale3_stream_done, (uint32) scale3);
         scale_request_irq(scale_dev, INBUF_OV, scale3_stream_ov, (uint32) scale3);
-        scale3->ready = 0;
-        scale_open(scale_dev);
+        scale3->ready       = 0;
+        scale3->splice_kick = 0;
+        // 双镜头拼接,需要等待特定镜头完成才能正常开始
+        if (scale3->splice)
+        {
+            scale3->splice_kick++;
+            vppdone_func_register(SCALE3_KICK, vpp_start_scale3, (uint32) scale3);
+        }
+        else
+        {
+            scale_open(scale_dev);
+        }
     }
 
 scale3_normal_msi_work_end:
@@ -430,53 +517,14 @@ scale3_normal_msi_work_end:
     return 0;
 }
 
-struct msi *scale3_normal_msi(const char *name, uint16_t ow, uint16_t oh)
+static struct msi *scale3_common(const char *name, uint16_t ow, uint16_t oh, uint8_t max_fb_count, uint8_t *new)
 {
     uint8_t     isnew;
     struct msi *msi = msi_new(name, 0, &isnew);
-    if (isnew)
+    if (new)
     {
-        struct scale_device      *scale_dev = (struct scale_device *) dev_get(HG_SCALE3_DEVID);
-        struct scale3_normal_msi *scale3    = (struct scale3_normal_msi *) STREAM_LIBC_ZALLOC(sizeof(struct scale3_normal_msi));
-        scale3->scale_dev                   = scale_dev;
-        scale3->ready                       = 1;
-        scale3->ow                          = ow;
-        scale3->oh                          = oh;
-        scale3->msi                         = msi;
-        scale3->force_stype                 = FSTYPE_NONE;
-        scale3->extern_fb_ready             = 1;
-        scale3->start                       = 1;
-        msi->priv                           = (void *) scale3;
-        msi->action                         = const_scale3_msi_action;
-        msi->enable                         = 1;
-        os_msgq_init(&scale3->msgq, MAX_COUNT);
-        fbpool_init(&scale3->pool, MAX_COUNT);
-
-        uint16_t                    init_count = 0;
-        uint8_t                    *m_buff;
-        struct takephoto_yuv_arg_s *arg;
-        // 初始化framebuffer节点数量空间?最后由workqueue去从ringbuf去获取一个节点
-        while (init_count < MAX_COUNT)
-        {
-            m_buff = STREAM_MALLOC(ow * oh * 3 / 2);
-            arg    = (struct takephoto_yuv_arg_s *) STREAM_LIBC_ZALLOC(sizeof(struct takephoto_yuv_arg_s));
-            ASSERT(m_buff);
-            ASSERT(arg);
-            sys_dcache_invalid_range((uint32_t *) m_buff, ow * oh * 3 / 2);
-            FBPOOL_SET_INFO(&scale3->pool, init_count, m_buff, ow * oh * 3 / 2, arg);
-            init_count++;
-        }
-        get_vpp_w_h(&scale3->iw, &scale3->ih);
-        OS_WORK_INIT(&scale3->work, scale3_normal_msi_work, 0);
-        os_run_work(&scale3->work);
+        *new = isnew;
     }
-    return msi;
-}
-
-struct msi *scale3_normal_msi2(const char *name, uint8_t force_stype, uint16_t ow, uint16_t oh)
-{
-    uint8_t     isnew;
-    struct msi *msi = msi_new(name, 0, &isnew);
     if (isnew)
     {
         struct scale_device      *scale_dev = (struct scale_device *) dev_get(HG_SCALE3_DEVID);
@@ -486,32 +534,102 @@ struct msi *scale3_normal_msi2(const char *name, uint8_t force_stype, uint16_t o
         scale3->ow                          = ow;
         scale3->oh                          = oh;
         scale3->msi                         = msi;
-        scale3->force_stype                 = force_stype;
         scale3->extern_fb_ready             = 1;
-        scale3->start                       = 0;
+        scale3->splice_kick                 = 0;
         msi->priv                           = (void *) scale3;
         msi->action                         = const_scale3_msi_action;
         msi->enable                         = 1;
-        os_msgq_init(&scale3->msgq, MAX_COUNT);
-        fbpool_init(&scale3->pool, MAX_COUNT);
+        if (!max_fb_count)
+        {
+            os_msgq_init(&scale3->msgq, MAX_COUNT);
+        }
+        else
+        {
+            os_msgq_init(&scale3->msgq, max_fb_count);
+            fbpool_init(&scale3->pool, max_fb_count);
+        }
+
         RB_INIT(&scale3->extern_rb, EXTERN_RB_COUNT);
 
-        uint16_t                    init_count = 0;
-        uint8_t                    *m_buff;
-        struct takephoto_yuv_arg_s *arg;
-        // 初始化framebuffer节点数量空间?最后由workqueue去从ringbuf去获取一个节点
-        while (init_count < MAX_COUNT)
+        if (max_fb_count)
         {
-            m_buff = STREAM_MALLOC(ow * oh * 3 / 2);
-            arg    = (struct takephoto_yuv_arg_s *) STREAM_LIBC_ZALLOC(sizeof(struct takephoto_yuv_arg_s));
-            ASSERT(m_buff);
-            ASSERT(arg);
-            sys_dcache_invalid_range((uint32_t *) m_buff, ow * oh * 3 / 2);
-            FBPOOL_SET_INFO(&scale3->pool, init_count, m_buff, ow * oh * 3 / 2, arg);
-            init_count++;
+            uint16_t                    init_count = 0;
+            uint8_t                    *m_buff;
+            struct takephoto_yuv_arg_s *arg;
+
+            // 初始化framebuffer节点数量空间?最后由workqueue去从ringbuf去获取一个节点
+            while (init_count < max_fb_count)
+            {
+                m_buff = STREAM_ZALLOC(ow * oh * 3 / 2);
+                arg    = (struct takephoto_yuv_arg_s *) STREAM_LIBC_ZALLOC(sizeof(struct takephoto_yuv_arg_s));
+                ASSERT(m_buff);
+                ASSERT(arg);
+                sys_dcache_invalid_range((uint32_t *) m_buff, ow * oh * 3 / 2);
+                FBPOOL_SET_INFO(&scale3->pool, init_count, m_buff, ow * oh * 3 / 2, arg);
+                init_count++;
+            }
         }
+
         get_vpp_w_h(&scale3->iw, &scale3->ih);
         OS_WORK_INIT(&scale3->work, scale3_normal_msi_work, 0);
+    }
+    return msi;
+}
+
+struct msi *scale3_normal_msi(const char *name, uint16_t ow, uint16_t oh)
+{
+    uint8_t     isnew = 0;
+    struct msi *msi   = scale3_common(name, ow, oh, MAX_COUNT, &isnew);
+
+    if (isnew)
+    {
+        struct scale3_normal_msi *scale3 = (struct scale3_normal_msi *) msi->priv;
+        scale3->extern_fb_ready          = 1;
+        scale3->force_stype              = FSTYPE_NONE;
+        scale3->start                    = 1;
+        msi->enable                      = 1;
+        os_run_work(&scale3->work);
+    }
+    return msi;
+}
+
+struct msi *scale3_normal_msi2(const char *name, uint8_t force_stype, uint16_t ow, uint16_t oh)
+{
+    uint8_t     isnew = 0;
+    struct msi *msi   = scale3_common(name, ow, oh, MAX_COUNT, &isnew);
+
+    if (isnew)
+    {
+        struct scale3_normal_msi *scale3 = (struct scale3_normal_msi *) msi->priv;
+        scale3->extern_fb_ready          = 1;
+        scale3->force_stype              = force_stype;
+        scale3->start                    = 0;
+        msi->enable                      = 1;
+        os_run_work(&scale3->work);
+    }
+    return msi;
+}
+
+/************************************************************
+// 双镜头需要拼接的scale3
+// 不带屏
+ * splice: 是否需要拼接
+ ************************************************************/
+
+struct msi *scale3_msi_no_lcd(const char *name, uint8_t splice, uint8_t force_stype, uint16_t ow, uint16_t oh)
+{
+    uint8_t     isnew = 0;
+    struct msi *msi   = scale3_common(name, ow, oh, 0, &isnew);
+
+    if (isnew)
+    {
+        struct scale3_normal_msi *scale3 = (struct scale3_normal_msi *) msi->priv;
+        scale3->extern_fb_ready          = 1;
+        scale3->force_stype              = force_stype;
+        scale3->start                    = 0;
+        scale3->splice                   = splice;
+        scale3->splice_kick              = 0;
+        msi->enable                      = 1;
         os_run_work(&scale3->work);
     }
     return msi;

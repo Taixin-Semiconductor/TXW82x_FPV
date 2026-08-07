@@ -136,6 +136,9 @@ enum gpio_ioctl_cmd {
     /*! Get pin according to IOMAP O_FUNC
      */
     GPIO_GET_OUTMAP_PIN,
+
+  
+    GPIO_CMD_SET_ONLY_MODE_BIT,
 };
 
 

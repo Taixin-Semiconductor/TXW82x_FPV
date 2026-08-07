@@ -19,6 +19,7 @@
 #include "diskio.h"
 #include "ff.h"
 
+#include "osal/string.h"
 #include "osal_file.h"
 #include "lib/ota/fw.h"
 #include "tx_platform.h"
@@ -26,6 +27,8 @@
 
 #define UDISK_MAX_COUNT        8
 #define UDISK_CACHE_SIZE       (512)
+#define UDISK_SRAM_XFER_SIZE   (4096)
+#define UDISK_SRAM_XFER_SECTORS (UDISK_SRAM_XFER_SIZE / SECTOR_SIZE)
 
 static rt_uint8_t _udisk_idset = 0;
 static rt_uint8_t udisk_ota = 0;
@@ -34,6 +37,8 @@ struct udisk_device
 {
     rt_uint32_t count;
     rt_uint32_t sector_size;
+    rt_uint8_t *rx_buff;
+    rt_uint8_t *tx_buff;
     struct ustor_data* user_data;
     struct uhintf* intf;
 };
@@ -63,6 +68,93 @@ static void udisk_free_id(int id)
     RT_ASSERT(id < UDISK_MAX_COUNT);
 
     _udisk_idset &= ~(1 << id);
+}
+
+static rt_bool_t udisk_is_psram_buffer(void *buffer, rt_size_t len)
+{
+    rt_uint32_t start;
+    rt_uint32_t end;
+
+    if((buffer == RT_NULL) || (len == 0))
+    {
+        return RT_FALSE;
+    }
+
+    start = (rt_uint32_t)buffer;
+    end = start + len - 1;
+    if(end < start)
+    {
+        return RT_FALSE;
+    }
+
+#ifdef IS_PSRAM_ADDR
+    if(IS_PSRAM_ADDR(start) && IS_PSRAM_ADDR(end))
+    {
+        return RT_TRUE;
+    }
+#endif
+
+    return RT_FALSE;
+}
+
+static rt_err_t udisk_alloc_rx_sram_xfer_buff(struct udisk_device *disk)
+{
+    if(disk == RT_NULL)
+    {
+        return -RT_ERROR;
+    }
+
+    if(disk->rx_buff == RT_NULL)
+    {
+        disk->rx_buff = (rt_uint8_t *)rt_malloc(UDISK_SRAM_XFER_SIZE + USB_RX_BUFF_RESERVE_SIZE);
+        if(disk->rx_buff == RT_NULL)
+        {
+            rt_kprintf("udisk alloc rx sram buff failed\n");
+            return -RT_ENOMEM;
+        }
+    }
+
+    return RT_EOK;
+}
+
+static rt_err_t udisk_alloc_tx_sram_xfer_buff(struct udisk_device *disk)
+{
+    if(disk == RT_NULL)
+    {
+        return -RT_ERROR;
+    }
+
+    if(disk->tx_buff == RT_NULL)
+    {
+        disk->tx_buff = (rt_uint8_t *)rt_malloc(UDISK_SRAM_XFER_SIZE + USB_RX_BUFF_RESERVE_SIZE);
+        if(disk->tx_buff == RT_NULL)
+        {
+            rt_kprintf("udisk alloc tx sram buff failed\n");
+            return -RT_ENOMEM;
+        }
+    }
+
+    return RT_EOK;
+}
+
+static void udisk_free_sram_xfer_buff(struct udisk_device *disk)
+{
+    if(disk == RT_NULL)
+    {
+        return;
+    }
+
+    if(disk->rx_buff)
+    {
+        rt_free(disk->rx_buff);
+        disk->rx_buff = RT_NULL;
+    }
+
+    if(disk->tx_buff)
+    {
+        rt_free(disk->tx_buff);
+        disk->tx_buff = RT_NULL;
+    }
 }
 
 static DSTATUS rt_udisk_status(void *dev)
@@ -97,8 +189,8 @@ static DRESULT rt_udisk_read(void *dev, BYTE* buffer, DWORD sector,
 {  
     rt_err_t ret;
     struct uhintf* intf;
-    struct ustor_data* data;
     int timeout = USB_TIMEOUT_LONG/5;
+    rt_size_t total_len = (rt_size_t)count * SECTOR_SIZE;
     struct udisk_device *disk = (struct udisk_device *)dev;
 
     /* check parameter */
@@ -108,12 +200,43 @@ static DRESULT rt_udisk_read(void *dev, BYTE* buffer, DWORD sector,
         return RES_ERROR;
     }
 
-    if(count > 4096) timeout *= 2;
+    if(total_len > 4096) timeout *= 2;
 
-    data = (struct ustor_data*)disk->user_data;
     intf = disk->intf;
 
     //os_printf("%s sector:%d count:%d\n",__FUNCTION__,sector,count);
+
+    if(udisk_is_psram_buffer(buffer, total_len))
+    {
+        UINT remain = count;
+        DWORD cur_sector = sector;
+        rt_uint8_t *dst = (rt_uint8_t *)buffer;
+
+        if((disk->rx_buff == RT_NULL) && (udisk_alloc_rx_sram_xfer_buff(disk) != RT_EOK))
+        {
+            return RES_ERROR;
+        }
+
+        while(remain)
+        {
+            UINT cur_count = (remain > UDISK_SRAM_XFER_SECTORS) ? UDISK_SRAM_XFER_SECTORS : remain;
+            rt_size_t cur_len = (rt_size_t)cur_count * SECTOR_SIZE;
+
+            ret = rt_usbh_storage_read10(intf, disk->rx_buff, cur_sector, cur_count, timeout);
+            if (ret != RT_EOK)
+            {
+                rt_kprintf("usb mass_storage read failed\n");
+                return RES_ERROR;
+            }
+
+            hw_memcpy(dst, disk->rx_buff, cur_len);
+            dst += cur_len;
+            cur_sector += cur_count;
+            remain -= cur_count;
+        }
+
+        return RES_OK;
+    }
 
     ret = rt_usbh_storage_read10(intf, (rt_uint8_t*)buffer, sector, count, timeout);
 
@@ -131,8 +254,8 @@ static DRESULT rt_udisk_write (void *dev, BYTE* buffer, DWORD sector,
 {
     rt_err_t ret;
     struct uhintf* intf;
-    struct ustor_data* data;
     int timeout = USB_TIMEOUT_LONG/5;
+    rt_size_t total_len = (rt_size_t)count * SECTOR_SIZE;
     struct udisk_device *disk = (struct udisk_device *)dev;
 
     /* check parameter */
@@ -141,12 +264,43 @@ static DRESULT rt_udisk_write (void *dev, BYTE* buffer, DWORD sector,
 	    return RES_ERROR;
     }
 
-    if(count * SECTOR_SIZE > 4096) timeout *= 2;
+    if(total_len > 4096) timeout *= 2;
 
-    data = (struct ustor_data*)disk->user_data;
     intf = disk->intf;
 
     //os_printf("%s write sector:%d count:%d \n",__FUNCTION__,sector,count);
+
+    if(udisk_is_psram_buffer(buffer, total_len))
+    {
+        UINT remain = count;
+        DWORD cur_sector = sector;
+        rt_uint8_t *src = (rt_uint8_t *)buffer;
+
+        if((disk->tx_buff == RT_NULL) && (udisk_alloc_tx_sram_xfer_buff(disk) != RT_EOK))
+        {
+            return RES_ERROR;
+        }
+
+        while(remain)
+        {
+            UINT cur_count = (remain > UDISK_SRAM_XFER_SECTORS) ? UDISK_SRAM_XFER_SECTORS : remain;
+            rt_size_t cur_len = (rt_size_t)cur_count * SECTOR_SIZE;
+
+            hw_memcpy(disk->tx_buff, src, cur_len);
+            ret = rt_usbh_storage_write10(intf, disk->tx_buff, cur_sector, cur_count, timeout);
+            if (ret != RT_EOK)
+            {
+                rt_kprintf("usb mass_storage write %d sector failed\n", cur_count);
+                return RES_ERROR;
+            }
+
+            src += cur_len;
+            cur_sector += cur_count;
+            remain -= cur_count;
+        }
+
+        return RES_OK;
+    }
 
     ret = rt_usbh_storage_write10(intf, (rt_uint8_t*)buffer, sector, count, timeout);
     if (ret != RT_EOK)
@@ -419,6 +573,8 @@ rt_err_t rt_udisk_run(struct uhintf* intf)
     if (data == RT_NULL)
     {
         rt_kprintf("Allocate partition data buffer failed.");
+        rt_free(sector);
+        return -RT_ERROR;
     }
     rt_memset(data, 0, sizeof(struct ustor_data));
     data->intf = intf;
@@ -531,6 +687,7 @@ rt_err_t rt_udisk_stop(struct uhintf* intf)
         struct ustor_device *dev = &stor->dev[i];
         data = (struct ustor_data*)dev->user_data;
         usb_disk.intf = NULL;
+        udisk_free_sram_xfer_buff(&usb_disk);
         /* unmount filesystem */
         f_umount("USB:");
 

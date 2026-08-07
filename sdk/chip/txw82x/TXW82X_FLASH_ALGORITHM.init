@@ -19,6 +19,10 @@ set *(unsigned int*)0x400180b8=0xe8
 set *(unsigned int*)0x400180b4=0xdddd
 set *(unsigned int*)0x400180bc=0xC053781B
 
+#disable dvp, audio, timer, uart .....
+set *(int*)0x400c1008 = 0x2000
+set *(int*)0x400c100c = 0x2000
+
 #vpp disable
 set *(unsigned int*)0x40005100=0
 

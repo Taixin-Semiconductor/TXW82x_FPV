@@ -1,5 +1,4 @@
 #include "sys_config.h"
-#include "integer.h"
 #include "diskio.h"
 #include "ff.h"
 #include <stdio.h>
@@ -18,9 +17,10 @@
 
 // #include "osal.h"
 
-#define FAT_INFO_SHOW(...) //printf(__VA_ARGS__)
+// #define FAT_INFO_SHOW(...) //printf(__VA_ARGS__)
 
 // #define FAT_TIME
+
 
 #if FS_EN
 static uint8_t fat_ready = 0;
@@ -63,7 +63,7 @@ DWORD get_fatfree(int num)
 	fre_clust = fs->free_clst;
 	tot_sect = (fs->n_fatent - 2) * fs->csize;
 	fre_sect = fre_clust * fs->csize;
-	printf("%s %ldKB\n", __FUNCTION__, fre_sect >> 1);
+	printf("%s %dKB\n", __FUNCTION__, fre_sect >> 1);
 	return fre_sect >> 1;
 }
 
@@ -158,6 +158,7 @@ signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat,DWORD fatbase, D
 
 	fat_cache.fat_info_ready = RET_OK;
 
+	#if 0
 	// 计算逻辑地址（扇区号）
 	//UINT fat1_logical = fatbase - b_vol;                    // FAT1 logical start
 	//UINT fat2_logical = fat1_logical + sz_fat;     // FAT2 logical start
@@ -191,7 +192,7 @@ signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat,DWORD fatbase, D
 		FAT_INFO_SHOW("Physical Address ===> fat2_start %u , fat2_end %u \r\n",  fat2_physical, fat2_physical + sz_fat - 1);
 		FAT_INFO_SHOW("Logical Address ====> fat2_start %u , fat2_end %u \r\n", fat2_logical, fat2_logical + sz_fat - 1);
 	}	
-
+	#endif
 	os_mutex_unlock(&fat_cache.lock);
 
 	return RET_OK;
@@ -217,7 +218,7 @@ static void fat_cache_sync(struct sdh_device *host)
 	}
 	os_mutex_lock(&fat_cache.lock, osWaitForever);
 
-	FAT_INFO_SHOW("############# CTRL_SYNC max_offset %d\r\n", fat_cache.fat1.max_offset);
+	// FAT_INFO_SHOW("############# CTRL_SYNC max_offset %d\r\n", fat_cache.fat1.max_offset);
 	if (fat_cache.fat1.max_offset > 0)
 	{
 		sd_multiple_write((struct sdh_device *)host, fat_cache.fat1.start_sector, fat_cache.fat1.max_offset * 512, fat_cache.fat1.data);
@@ -264,7 +265,7 @@ static int32 fat_loop(struct os_work *work)
 		fat_cache.fat_tick = os_jiffies();
 		if (fat_cache.fat1.max_offset > 0)
 		{
-			FAT_INFO_SHOW(" fat_loop write back max_offset %d\r\n", fat_cache.fat1.max_offset);
+			// FAT_INFO_SHOW(" fat_loop write back max_offset %d\r\n", fat_cache.fat1.max_offset);
 			sd_multiple_write(sdh, fat_cache.fat1.start_sector, fat_cache.fat1.max_offset * 512, fat_cache.fat1.data);
 			if (fat_cache.fs_fats > 1) // 写入FAT2
 			{
@@ -290,7 +291,7 @@ static void init_fat_cache(FATFS *fs)
 	if (update_fat_info(fs->fs_type, fs->n_fats, fs->fsize,fs->fatbase, fs->volbase) != RET_OK){
 		return;
 	}
-	FAT_INFO_SHOW("init_fat_cache \r\n");
+	// FAT_INFO_SHOW("init_fat_cache \r\n");
 	struct sdh_device *sdh = NULL;
 	sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
 	// 初始化后第一次读fat1
@@ -307,7 +308,7 @@ static void del_fat_cache(void)
 	fat_cache.fat_init = 1;
 	fat_cache.fat_info_ready = 1;
 	os_mutex_lock(&fat_cache.lock, osWaitForever);
-	FAT_INFO_SHOW("########### del_fat_cache \r\n");
+	// FAT_INFO_SHOW("########### del_fat_cache \r\n");
 	
 	#ifdef FAT_TIME
 	os_timer_stop(&fat_cache.fat_timer);
@@ -319,7 +320,7 @@ static void del_fat_cache(void)
 	// 释放fat缓存
 	if (fat_cache.fat1.data)
 	{
-		FAT_INFO_SHOW("%s %d fat free \r\n", __func__, __LINE__);
+		// FAT_INFO_SHOW("%s %d fat free \r\n", __func__, __LINE__);
 		fat_free(fat_cache.fat1.data);
 		fat_cache.fat1.data = NULL;
 	}
@@ -347,7 +348,7 @@ static DRESULT read_from_fat_cache(void *dev, struct fat_data_t *cache, BYTE *bu
 		// 把旧缓存写入fat
 		if (cache->max_offset > 0)
 		{
-			FAT_INFO_SHOW("read_from_fat_cache write back max_offset %d sector %d\r\n", cache->max_offset, sector);
+			// FAT_INFO_SHOW("read_from_fat_cache write back max_offset %d sector %d\r\n", cache->max_offset, sector);
 			sd_multiple_write((struct sdh_device *)dev, cache->start_sector, cache->max_offset * 512, cache->data);
 			if (fat_cache.fs_fats > 1)
 			{
@@ -390,7 +391,7 @@ static DRESULT write_to_fat_cache(void *dev, struct fat_data_t *cache, BYTE *buf
 		// 把旧缓存写入fat
 		if (cache->max_offset > 0)
 		{
-			FAT_INFO_SHOW("write_to_fat_cache write back max_offset %d sector %d\r\n", cache->max_offset, sector);
+			// FAT_INFO_SHOW("write_to_fat_cache write back max_offset %d sector %d\r\n", cache->max_offset, sector);
 			sd_multiple_write((struct sdh_device *)dev, cache->start_sector, cache->max_offset * 512, cache->data);
 			if (fat_cache.fs_fats > 1)
 			{
@@ -450,14 +451,14 @@ static DRESULT fatfs_ioctl(void *init_dev, BYTE cmd, void *buf)
 	switch (cmd)
 	{
 	case CTRL_SYNC:
-		fatfs_sd_tran_stop(init_dev);
+		// fatfs_sd_tran_stop(init_dev);
 
 #if USE_FAT_CACHE
 		fat_cache_sync(init_dev);
 #endif
 		break;
 	case GET_SECTOR_COUNT:
-		*(DWORD *)buf = sd_dwCap * 2;
+		*(LBA_t *)buf = sd_dwCap * 2;
 		ret = RES_OK;
 		break;
 
@@ -482,7 +483,6 @@ static DRESULT fatfs_ioctl(void *init_dev, BYTE cmd, void *buf)
 
 bool fatfs_register()
 {
-
 	int ret = 1;
 	struct sdh_device *fatfs_sdh;
 	// printf(">>>>>>>>>> enter %s test\r\n", __func__);
@@ -496,14 +496,14 @@ bool fatfs_register()
 		if( fat_cache.fat1.data != NULL &&
 			os_mutex_init(&fat_cache.lock) == RET_OK && 
 			#ifdef FAT_TIME
-			os_timer_init(&fat_cache.fat_timer, fat_loop, OS_FAT_TIMER_MODE_PERIODIC, 0) == RET_OK
+			os_timer_init(&fat_cache.fat_timer, fat_loop, OS_TIMER_MODE_PERIODIC, 0) == RET_OK
 			#else
 			OS_WORK_INIT(&fat_cache.fat_wk, fat_loop, 0) == RET_OK
 			#endif
 			)
 		{
 			fat_cache.fat_init = RET_OK;
-			FAT_INFO_SHOW("fat_init success\r\n");
+			// FAT_INFO_SHOW("fat_init success\r\n");
 			#ifdef FAT_TIME
 			os_timer_start(&fat_cache.fat_timer, 50);
 			#else
@@ -514,7 +514,6 @@ bool fatfs_register()
 		{
 			os_printf("fat init err \r\n");
 		}
-
 	}
 #endif
 
@@ -528,7 +527,7 @@ bool fatfs_register()
 			f_mount(NULL, _SYSDSK_, 0);
 			return ret;
 		}
-		FAT_INFO_SHOW("f_mount success\r\n");
+		// FAT_INFO_SHOW("f_mount success\r\n");
 		set_fat_ready(1);
 #if USE_FAT_CACHE
 		init_fat_cache(&fatfs[0]);
@@ -540,7 +539,7 @@ bool fatfs_register()
 void fatfs_unregister()
 {
 	int ret = 1;
-	FAT_INFO_SHOW(">>>>>>>>>>enter %s test\r\n", __func__);
+	// FAT_INFO_SHOW(">>>>>>>>>>enter %s test\r\n", __func__);
 	struct sdh_device *fatfs_sdh;
 	fatfs_sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
 	if (fatfs_sdh)

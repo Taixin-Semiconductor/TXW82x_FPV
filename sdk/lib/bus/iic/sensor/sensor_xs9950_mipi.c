@@ -340,7 +340,7 @@ const _Sensor_ISP_Init xs9950_isp_init =
     .type         = ISP_INPUT_DAT_SRC_MIPI0,
     .pixel_h      = 720,
     .pixel_w      = 1280,
-    .input_format = ISP_INPUT_DAT_FORMAT_YUV422,
+    .input_format = ISP_INPUT_DAT_FORMAT_RAW12,
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ xs9950_cmd = 

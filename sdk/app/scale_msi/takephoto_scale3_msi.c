@@ -138,6 +138,11 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
 static int32_t takephoto_scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
     struct takephoto_scale3_msi_s *scale3 = (struct takephoto_scale3_msi_s *) irq_data;
+    //报错,直接退出
+    if(param1)
+    {
+        return 0;
+    }
     _os_printf("CO");
     scale_close(scale3->scale_dev);
     os_run_work(&scale3->work);

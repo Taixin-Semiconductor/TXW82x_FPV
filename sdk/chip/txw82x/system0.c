@@ -9,11 +9,13 @@
 #ifdef CONFIG_SLEEP
 #include "lib/common/dsleepdata.h"
 #endif
-#include "cpu1_mem.h"
 #include "dev/xspi/hg_xspi_psram.h"
 #include "dev/xspi/hg_xspi_flash.h"
 #include "dev/adc/hgadc_v1.h"
 #include "hal/adc.h"
+#ifndef SINGLE_CORE
+#include "cpu1_mem.h"
+#endif
 
 extern int  main(void);
 extern int32 dev_init(void);
@@ -57,7 +59,7 @@ const uint16_t __used iocfg_psram[IOCFG_SIZE / 2] = {IOCFG_SIZE};
 
 #define PARAM_HEAD(size,head)  (SYS_FACTORY_PARAM_SIZE|head<<16)
 
-__initconst const uint16_t __used isp_param[4096 / 2] = {4096, 0};
+__initconst const uint16_t __used isp_param[6656 / 2] = {6656, 0};
 __initconst const uint16_t __used eq_param[1024 / 2] = {1024};
 __initconst const uint16_t __used psram_param[4096 / 2] = {4096, 0};
 
@@ -369,7 +371,7 @@ __init void pre_main(void)
 
     psram_info(psram_size);
     
-    sysctrl_efuse_validity_handle();
+    sysctrl_efuse_validity_handle(1);
 
 #ifndef SINGLE_CORE
     adc_open((struct adc_device *)dev_get(HG_ADC0_DEVID));

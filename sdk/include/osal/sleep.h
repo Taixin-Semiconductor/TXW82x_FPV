@@ -127,6 +127,7 @@ enum DSLEEP_IOCTL_CMD {
     DSLEEP_IOCTL_SET_EXT_DCDC,
     DSLEEP_IOCTL_SET_ASSERT_HOLD,
     DSLEEP_IOCTL_SET_DBG_CFG,
+    DSLEEP_IOCTL_SET_WKIO_PUPD_DIS,
     /*Get CMDs*/
     DSLEEP_IOCTL_GET_IP_ADDR = 0x20000000,
     DSLEEP_IOCTL_GET_DTIM,
@@ -159,6 +160,7 @@ enum DSLEEP_IOCTL_CMD {
 #define dsleep_set_ext_dcdc(en)                     dsleep_ioctl(DSLEEP_IOCTL_SET_EXT_DCDC, (uint32)en, 0)
 #define dsleep_set_assert_hold(en)                  dsleep_ioctl(DSLEEP_IOCTL_SET_ASSERT_HOLD, (uint32)en, 0)
 #define dsleep_set_dbg_cfg(dbg_cfg)                 dsleep_ioctl(DSLEEP_IOCTL_SET_DBG_CFG, (uint32)dbg_cfg, 0)
+#define dsleep_set_wkio_pupd_dis(en)                dsleep_ioctl(DSLEEP_IOCTL_SET_WKIO_PUPD_DIS, (uint8)en, 0)
 
 //ioctrl: get_cfg
 #define dsleep_get_ip_addr()                        dsleep_ioctl(DSLEEP_IOCTL_GET_IP_ADDR, 0, 0)

@@ -294,7 +294,6 @@ static void lcd_msi_irq_osd_show(struct app_lcd_s *lcd_s, uint8_t *osd_en)
     }
 }
 
-int  g_osd_en = 1;
 void lcd_msi_irq_callback(void *data)
 {
     struct app_lcd_s *lcd_s        = (struct app_lcd_s *) data;

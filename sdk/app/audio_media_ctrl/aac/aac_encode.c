@@ -345,10 +345,6 @@ struct msi *aac_encode_init(char *filename, uint32_t samplerate, uint8_t direct_
         msi->priv = aac_encode_s;
         msi->action = (msi_action)aac_encode_msi_action; 
         fbpool_init(&aac_encode_s->tx_pool, MAX_AAC_ENCODE_TXBUF);
-        for(uint32_t i=0; i<MAX_AAC_ENCODE_TXBUF; i++) {
-            struct framebuff *frame_buf = (aac_encode_s->tx_pool.pool)+i;
-            frame_buf->data = NULL;
-        }
         if(os_event_init(&aac_encode_s->event) != RET_OK) {
             AAC_INFO("create aac encode event fail!\r\n");
             goto aac_encode_init_err;
@@ -383,7 +379,6 @@ struct msi *aac_encode_init(char *filename, uint32_t samplerate, uint8_t direct_
         AAC_INFO("aac record direct_to_record is 0!\r\n");
         goto aac_encode_init_err;
     }
-
     if(msi_isnew) {
 #if AAC_ENC_CTRL == AUCODER_RUN_IN_CPU1
         aac_encode_s->task_hdl = os_task_create("aac_encode_thread", aac_encode_thread, (void*)aac_encode_s, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 1024);

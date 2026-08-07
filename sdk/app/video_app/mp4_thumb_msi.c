@@ -4,6 +4,7 @@
 
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "scale3_normal_msi.h"
 
 // data申请空间函数
 #define STREAM_MALLOC av_psram_malloc
@@ -72,31 +73,28 @@ int32_t mp4_thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, 
 
 struct msi *mp4_thumb_msi_init(const char *filename, uint8_t srcID, uint8_t filter)
 {
-    uint8_t     is_new;
-    struct msi *msi = msi_new(R_MP4_THUMB, 0, &is_new);
-
-    struct mp4_thumb_s *mp4_thumb = NULL;
-
-    if (is_new)
+    struct msi *m          = msi_find(R_YUV_THUMB, 1);
+    struct msi *scale3_msi = msi_find(S_PREVIEW_SCALE3, 1);
+    if (m)
     {
-        mp4_thumb = (struct mp4_thumb_s *) STREAM_LIBC_ZALLOC(sizeof(struct mp4_thumb_s));
-        os_memcpy(mp4_thumb->thumb_name, filename, strlen(filename) + 1);
-        msi->priv              = mp4_thumb;
-        mp4_thumb->msi         = msi;
-        mp4_thumb->filter_type = filter;
-        mp4_thumb->srcID       = srcID;
-        msi->action            = mp4_thumb_msi_action;
-        // 给到解码然后生成缩略图
-        msi_add_output(msi, NULL, R_THUMB);
-        msi->enable = 1;
-        msi_add_output(NULL, AUTO_JPG, R_MP4_THUMB); // mp4缩略图?
-    }
-    else
-    {
-        mp4_thumb = (struct mp4_thumb_s *) msi->priv;
-        os_memcpy(mp4_thumb->thumb_name, filename, strlen(filename) + 1);
-        msi->enable = 1;
+        msi_do_cmd(m, MSI_CMD_YUV_THUMB, 0, (uint32_t)filename);
+        msi_put(m);
     }
 
-    return msi;
+    if (scale3_msi)
+    {
+        struct scale3_normal_cmd_s cmd;
+        gettimeofday(&cmd.t, NULL);
+        cmd.w = 320;
+        #if MP4_THUMB_SPLICE_EN
+        cmd.h = 360;
+        #else
+        cmd.h = 180;
+        #endif
+        cmd.is_thumb = 0;
+        cmd.force_type = YUV_ARG_TAKEPHOTO;
+        msi_do_cmd(scale3_msi, MSI_CMD_SCALE3_NORMAL, MSI_SCLAE3_NORMAL_ADD_DPI, (uint32_t) &cmd);
+        msi_put(scale3_msi);
+    }
+    return NULL;
 }

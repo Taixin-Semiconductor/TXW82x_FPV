@@ -28,5 +28,6 @@ struct mipi_csi_debug {
 	uint8 debug_type0, debug_type1, debug_type2, debug_type3, debug_type4, debug_type5;
 };
 
+int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t camera_mode, uint8_t slave_en, uint8_t sensor_type,uint8_t mclk, struct mipi_csi_debug *p_debug); 
 #endif
 

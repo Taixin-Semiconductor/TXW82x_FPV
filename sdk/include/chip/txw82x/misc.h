@@ -296,6 +296,7 @@ uint16 sysctrl_efuse_config_and_read(uint32 addr, uint8 *p_buf, uint16 len);
 void rf_para_efuse_check_valid(void);
 void sysctrl_efuse_mac_addr_calc(uint8 *addr_buf);
 uint16 sysctrl_efuse_get_customer_id(void);
+uint16 sysctrl_efuse_get_customer_def(void);
 uint8 sysctrl_efuse_get_chip_package(void);
 uint32 sysctrl_efuse_get_smt_dat(void);
 int32 tsensor_meas(uint8 sensor_idx);

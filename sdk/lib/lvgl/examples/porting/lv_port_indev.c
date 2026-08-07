@@ -162,30 +162,32 @@ static void touchpad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
 {
     static lv_coord_t last_x = 0;
     static lv_coord_t last_y = 0;
+    static lv_indev_state_t last_state = LV_INDEV_STATE_REL; // 保存上次状态
 
     /*Save the pressed coordinates and the state*/
     touch_multipoint_pos_t *touch_point = touch_pad_get_multipoint_xy();
 
     if(touch_point) 
     {
-        data->point.x = touch_point->pos_x[0];
-        data->point.y = touch_point->pos_y[0];
-        data->state = LV_INDEV_STATE_PR;
-        touch_pad_free_multipoint_xy(touch_point);
-        if(last_x == data->point.x && last_y == data->point.y){
-            data->state = LV_INDEV_STATE_REL;
+        if(touch_point->point_num > 0) 
+        {
+            // 有数据说明仍为按下状态
+            last_x = touch_point->pos_x[0];
+            last_y = touch_point->pos_y[0];
+            last_state = LV_INDEV_STATE_PR;
+        } 
+        else 
+        {
+            // 点数为0，硬件明确抬手，此时状态改为释放
+            last_state = LV_INDEV_STATE_REL;
         }
-	    last_x = data->point.x;
-	    last_y = data->point.y;
-    }
-    else
-    {
-	    data->point.x = last_x;
-	    data->point.y = last_y;
-        data->state = LV_INDEV_STATE_REL;
-    }
 
-    /*Set the last pressed coordinates*/
+        touch_pad_free_multipoint_xy(touch_point);
+    }
+    // touch_point 为空，说明当前这一瞬间 I2C 没读出新消息，保持 last_state
+    data->point.x = last_x;
+    data->point.y = last_y;
+    data->state = last_state;
 
 }
 

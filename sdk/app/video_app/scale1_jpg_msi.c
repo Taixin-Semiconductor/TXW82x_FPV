@@ -85,9 +85,9 @@ static void scale1_soft_from_psram_to_enc(struct scale1_jpg_msi_s *scale1_jpg, u
     scale_set_data_from_vpp(scale_dev, 0);
     scale_set_line_buf_num(scale_dev, line_num * 2); // soft的line buf
     scale_request_irq(scale_dev, FRAME_END, scale1_done, (uint32_t) scale1_jpg);
-    //没有用到的中断主动关闭
-	scale_release_irq(scale_dev,INBUF_OV);
-	scale_release_irq(scale_dev,ERROR_PEND);
+    // 没有用到的中断主动关闭
+    scale_release_irq(scale_dev, INBUF_OV);
+    scale_release_irq(scale_dev, ERROR_PEND);
     scale_open(scale_dev);
 
     scale_set_inbuf_num(scale_dev, 0, 0);
@@ -178,7 +178,7 @@ static int scale1_vpp_close(uint32_t d)
 {
     struct scale1_jpg_msi_s *scale1_jpg_s = (struct scale1_jpg_msi_s *) d;
     struct vpp_device       *vpp_dev;
-    //struct jpg_V3_msi_s     *jpg_msg = (struct jpg_V3_msi_s *) d;
+    // struct jpg_V3_msi_s     *jpg_msg = (struct jpg_V3_msi_s *) d;
     os_event_set(&scale1_jpg_s->evt, MSI_SCALE1_THREAD_VPP_CLOSE, NULL);
     vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
     vpp_close(vpp_dev);
@@ -201,14 +201,18 @@ static void scale1_jpg_work(void *d)
     {
     scale1_jpg_work_again:
 
-        if (scale1_jpg_s->scale1_buf || already_kick)
+        if (!scale1_jpg_s->fb)
         {
-            delay_time = 1000;
+            if (scale1_jpg_s->scale1_buf || already_kick)
+            {
+                delay_time = 1000;
+            }
+            else
+            {
+                delay_time = -1;
+            }
         }
-        else
-        {
-            delay_time = -1;
-        }
+
         flags = 0;
         ret   = os_event_wait(&scale1_jpg_s->evt, MSI_SCALE1_THREAD_KICK | MSI_SCALE1_THREAD_STOP, &flags, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, delay_time);
         // 如果有对应的line_buf,则设置为超时1000ms,否则不需要超时
@@ -273,10 +277,11 @@ static void scale1_jpg_work(void *d)
                 msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_FROM, scale1_jpg_s->src_from);
                 msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_MSG, scale1_jpg_s->jpg_w << 16 | scale1_jpg_s->jpg_h);
                 // 重新启动mjpg
-                if(scale1_jpg_s->force_node)
+                if (scale1_jpg_s->force_node)
                 {
                     start_arg = BIT(scale1_jpg_s->force_node) | start_arg;
                 }
+                msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_SET_SCALE1_AUTO_FLAG, 0);
                 msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, start_arg);
 
                 struct yuv_arg_s *yuv_msg;
@@ -303,7 +308,7 @@ static void scale1_jpg_work(void *d)
                             if (timeout)
                             {
                                 vppdone_func_unregister(SCALE1_JPG_ENCODE);
-                                scale1_vpp_close((uint32_t)d);
+                                scale1_vpp_close((uint32_t) d);
                                 os_event_wait(&scale1_jpg_s->evt, MSI_SCALE1_THREAD_VPP_CLOSE, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 0);
                             }
                             uint32_t start_encode = os_jiffies();

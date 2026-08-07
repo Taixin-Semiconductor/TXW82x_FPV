@@ -20,7 +20,7 @@
 #include "hal/osd_enc.h"
 
 uint32 motion_det_pot_check(uint8_t *old_y, uint8_t *new_y, uint8_t *copy, uint16 w, uint16 h, uint8_t blk_thd, uint8_t md_blk_num);
-void md_set_pot_x_y(uint16 x, uint16 y);
+void   md_set_pot_x_y(uint16 x, uint16 y);
 
 #define VPP_MALLOC av_malloc
 #define VPP_FREE   av_free
@@ -53,8 +53,7 @@ struct vpp_cfg_s
 {
     uint8_t  vpp_buf0_line_num;
     uint8_t  vpp_buf1_line_num;
-    uint8_t  vpp_buf0_mode : 1, vpp_buf1_mode : 1, scale1_from_vpp : 1, scale3_from_vpp : 1, shrink : 3, mdt : 1;
-    uint8_t  double_psram_for_buf1;
+    uint16_t vpp_buf0_mode : 1, vpp_buf1_mode : 1, scale1_from_vpp : 1, scale3_from_vpp : 1, shrink : 3, mdt : 1, double_psram_for_buf1 : 1, rev : 7;
     uint16_t vpp_w, vpp_h;
     uint16_t vpp_scale_w, vpp_scale_h;
 };
@@ -74,6 +73,7 @@ struct vpp_cfg_s vpp_msg = {
         .vpp_scale_h           = 0,
         .shrink                = SHRINK_1_2,
         .double_psram_for_buf1 = 1,
+        .mdt                   = 0,
 };
 #else
 struct vpp_cfg_s vpp_msg = {
@@ -94,6 +94,7 @@ struct vpp_cfg_s vpp_msg = {
 #endif
 
 // uint8 motion_detect_buf[9*1024/*((IMAGE_W+31)/32)  * ((IMAGE_H+31)/32) + 3 + 4*((IMAGE_W+31)/32)*/]__attribute__ ((aligned(4)));//加3是为了防止blk数不是word对齐
+volatile uint32_t photo_complex = 0;
 uint8            *motion_detect_buf          = NULL;
 uint8            *motion_detect_oldframe_buf = NULL;
 uint8            *mdet_result;
@@ -224,7 +225,14 @@ uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h)
 
     if (h)
     {
-        *h = vpp_msg.vpp_h;
+        if(video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+        {
+            *h = vpp_msg.vpp_h * 2;
+        }
+        else
+        {
+            *h = vpp_msg.vpp_h;
+        }
     }
     if (!vpp_msg.vpp_w || !vpp_msg.vpp_h)
     {
@@ -305,6 +313,13 @@ uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h)
     if (VPP_BUF1_EN == 0)
     {
         ret = 1;
+    }
+    else
+    {
+        if(video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+        {
+            *h = (*h)*2;
+        }
     }
     return ret;
 }
@@ -749,7 +764,7 @@ void vpp_video_recfg(uint32 dev, uint32_t w, uint32_t h, uint8_t input_from)
 
         vpp_set_buf1_y_addr(p_vpp, (uint32) yuvbuf1);
         vpp_set_buf1_u_addr(p_vpp, (uint32) yuvbuf1 + buf1w * malloc_line);
-        vpp_set_buf1_v_addr(p_vpp, (uint32) yuvbuf1 + buf1w * malloc_line + buf1w * (malloc_line / 4));
+        vpp_set_buf1_v_addr(p_vpp, (uint32) yuvbuf1 + buf1w * malloc_line + buf1w * malloc_line / 4);
     }
     vpp_set_buf1_en(p_vpp, 1);
 
@@ -771,7 +786,7 @@ void vpp_video_recfg(uint32 dev, uint32_t w, uint32_t h, uint8_t input_from)
 
         vpp_set_buf0_y_addr(p_vpp, (uint32) yuvbuf);
         vpp_set_buf0_u_addr(p_vpp, (uint32) yuvbuf + w * malloc_line);
-        vpp_set_buf0_v_addr(p_vpp, (uint32) yuvbuf + w * malloc_line + w * (malloc_line / 4));
+        vpp_set_buf0_v_addr(p_vpp, (uint32) yuvbuf + w * malloc_line + w * malloc_line / 4);
     }
 
 #if DET_EN
@@ -797,7 +812,7 @@ void vpp_hsie_isr(uint32 irq, uint32 dev, uint32 param)
 void vpp_vsie_isr(uint32 irq, uint32 dev, uint32 param)
 {
     // uint8_t itk;
-    //struct vpp_device *p_vpp = (struct vpp_device *) dev;
+    // struct vpp_device *p_vpp = (struct vpp_device *) dev;
     //_os_printf("V");
 
     if (vpp_deal_dev_func_table[VPP_IFP_EN_CTRL])
@@ -912,7 +927,7 @@ uint8_t vpp_video_type_map(uint8_t stype)
 void vpp_set_time(struct vpp_device *p_vpp, uint32_t time_val)
 {
     struct tm *time_info;
-    time_info     = gmtime((const time_t*)&time_val);
+    time_info     = gmtime((const time_t *) &time_val);
     uint32_t year = time_info->tm_year + 1900;
     uint32_t mon  = time_info->tm_mon + 1;
     uint32_t day  = time_info->tm_mday;
@@ -922,11 +937,41 @@ void vpp_set_time(struct vpp_device *p_vpp, uint32_t time_val)
     set_time_watermark(p_vpp, year, mon, day, hour, min, sec);
 }
 
+
+uint32_t compute_block_laplacian_mean(uint8_t *block_mean_y, int num_vertical_blocks, int num_horizontal_blocks) {
+    int laplacian_sum = 0;
+    int num_laplacian_values = (num_vertical_blocks > 2 ? num_vertical_blocks - 2 : 0) * 
+                               (num_horizontal_blocks > 2 ? num_horizontal_blocks - 2 : 0);
+
+
+//	_os_printf("v:%d h:%d\r\n",num_vertical_blocks,num_horizontal_blocks);
+    for (int block_row = 1; block_row < num_vertical_blocks - 1; block_row++) {
+        for (int block_col = 1; block_col < num_horizontal_blocks - 1; block_col++) {
+            int laplacian_value = 
+                4 * block_mean_y[block_row*num_horizontal_blocks + block_col] - 
+                block_mean_y[(block_row - 1)*num_horizontal_blocks+block_col] - 
+                block_mean_y[(block_row + 1)*num_horizontal_blocks+block_col] - 
+                block_mean_y[block_row*num_horizontal_blocks+(block_col - 1)] - 
+                block_mean_y[block_row*num_horizontal_blocks+(block_col + 1)];
+            
+            laplacian_sum += (laplacian_value < 0 ? -laplacian_value : laplacian_value);
+        }
+    }
+
+    if (num_laplacian_values == 0) {
+        return 0;
+    } else {
+        return (laplacian_sum + num_laplacian_values / 2) / num_laplacian_values;
+    }
+}
+
+
 void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
 {
     static uint32_t md_isr_cnt = 0;
     //	static uint32_t  done_num=0;
     //	static uint32_t  detnum=0;
+//    uint32_t defcal;
     uint8_t         itk        = 0;
     int32_t         ret        = 0;
     uint16_t        w, h;
@@ -934,12 +979,13 @@ void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
     uint32_t        loc;
     uint16_t        buf1w = 0, buf1h = 0;
     uint8_t        *ptr_cache;
-    _os_printf(KERN_DEBUG "F");
+    
     static time_t      last_time_val = 0;
     struct vpp_device *p_vpp         = (struct vpp_device *) dev;
     struct timeval     ptimeval;
     gettimeofday(&ptimeval, NULL);
     time_t time_val = (time_t) ptimeval.tv_sec;
+	
 
     if ((motion_detect_buf != NULL) && (motion_detect_oldframe_buf != NULL))
     { // det enable
@@ -962,6 +1008,7 @@ void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
         last_time_val = time_val;
     }
 
+#if 0
     if (video_msg.video_num > 1)
     {
         if (video_msg.video_type_cur != ISP_VIDEO_0)
@@ -995,7 +1042,7 @@ void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
             }
         }
     }
-
+#endif
     for (itk = 0; itk < VPP_FUNC_DONE_NUM; itk++)
     {
         if (vpp_deal_dev_func_table[itk])
@@ -1061,20 +1108,48 @@ void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
                 break;
         }
 
-        ptr_cache      = (uint8_t*)psram_user_ptr;
+        ptr_cache      = (uint8_t *) psram_user_ptr;
         psram_user_ptr = psram_ptr;
         psram_ptr      = ptr_cache;
 
-		vpp_set_buf1_shrink(p_vpp, shrink);
-	    vpp_set_psram_ycnt(p_vpp, buf1w, buf1h);
-    	vpp_set_psram_uvcnt(p_vpp, buf1w, buf1h);	
-		
-        vpp_set_buf1_y_addr(p_vpp, (uint32) psram_ptr);
-        vpp_set_buf1_u_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h);
-        vpp_set_buf1_v_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h + buf1w * buf1h / 4);
+        if (psram_ptr)
+        {
+
+            vpp_set_buf1_shrink(p_vpp, shrink);
+            vpp_set_psram_ycnt(p_vpp, buf1w, buf1h);
+            vpp_set_psram_uvcnt(p_vpp, buf1w, buf1h);
+
+            if (video_msg.camera_mode == CAM_SINGLE_MASTER_MODE)
+            {
+                vpp_set_buf1_y_addr(p_vpp, (uint32) psram_ptr);
+                vpp_set_buf1_u_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h);
+                vpp_set_buf1_v_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h + buf1w * buf1h / 4);
+            }
+            else if (video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+            {
+                if (psram_ptr == vpp_data1_psram_buf)
+                {
+                    vpp_set_buf1_y_addr(p_vpp, (uint32) psram_ptr);
+                    vpp_set_buf1_u_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h * 2);
+                    vpp_set_buf1_v_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h * 2 + buf1w * (buf1h * 2) / 4);
+                }
+                else
+                {
+                    vpp_set_buf1_y_addr(p_vpp, (uint32) psram_ptr);
+                    vpp_set_buf1_u_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h + buf1w * buf1h / 4);
+                    vpp_set_buf1_v_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h + buf1w * buf1h / 4 + buf1w * (buf1h * 2) / 4);
+                }
+            }
+        }
     }
-	
-	md_isr_cnt = vpp_md_cnt;
+
+    md_isr_cnt = vpp_md_cnt;
+
+	if (motion_detect_buf != NULL){
+		//720P --->260us
+		photo_complex = compute_block_laplacian_mean(motion_detect_buf + 4 * ((vpp_msg.vpp_w + 31) / 32),(vpp_msg.vpp_h + 31) / 32,(vpp_msg.vpp_w + 31) / 32);
+	}
+	_os_printf(KERN_DEBUG "F(%d)",photo_complex);
 }
 volatile uint8 itp_done = 0;
 void           vpp_itp_done(uint32 irq, uint32 dev, uint32 param)
@@ -1122,15 +1197,21 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 {
     vpp_msg.vpp_w = w;
     vpp_msg.vpp_h = h;
+    //如果需要拼接,则设置double_psram_for_buf1
+    if(video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+    {
+        vpp_msg.double_psram_for_buf1 = 1;
+    }
+    
     if (!w || !h)
     {
         os_printf(KERN_ERR "vpp_cfg err:w=%d,h=%d\r\n", w, h);
         return FALSE;
     }
 #if IPF_EN
-    uint32_t             len;
-#endif	
-    struct vpp_device   *vpp_dev;
+    uint32_t len;
+#endif
+    struct vpp_device *vpp_dev;
     vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
 
 #if IPF_EN
@@ -1218,7 +1299,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 
         if (yuvbuf1 == NULL)
         {
-            yuvbuf1 = VPP_MALLOC(buf1w * malloc_line + buf1w * (malloc_line / 2));
+            yuvbuf1 = VPP_MALLOC(buf1w * malloc_line + buf1w * malloc_line / 2);
             if (yuvbuf1 == NULL)
             {
                 _os_printf("no room yuvbuf1\r\n");
@@ -1227,7 +1308,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
         }
         vpp_set_buf1_y_addr(vpp_dev, (uint32) yuvbuf1);
         vpp_set_buf1_u_addr(vpp_dev, (uint32) yuvbuf1 + buf1w * malloc_line);
-        vpp_set_buf1_v_addr(vpp_dev, (uint32) yuvbuf1 + buf1w * malloc_line + buf1w * (malloc_line / 4));
+        vpp_set_buf1_v_addr(vpp_dev, (uint32) yuvbuf1 + buf1w * malloc_line + buf1w * malloc_line / 4);
         vpp_set_buf1_count(vpp_dev, vpp_msg.vpp_buf1_line_num);
     }
 #else
@@ -1253,19 +1334,38 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
         VPP_PSRAM_FREE(vpp_data1_psram_buf);
         vpp_data1_psram_buf = NULL;
     }
-    vpp_data1_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * p_h * 3 / 2);
-    ASSERT(vpp_data1_psram_buf);
-    if (vpp_msg.double_psram_for_buf1)
+
+    if (video_msg.camera_mode == CAM_SINGLE_MASTER_MODE)
     {
-        vpp_data2_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * p_h * 3 / 2);
-        ASSERT(vpp_data2_psram_buf);
-        psram_ptr      = vpp_data1_psram_buf;
-        psram_user_ptr = vpp_data2_psram_buf;
+
+        vpp_data1_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * p_h * 3 / 2);
+        ASSERT(vpp_data1_psram_buf);
+        if (vpp_msg.double_psram_for_buf1)
+        {
+            vpp_data2_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * p_h * 3 / 2);
+            ASSERT(vpp_data2_psram_buf);
+            psram_ptr      = vpp_data1_psram_buf;
+            psram_user_ptr = vpp_data2_psram_buf;
+        }
+
+        vpp_set_buf1_y_addr(vpp_dev, (uint32) vpp_data1_psram_buf);
+        vpp_set_buf1_u_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h);
+        vpp_set_buf1_v_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h + p_w * p_h / 4);
+    }
+    else if (video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+    {
+        vpp_data1_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * (p_h * 2) * 3 / 2);
+        _os_printf("vpp_data1_psram_buf:%08x\r\n", vpp_data1_psram_buf);
+        ASSERT(vpp_data1_psram_buf);
+
+        vpp_data2_psram_buf = vpp_data1_psram_buf + p_w * p_h;
+        psram_ptr           = vpp_data1_psram_buf;
+        psram_user_ptr      = vpp_data2_psram_buf;
+        vpp_set_buf1_y_addr(vpp_dev, (uint32) vpp_data1_psram_buf);
+        vpp_set_buf1_u_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h * 2);
+        vpp_set_buf1_v_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h * 2 + (p_w * p_h * 2) / 4);
     }
 
-    vpp_set_buf1_y_addr(vpp_dev, (uint32) vpp_data1_psram_buf);
-    vpp_set_buf1_u_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h);
-    vpp_set_buf1_v_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h + p_w * p_h / 4);
 #endif
     vpp_set_buf1_shrink(vpp_dev, vpp_msg.shrink);
     vpp_set_buf1_en(vpp_dev, 1);
@@ -1281,10 +1381,9 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
         {
             malloc_line = vpp_msg.vpp_buf0_line_num * 2 + 16; // 16+2N
         }
-
         if (yuvbuf == NULL)
         {
-            yuvbuf = (uint8_t *) VPP_MALLOC(w * malloc_line + w * (malloc_line / 2));
+            yuvbuf = (uint8_t *) VPP_MALLOC(w * malloc_line + w * malloc_line / 2);
             if (yuvbuf == NULL)
             {
                 _os_printf("no room yuvbuf0\r\n");
@@ -1298,7 +1397,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 #else
         vpp_set_buf0_y_addr(vpp_dev, (uint32) yuvbuf);
         vpp_set_buf0_u_addr(vpp_dev, (uint32) yuvbuf + w * malloc_line);
-        vpp_set_buf0_v_addr(vpp_dev, (uint32) yuvbuf + w * malloc_line + w * (malloc_line / 4));
+        vpp_set_buf0_v_addr(vpp_dev, (uint32) yuvbuf + w * malloc_line + w * malloc_line / 4);
 #endif
     }
 
@@ -1317,7 +1416,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
     vpp_set_water0_rc(vpp_dev, 0);
     vpp_set_watermark0_auto_rc_sram_adr(vpp_dev, (uint32_t) autorc);
     vpp_set_watermark0_auto_rc_threshold(vpp_dev, 16 * 32 * 128, 16 * 32 * 32);
-    vpp_set_watermark_auto_rc_mode(vpp_dev, 0); // double sensor
+    vpp_set_watermark_auto_rc_mode(vpp_dev, video_msg.video_num > 1 ? 1 : 0); // double sensor
     vpp_set_watermark0_auto_rc(vpp_dev, 1, 0x00, 0x80, 0x80);
 
 #if IPF_EN

@@ -143,6 +143,7 @@ static void wave_decode(struct wave_decode_struct *s)
 					}
 					read_len = read_len/2;
 				}
+				frame_buf->priv = &(s->audio_track);
 				frame_buf->len = read_len;
 				frame_buf->mtype = F_AUDIO;
 				frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -413,7 +414,6 @@ struct msi *wave_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *aude
 			WAVE_INFO("wave decode malloc framebuff data fail!\r\n");
 			goto wave_decode_init_err;       
 		}  
-		frame_buf->priv = &(wave_decode_s->audio_track);
 	}
 	if(filename) {
 		wave_decode_s->wave_fp = osal_fopen((const char*)filename, "rb");

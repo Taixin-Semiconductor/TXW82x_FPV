@@ -109,7 +109,7 @@ typedef struct _lcd_desc_s {
 
 	uint16 osd_x,osd_y,osd_w,osd_h;
 	
-	uint8 (* init_table)[2];
+	const uint8 (* init_table)[2];
 	uint8 * frame_table;
 
 	

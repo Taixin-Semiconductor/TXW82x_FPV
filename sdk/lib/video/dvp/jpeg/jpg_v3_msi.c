@@ -9,6 +9,7 @@
 #include "jpg_concat_msi.h"
 #include "user_work/user_work.h"
 #include "hal/scale.h"
+#include "hal/isp.h"
 #if JPG_EN
 #define HARDWARE_JPG_NUM 2
 
@@ -30,6 +31,7 @@ enum
     MSI_JPG_BUF_FULL_ERR         = BIT(1), // buf full的时候报错
     MSI_JPG_BUF_ERR              = BIT(2), // 硬件直接报错
     MSI_SCALE1_DATA0_DATA1_CLOSE = BIT(3),
+    MSI_JPG_END_FLAG             = BIT(4),
 };
 
 // data申请空间函数
@@ -46,6 +48,21 @@ struct msi *g_jpg_msi[HARDWARE_JPG_NUM] = {NULL, NULL};
 
 // 采用默认jpg方式,如果遇到频繁切换mjpg模式,会变慢
 #ifndef FAST_JPG
+
+static int32_t vpp_start_JPEG(uint32_t irq_data)
+{
+    struct jpg_device *jpg = (struct jpg_device *) irq_data;
+    // 如果需要拼接,就要等待镜头2才能启动
+    if (video_msg.video_type_cur == ISP_VIDEO_1 || video_msg.camera_mode != CAM_DUAL_SPLICE_SLAVE_MODE)
+    {
+        jpg_open(jpg);
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
 
 int jpg_quality_pidCtrl(struct jpg_V3_msi_s *jpg_msg, int diff, int p, int i, int d)
 {
@@ -170,7 +187,8 @@ static int32 jpg_msi_done_isr(uint32 irq_flag, uint32 irq_data, uint32 param1, u
         goto jpg_msi_done_isr_end;
     }
 
-    jpg_set_ready(jpg_msg->jpg);
+
+
     // 最后配置的fb,这个是没有被用的,可以重复利用
     fb = jpg_msg->last_fb;
     // 这里不应该进来,进来后,需要检查是否正常
@@ -199,6 +217,12 @@ static int32 jpg_msi_done_isr(uint32 irq_flag, uint32 irq_data, uint32 param1, u
     // 配置第二次的寄存器
     jpg_set_addr(jpg_msg->jpg, (uint32) fb->data, fb->len);
     jpg_msg->last_fb = fb;
+
+    // 如果应用需要关闭,等待关闭流程
+    if (!jpg_msg->end_flag)
+    {
+        jpg_set_ready(jpg_msg->jpg);
+    }
 
     // jpg_open(jpg_msg->jpg);
     send_fb->datatag = jpg_msg->datatag;
@@ -233,8 +257,14 @@ static int32 jpg_msi_done_isr(uint32 irq_flag, uint32 irq_data, uint32 param1, u
         }
         else
         {
-            // send_fb->stype = FSTYPE_JPG_CAMERA0+video_msg.video_type_cur;
-            send_fb->srcID = FRAMEBUFF_SOURCE_CAMERA0 + video_msg.video_type_cur;
+            if (video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+            {
+                send_fb->srcID = FRAMEBUFF_SOURCE_CAMERA0;
+            }
+            else
+            {
+                send_fb->srcID = FRAMEBUFF_SOURCE_CAMERA0 + video_msg.video_type_cur;
+            }
             send_fb->stype = FSTYPE_VIDEO_VPP_DATA0 + jpg_msg->src_from;
         }
 
@@ -314,6 +344,11 @@ jpg_msi_outbuff_full_isr_end:
     {
         jpg_msg->err |= MSI_JPG_BUF_FULL_ERR;
         os_event_set(&jpg_msg->evt, MSI_JPG_BUF_FULL_ERR, NULL);
+        if (jpg_msg->end_flag)
+        {
+            jpg_msg->err |= MSI_JPG_END_FLAG;
+            os_event_set(&jpg_msg->evt, MSI_JPG_END_FLAG, NULL);
+        }
         _os_printf(KERN_ERR "JU");
     }
     return 0;
@@ -329,6 +364,11 @@ static int32 jpg_msi_buf_err(uint32 irq_flag, uint32 irq_data, uint32 param1, ui
     os_event_set(&jpg_msg->evt, MSI_JPG_BUF_ERR, NULL);
     os_run_work(&jpg_msg->work);
     jpg_msg->err |= MSI_JPG_BUF_ERR;
+    if (jpg_msg->end_flag)
+    {
+        jpg_msg->err |= MSI_JPG_END_FLAG;
+        os_event_set(&jpg_msg->evt, MSI_JPG_END_FLAG, NULL);
+    }
     _os_printf(KERN_ERR "JE");
     return 0;
 }
@@ -403,7 +443,7 @@ jpg_msi_work_end:
         }
         jpg_msg->last_fb = NULL;
         jpg_msg->now_fb  = NULL;
-
+        
         // 重新配置jpg的地址,启动
         fb = fbpool_get(&jpg_msg->pool, 0, NULL);
         ASSERT(fb);
@@ -417,9 +457,20 @@ jpg_msi_work_end:
         jpg_msg->last_fb = fb;
         jpg_msg->err     = 0;
         jpg_msg->running = 1;
-        jpg_set_ready(jpg_msg->jpg);
+        
         jpg_set_data_from(jpg_msg->jpg, jpg_msg->src_from);
-        jpg_open(jpg_msg->jpg);
+        jpg_set_ready(jpg_msg->jpg);
+        if (jpg_msg->src_from == VPP_DATA0 || jpg_msg->src_from == VPP_DATA1)
+        {
+            vppdone_func_register(VPP_JPEG0_START + jpg_msg->which, vpp_start_JPEG, (uint32_t) jpg_msg->jpg);
+        }
+        else
+        {
+            
+            jpg_open(jpg_msg->jpg);
+        }
+
+        // jpg_open(jpg_msg->jpg);
     }
 
     return 0;
@@ -454,8 +505,16 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
         break;
         case MSI_CMD_PRE_DESTROY:
         {
+            vppdone_func_unregister(VPP_JPEG0_START + jpg_msg->which);
             // 先关闭workqueue(防止有报错,将jpg重新启动)
             os_work_cancle2(&jpg_msg->work, 1);
+            // 如果编码源是VPP_DATA0或者VPP_DATA1就需要特定时间close
+            if (jpg_msg->vpp_close_flag)
+            {
+                jpg_msg->end_flag = 1;
+                os_event_wait(&jpg_msg->evt, MSI_JPG_END_FLAG | MSI_JPG_BUF_ERR | MSI_JPG_DONE_ERR | MSI_JPG_BUF_FULL_ERR, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 1000);
+            }
+
             // 关闭jpg
             if (jpg_msg->running)
             {
@@ -498,9 +557,9 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
                 }
                 else
                 {
-                    os_printf(KERN_INFO"jpg_msg:%X\tjpg_msg_err:%d\n",jpg_msg,jpg_msg->err);
-                    os_printf("jpg_msg->running:%d\n",jpg_msg->running);
-                    os_printf("jpg_msg->err:%d\n",jpg_msg->err);
+                    os_printf(KERN_INFO "jpg_msg:%X\tjpg_msg_err:%d\n", jpg_msg, jpg_msg->err);
+                    os_printf("jpg_msg->running:%d\n", jpg_msg->running);
+                    os_printf("jpg_msg->err:%d\n", jpg_msg->err);
                 }
                 *(uint32_t *) param1 = running;
             }
@@ -548,7 +607,7 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
                         jpg_request_irq(jpg_msg->jpg, jpg_msi_buf_err, JPG_IRQ_FLAG_ERROR, msi);
                         jpg_request_irq(jpg_msg->jpg, jpg_msi_done_isr, JPG_IRQ_FLAG_JPG_DONE, msi);
 
-                        jpg_set_ready(jpg_msg->jpg);
+                        
                         jpg_set_vsync_dly(jpg_msg->jpg, 1);
                         jpg_select_oe_using(jpg_msg->jpg, 0, 1);
 
@@ -561,10 +620,22 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
                         fb = fbpool_get(&jpg_msg->pool, 0, NULL);
                         ASSERT(fb);
                         jpg_set_addr(jpg_msg->jpg, (uint32) fb->data, fb->len);
+                        
+                        //设置一下scale1是手动还是自动
+                        jpg_set_autoscale(jpg_msg->jpg, jpg_msg->scale1_flag);
                         // 记录最后一个配置链表
                         jpg_msg->last_fb = fb;
                         jpg_msg->running = 1;
-                        jpg_open(jpg_msg->jpg);
+                        jpg_set_ready(jpg_msg->jpg);
+                        if (jpg_msg->src_from == VPP_DATA0 || jpg_msg->src_from == VPP_DATA1)
+                        {
+                            vppdone_func_register(VPP_JPEG0_START + jpg_msg->which, vpp_start_JPEG, (uint32_t) jpg_msg->jpg);
+                        }
+                        else
+                        {
+                            jpg_open(jpg_msg->jpg);
+                        }
+                        // jpg_open(jpg_msg->jpg);
                     }
                     else
                     {
@@ -585,6 +656,12 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
                         }
                         else if (jpg_msg->vpp_close_flag)
                         {
+                            // 如果编码源是VPP_DATA0或者VPP_DATA1就需要特定时间close
+                            if (jpg_msg->vpp_close_flag)
+                            {
+                                jpg_msg->end_flag = 1;
+                                os_event_wait(&jpg_msg->evt, MSI_JPG_END_FLAG | MSI_JPG_BUF_ERR | MSI_JPG_DONE_ERR | MSI_JPG_BUF_FULL_ERR, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 100);
+                            }
                             jpg_msg->vpp_close_flag = 0;
                             jpg_close(jpg_msg->jpg);
                         }
@@ -809,7 +886,7 @@ struct msi *hardware_jpg_msi(uint8_t which_jpg, uint8_t src_from, uint16_t jpg_n
             jpg_msg->jpg_node_len   = jpg_node_len;
             jpg_msg->jpg_node_count = jpg_node_count;
             jpg_msg->jpg            = (struct jpg_device *) dev_get(which_jpg + HG_JPG0_DEVID);
-            jpg_msg->scale_dev = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
+            jpg_msg->scale_dev      = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
             jpg_close(jpg_msg->jpg);
             // 预分配buf空间到各个fb中
             uint16_t init_count = 0;
@@ -980,7 +1057,7 @@ static uint32_t jpg_node_free(void *node)
             free_jpg_node(tmp_node);
         }
     }
-	return 0;
+    return 0;
 }
 static uint32_t jpg_free_res(struct jpg_V3_msi_s *jpg_msg)
 {
@@ -1014,7 +1091,7 @@ static int32 jpg_msi_done_isr(uint32 irq_flag, uint32 irq_data, uint32 param1, u
         goto jpg_msi_done_isr_end;
     }
 
-    jpg_set_ready(jpg_msg->jpg);
+
     node = jpg_msg->last_node;
     // 这里不应该进来,进来后,需要检查是否正常
     if (!node)
@@ -1041,6 +1118,13 @@ static int32 jpg_msi_done_isr(uint32 irq_flag, uint32 irq_data, uint32 param1, u
     // 配置第二次的寄存器
     jpg_set_addr(jpg_msg->jpg, (uint32) node, len);
     jpg_msg->last_node = node;
+
+    // 如果应用需要关闭,等待关闭流程
+    if (!jpg_msg->end_flag)
+    {
+        jpg_set_ready(jpg_msg->jpg);
+    }
+    
     if (os_msgq_put(&jpg_msg->msgq, (uint32_t) send_node, 0))
     {
         jpg_node_free(send_node);
@@ -1147,6 +1231,11 @@ jpg_msi_outbuff_full_isr_end:
     {
         jpg_msg->err |= MSI_JPG_BUF_FULL_ERR;
         os_event_set(&jpg_msg->evt, MSI_JPG_BUF_FULL_ERR, NULL);
+        if (jpg_msg->end_flag)
+        {
+            jpg_msg->err |= MSI_JPG_END_FLAG;
+            os_event_set(&jpg_msg->evt, MSI_JPG_END_FLAG, NULL);
+        }
     }
     return 0;
 }
@@ -1161,6 +1250,11 @@ static int32 jpg_msi_buf_err(uint32 irq_flag, uint32 irq_data, uint32 param1, ui
     os_event_set(&jpg_msg->evt, MSI_JPG_BUF_ERR, NULL);
     os_run_work(&jpg_msg->work);
     jpg_msg->err |= MSI_JPG_BUF_ERR;
+    if (jpg_msg->end_flag)
+    {
+        jpg_msg->err |= MSI_JPG_END_FLAG;
+        os_event_set(&jpg_msg->evt, MSI_JPG_END_FLAG, NULL);
+    }
     _os_printf(KERN_ERR "JE");
     return 0;
 }
@@ -1299,6 +1393,14 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
         {
             // 先关闭workqueue(防止有报错,将jpg重新启动)
             os_work_cancle2(&jpg_msg->work, 1);
+
+            // 如果编码源是VPP_DATA0或者VPP_DATA1就需要特定时间close
+            if (jpg_msg->vpp_close_flag)
+            {
+                jpg_msg->end_flag = 1;
+                os_event_wait(&jpg_msg->evt, MSI_JPG_END_FLAG | MSI_JPG_BUF_ERR | MSI_JPG_DONE_ERR | MSI_JPG_BUF_FULL_ERR, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 100);
+            }
+
             // 关闭jpg
             if (jpg_msg->running)
             {
@@ -1393,6 +1495,12 @@ static int jpg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 
                         }
                         else if (jpg_msg->vpp_close_flag)
                         {
+                            // 如果编码源是VPP_DATA0或者VPP_DATA1就需要特定时间close
+                            if (jpg_msg->vpp_close_flag)
+                            {
+                                jpg_msg->end_flag = 1;
+                                os_event_wait(&jpg_msg->evt, MSI_JPG_END_FLAG | MSI_JPG_BUF_ERR | MSI_JPG_DONE_ERR | MSI_JPG_BUF_FULL_ERR, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 100);
+                            }
                             jpg_msg->vpp_close_flag = 0;
                             jpg_close(jpg_msg->jpg);
                         }

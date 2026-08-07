@@ -4,8 +4,9 @@
 #include "devid.h"
 #include "dev/vpp/hgvpp.h"
 #include "osal/string.h"
+#include "video_err.h"
 
-struct hgvpp_hw
+typedef struct hgvpp_hw
 {
     __IO uint32_t CON;
     __IO uint32_t CON1;
@@ -45,7 +46,7 @@ struct hgvpp_hw
 	__IO uint32_t FRM_PSRAM_UVCNT; 
 	__IO uint32_t FRM1_PSRAM_YCNT;
 	__IO uint32_t FRM1_PSRAM_UVCNT; 	
-};
+}SDK_HGVPP_HW;
 
 
 vpp_irq_hdl vppirq_vector_table[VPP_IRQ_NUM];
@@ -60,7 +61,16 @@ static int32 hgvpp_ioctl(struct vpp_device *p_vpp, enum vpp_ioctl_cmd ioctl_cmd,
 	uint32 x_s,y_s,x_e,y_e;
 	//uint32 *size_array;
 	struct hgvpp *vpp_hw = (struct hgvpp*)p_vpp;	
-	struct hgvpp_hw *hw  = (struct hgvpp_hw *)vpp_hw->hw;
+	SDK_HGVPP_HW *hw  = (SDK_HGVPP_HW *)vpp_hw->hw;
+	
+	if(vpp_hw->clk_en == 0){
+		vpp_hw->clk_en = 1;
+		SYSCTRL->CLK_CON5 |= BIT(2);     //vpp clk en
+		SYSCTRL->SYS_CON7 &= ~BIT(26);   
+		SYSCTRL->SYS_CON7 |= BIT(26);    //vpp rst  		
+	}
+
+
 	switch(ioctl_cmd){
 		case VPP_IOCTL_CMD_ITP_AUTO_CLOSE:
 			if(param1)
@@ -543,17 +553,17 @@ static int32 hgvpp_ioctl(struct vpp_device *p_vpp, enum vpp_ioctl_cmd ioctl_cmd,
 
 		case VPP_IOCTL_CMD_GET_SCALE1BUF_SELECT:
 			if(hw->CON1&BIT(18)){
-				ret_val = 1;              //�õ���buf1
+				ret_val = 1;              //用的是buf1
 			}else{
-				ret_val = 0;			  //�õ���buf0
+				ret_val = 0;			  //用的是buf0
 			}
 		break;
 
 		case VPP_IOCTL_CMD_GET_SCALE3BUF_SELECT:
 			if(hw->CON1&BIT(19)){
-				ret_val = 1;              //�õ���buf1
+				ret_val = 1;              //用的是buf1
 			}else{
-				ret_val = 0;			  //�õ���buf0
+				ret_val = 0;			  //用的是buf0
 			}
 		break;
 
@@ -614,23 +624,20 @@ void VPP_IRQHandler_action(void *p_vpp)
 	struct hgvpp_hw *hw  = (struct hgvpp_hw *)vpp_hw->hw;
 	jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp
 	sta = hw->STA;
+	uint8_t isp_err = 0;
 	for(loop = 0;loop < VPP_IRQ_NUM;loop++){
 		if(sta&BIT(loop)){
 			hw->STA = BIT(loop);
 			if(loop == IPF_OV_ISR){
-				isp_ov_err = 1;
+				isp_ov_err = ~0;
 			}
-		
-			if(isp_ov_err){
+			isp_err = isp_ov_err & BIT(ISP_VPP_ERR);			
+			if(isp_err){
 				if(loop == FRAME_DONE_ISR){
 					os_printf("isp ov,vpp drop\r\n");
-					isp_ov_err = 0;
+					isp_ov_err &= (~BIT(ISP_VPP_ERR));
 				}
 			}else{
-				if(loop == FRAME_DONE_ISR){
-					isp_ov_err = 0;
-				}
-				
 				if(vppirq_vector_table[loop] != NULL)
 					vppirq_vector_table[loop] (loop,vppirq_dev_table[loop],0);
 			}
@@ -698,7 +705,7 @@ int32 hgvpp_suspend(struct dev_obj *obj){
 	struct hgvpp *vpp_hw = (struct hgvpp*)obj;
 	struct hgvpp_hw *hw;
 	struct hgvpp_hw *hw_cfg;
-	//确保已经被打开并且休眠过,直接返回
+	//纭繚宸茬粡琚墦寮€骞朵笖浼戠湢杩?鐩存帴杩斿洖
 	if(!vpp_hw->opened || vpp_hw->dsleep)
 	{
 		return RET_OK;
@@ -756,7 +763,7 @@ int32 hgvpp_resume(struct dev_obj *obj){
 	struct hgvpp *vpp_hw = (struct hgvpp*)obj;
 	struct hgvpp_hw *hw;
 	struct hgvpp_hw *hw_cfg;
-	//如果已经被打开并且没有休眠过,直接返回
+	//濡傛灉宸茬粡琚墦寮€骞朵笖娌℃湁浼戠湢杩?鐩存帴杩斿洖
 	if(!vpp_hw->opened || !vpp_hw->dsleep)
 	{
 		return RET_OK;
@@ -823,6 +830,7 @@ static const struct vpp_hal_ops dev_ops = {
 
 int32 hgvpp_attach(uint32 dev_id, struct hgvpp *vpp){
     vpp->opened          = 0;
+	vpp->clk_en          = 0;
     vpp->use_dma         = 0;
     vpp->irq_hdl                   = NULL;
     //memset(dvp->irq_hdl,0,sizeof(dvp->irq_hdl));

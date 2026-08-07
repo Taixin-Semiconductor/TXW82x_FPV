@@ -120,6 +120,7 @@ static void aac_file_decode(struct aac_decode_struct *s)
 			}
             enc_ptr_offset += aac_info.frame_bytes;
             unproc_data_size -= aac_info.frame_bytes;
+            frame_buf->priv = &s->audio_track;
             frame_buf->len = dec_samples*2;
             frame_buf->mtype = F_AUDIO;
             frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -225,6 +226,7 @@ static void aac_msi_decode(struct aac_decode_struct *s)
                     for(uint32_t i=0; i<dec_samples; i++)
                         send_data[i] = s->dec_buf[i];
                 }
+                send_frame_buf->priv = &s->audio_track;
                 send_frame_buf->len = dec_samples*2;
                 send_frame_buf->mtype = F_AUDIO;
                 send_frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -529,12 +531,10 @@ struct msi *aac_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *audec
 	for(uint32_t i=0; i<MAX_AAC_DECODE_TXBUF; i++) {
 		struct framebuff *frame_buf = (aac_decode_s->tx_pool.pool)+i;
 		frame_buf->data = (uint8_t*)AAC_CODE_MALLOC(1024 * sizeof(int16_t));
-		if(frame_buf->data == NULL)
-		{
+		if(frame_buf->data == NULL) {
 			AAC_INFO("aac decode malloc framebuff data fail!\r\n");
 			goto aac_decode_init_err;       
 		}   
-		frame_buf->priv = &(aac_decode_s->audio_track);
 	}
     if(os_event_init(&aac_decode_s->event) != RET_OK) {
         AAC_INFO("create aac decode event fail!\r\n");

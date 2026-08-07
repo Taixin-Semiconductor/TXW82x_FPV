@@ -20,7 +20,6 @@
 #include "lib/sdhost/mmc.h"
 #include "lib/sdhost/mmc_ops.h"
 
-#include "fatfs/integer.h"
 #include "fatfs/diskio.h"
 #include "fatfs/ff.h"
 

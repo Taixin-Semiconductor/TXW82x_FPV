@@ -66,7 +66,8 @@ struct hgisp_v0 {
                         opened      : 1,
                         dsleep      : 1,
                         dma_en      : 1,
-                        reserved    : 12;
+                        sensor_index: 3,
+                        reserved    : 9;
     uint16              i2c_devid[4];
     uint16              i2c_opt[4];
     uint32              module;

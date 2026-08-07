@@ -13,6 +13,7 @@
 #include "hal/jpeg.h"
 #include "osal/task.h"
 #include "osal/sleep.h"
+#include "video_err.h"
 
 //调用外部接口
 void driver_timer_add(int32_t (*func)(void *arg,uint32_t kick_time), void *arg);
@@ -84,6 +85,7 @@ void JPG_IRQHandler_action(void *p_jpg)
 	struct hgjpg_hw *hw;//  = (struct hgjpg_hw *)jpg_hw->hw;
 	jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
 	uint8_t src_from;
+	uint8_t isp_err = 0;
 	if(p_jpg_global[0]){
 		jpg_hw = (struct hgjpg*)p_jpg_global[0]; 
 		hw	   = (struct hgjpg_hw *)jpg_hw->hw;
@@ -101,6 +103,8 @@ void JPG_IRQHandler_action(void *p_jpg)
 							arg2 = 1;
 						}
 						jpg_hw->deal_time = 0;
+						isp_err = (isp_ov_err & (BIT(ISP_JPG0_ERR)));
+						isp_ov_err &= (~BIT(ISP_JPG0_ERR));
 					}
 					else if(loop == JPG_BUF_ERR){
 						_os_printf(KERN_INFO"hw->DMA_STA0:%x\r\n",hw->DMA_STA);
@@ -111,7 +115,8 @@ void JPG_IRQHandler_action(void *p_jpg)
 						jpg_hw->deal_time++;
 					}
 
-					if(isp_ov_err && (jpg_hw->decode== 0 && (src_from == 0 || src_from == 1 || src_from == 3))){
+					
+					if(isp_err && (jpg_hw->decode== 0 && (src_from == 0 || src_from == 1 || (src_from == 3 && jpg_hw->auto_scale1)))){
 						if(loop == DONE_IRQ){
 							jpgirq_vector_table[0][JPG_BUF_ERR] (loop,(uint32)jpgirq_dev_table[0][JPG_BUF_ERR],arg,arg2);
 							jpg_err = 1;
@@ -148,6 +153,15 @@ void JPG_IRQHandler_action(void *p_jpg)
 							arg2 = 1;
 						}
 						jpg_hw->deal_time = 0;
+						if(jpg_hw->decode)
+						{
+							isp_ov_err &= (~BIT(ISP_JPG1_ERR));
+						}
+						else
+						{
+							isp_err = (isp_ov_err &(BIT(ISP_JPG1_ERR)));
+							isp_ov_err &= (~BIT(ISP_JPG1_ERR));
+						}
 						jpg_hw->decode = 0;
 					}
 					else if(loop == JPG_BUF_ERR){
@@ -162,7 +176,7 @@ void JPG_IRQHandler_action(void *p_jpg)
 					}else if(loop == JPG_OUTBUF_FULL){
 						jpg_hw->deal_time++;
 					}
-					if(isp_ov_err && (jpg_hw->decode== 0 && (src_from == 0 || src_from == 1 || src_from == 3))){
+					if(isp_err && (jpg_hw->decode== 0 && (src_from == 0 || src_from == 1 || (src_from == 3 && jpg_hw->auto_scale1)))){
 						if(loop == DONE_IRQ){
 							jpgirq_vector_table[1][JPG_BUF_ERR] (loop,(uint32)jpgirq_dev_table[1][JPG_BUF_ERR],arg,arg2);
 							jpg_err = 1;
@@ -271,78 +285,12 @@ int32 hgjpg_open(struct jpg_device *p_jpg){
 }
 
 
-int32_t hgjpg_timer_close(void *arg,uint32_t kick_time)
-{
-	struct hgjpg *jpg_hw = (struct hgjpg*)arg;
-	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;
-	int32_t ret = 1;
-	//代表jpg已经完成
-	if(!(hw->DMA_STA&(0x7<<25)))
-	{
-		ret = 0;
-	}
-
-	//超时也要退出
-	if(os_jiffies() - kick_time > 1000)
-	{
-		ret = 0;
-	}
-
-	//关闭jpg
-	if(!ret)
-	{
-		uint8_t jpg_chose = 0;
-		uint32_t flag;
-		flag = disable_irq();
-		hw->DMA_CON &= ~(7<<5);
-		hw->DMA_CON |= (SOFT_DATA <<5);
-		if(hw == (void *)MJPEG0_BASE){
-			jpg_chose = 0;
-		}
-
-		if(hw == (void *)MJPEG1_BASE){
-			jpg_chose = 1;
-		}
-		enable_irq(flag);
-
-
-		flag = disable_irq();
-		hw->DMA_CON &= ~BIT(0);				//disable jpg
-		hw->DMA_STA = hw->DMA_STA;
-		if(hw == (void *)MJPEG0_BASE){
-			jpg_chose = 0;
-		}
-
-		if(hw == (void *)MJPEG1_BASE){
-			jpg_chose = 1;
-			hw->CSR1 = 0;
-			uint32_t jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
-			(void)jpgr;
-		}
-		jpg_ready[jpg_chose] = 0;
-		enable_irq(flag);
-		jpg_hw->opened	= 0;
-		jpg_hw->decode = 0;
-		jpg_hw->addr_count = 0;
-		jpg_hw->jpg_run = 0;
-	}
-
-	return ret;
-}
 int32 hgjpg_close(struct jpg_device *p_jpg){
 	struct hgjpg *jpg_hw = (struct hgjpg*)p_jpg; 
 	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;
 	uint8_t jpg_chose = 0;
 	uint32_t flag;
     uint32_t in_disable_irq(void);
-	if(!(__in_interrupt() || in_disable_irq()))
-	{
-		//在线程,jpg的close启动timer去操作
-		driver_timer_add(hgjpg_timer_close,(void*)jpg_hw);
-	}
-	//在中断,则直接去关闭
-	else
-	{
 		hw->DMA_CON &= ~(7<<5);
 		hw->DMA_CON |= (SOFT_DATA <<5);
 		if(hw == (void *)MJPEG0_BASE){
@@ -372,7 +320,6 @@ int32 hgjpg_close(struct jpg_device *p_jpg){
 		jpg_hw->decode = 0;
 		jpg_hw->addr_count = 0;
 		jpg_hw->jpg_run = 0;
-	}
 
 	return 0;
 }
@@ -507,8 +454,8 @@ int32 hgjpg_set_addr(struct jpg_device *p_jpg,uint32 param,uint32 buflen){
 			
 			hw->DMA_TADR0 = param;
 			//hw->DMA_CON1 &= ~BIT(5);
-			hw->DMA_CON1 |= BIT(5);
-			jpg_ready[jpg_chose] = 0;
+			//hw->DMA_CON1 |= BIT(5);
+			//jpg_ready[jpg_chose] = 0;
 		}else{
 			hw->DMA_TADR0 = param;
 		}
@@ -535,6 +482,7 @@ int32 hgjpg_decode(struct jpg_device *p_jpg,uint32 photo,uint32_t len){
 	hw->CSR1 = BIT(3)|BIT(8);
 	hw->DMA_DADR  = photo;
 	jpg_hw->decode = 1;
+
 
 	if (len % 4) {
 		len = len + 4;
@@ -704,8 +652,11 @@ int32 hgjpg_ioctl(struct jpg_device *p_jpg,uint32 cmd,uint32 param1,uint32 param
 	break;
 
 	case JPG_IOCTL_CMD_SET_READY:
+	{
 		jpg_ready[jpg_chose] = 1;
-	break;
+		hw->DMA_CON1 |= BIT(5);
+		break;
+	}
 
 	case JPG_IOCTL_CMD_SET_OE_SELECT:
 		if(param1 == 1){
@@ -729,6 +680,11 @@ int32 hgjpg_ioctl(struct jpg_device *p_jpg,uint32 cmd,uint32 param1,uint32 param
 			ret_val = 1;
 		}
 		
+	break;
+	case JPG_IOCTL_CMD_SET_AUTOSCALE1:
+	{
+		jpg_hw->auto_scale1 = param1;
+	}
 	break;
 	default:
 		ret_val = -ENOTSUPP;

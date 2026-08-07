@@ -121,8 +121,8 @@ typedef struct hgisp_cfg_awb {
     uint32 front_uv_sum :  8, back_uv_sum : 8, cons_uv_max : 8, cons_uv_min : 8;
     uint32 back_cb_max  :  8, back_cr_max : 8, back_uv_max : 8, reserved1  : 8;
     uint32 back_cb_min  :  8, back_cr_min : 8, back_uv_min : 8, reserved2  : 8;
-    int32  lock_hi_thr  :  8, lock_lo_thr : 8, reversed0   : 16;
-    uint32 coarse_scale :  8, coarse_thr  : 8, fine_step   : 8, stable_thr  : 8;
+    int32  lock_hi_thr  :  8, lock_lo_thr : 8, coarse_scale   : 16;
+    uint32 reversed0 :  8, coarse_thr  : 8, fine_step   : 8, stable_thr  : 8;
     uint32 cbcr_thr     :  8, awb_cent_cons_en : 8, awb_back_cons_en : 8, reserved3 : 8;   
     uint32 awb_auto_en  :  4, awb_fine_cons_en : 4, awb_meas_mode : 3, awb_gain_type : 3, awb_formula : 2, awb_wp_max : 8, awb_wp_min : 8;
     uint32 awb_r_max : 8, awb_g_max : 8, awb_b_max : 8, awb_precision : 4, awb_coarse_cons_en : 4; 
@@ -141,10 +141,11 @@ typedef struct
 }_Sensor_WDR;
 
 typedef struct hgisp_cfg_wdr {
-    uint32 auto_noise_floor_out : 8, // auto_noise_floor_out : 打开自动计算噪声抑制输出控制点功能 wdr_en:是否使能wdr
-           wdr_en               : 8, //WDR使能,isp tuning时需要设0
-           dynamic_gamma_en     : 8, //动态y_gamma使能,isp tuning时需要设0
-           y_gamma_opt          : 8; //0是自动y_gamma,1,2,3,4,5是选择曲线       
+    uint8 auto_noise_floor_out; // auto_noise_floor_out : 打开自动计算噪声抑制输出控制点功能 wdr_en:是否使能wdr
+    uint32 wdr_en               : 8, //WDR使能,isp tuning时需要设0
+           wdr_opt              : 8, 
+           dynamic_gamma_en     : 8, //动态y_gamma模块使能, 打开才能(自动/手动)切换y_gamma曲线, 使用1.0.3tuning工具调试需打开
+           y_gamma_opt          : 8; //0是自动在5条线自动选择y_gamma曲线; 1,2,3,4,5手动是选择曲线     
     float  temporal_smooth_alpha;                                      // 帧间平滑控制, alpha越小，帧间亮度越稳定，但对场景变化响应越慢。典型值范围:  0.05 ~ 0.2
     uint16 noise_floor;                                                // 噪声抑制输入控制点
     uint16 noise_floor_out;                                            // 噪声抑制输出控制点
@@ -226,7 +227,12 @@ typedef struct hgisp_cfg_ae {
     uint32 ae_crop_size_v    : 16, ae_crop_size_h    : 16;  // NO need to reduce 1.
     uint32 hist_crop_start_v : 16, hist_crop_start_h : 16;  // NO need to reduce 1.
     uint32 hist_crop_end_v   : 16, hist_crop_end_h   : 16;  // NO need to reduce 1.
-    _Sensor_AE sensor_ae;
+	
+	uint32 flicker_gain_th   : 16, 
+		   flicker_freq      : 8, 
+		   anti_flicker_en   : 8;
+   
+ _Sensor_AE sensor_ae;
 
 } TYPE_HGISP_CFG_AE;
 
@@ -450,7 +456,8 @@ struct hgisp_sensor_info {
 struct hgisp_sensor_init {
     struct hgisp_sensor_info sensor_info[ISP_SUPPORT_SENSOR_MAX_NUM];
 };
-void *isp_sensor_param_load(uint16 *buff);
+
+void *isp_sensor_param_load(uint16 *buff, int32 select_index);
 #ifdef __cplusplus  
 }
 #endif

@@ -736,7 +736,7 @@ int32 sd_cmd_stop(struct sdh_device * host)
     cmd.flags = RESP_SPI_R1B | RESP_R1B | CMD_AC;
     for (int i = 0; i < 2; i++) {
         ret  = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd (host, &cmd);
-        if (!ret) { 
+        if ((ret == MMCSD_NO_ERR) || ret == MMCSD_CMD_SWITCH) { 
             return RET_OK;
         }
     }
@@ -1445,7 +1445,7 @@ uint32 sd_init(struct sdh_device * host, uint32 clk, uint32 flags)
         SDHC_ERR_PRINTF("idle cmd err\r\n");
         return RET_ERR;
     }
-	delay_us(100);
+	os_sleep_ms(2);
     ret = send_if_cond(host,host->valid_ocr);
 
     ret = send_app_op_cond(host,0x40ff8000,&ocr);
@@ -1464,7 +1464,7 @@ uint32 sd_init(struct sdh_device * host, uint32 clk, uint32 flags)
     }	
 
     send_idle(host);
-    delay_us(100);
+    os_sleep_ms(2);
     ret = send_if_cond(host,ocr);
     if(ret==0)
         ocr |= 1 << 30;
@@ -1645,6 +1645,7 @@ uint32 sdhost_reinit_for_wakeup()
         OS_WORK_INIT(&sdhost_wk.wk, sdh_loop, 0);
         os_run_work_delay(&sdhost_wk.wk, 500);
     }
+	return 0;
 }
 
 

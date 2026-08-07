@@ -154,6 +154,7 @@ static void amr_decode(struct amr_decode_struct *s)
             }
             enc_ptr_offset += amr_info.frame_bytes;
             unproc_data_size -= amr_info.frame_bytes;
+            frame_buf->priv = &s->audio_track;
             frame_buf->len = dec_samples*2;
             frame_buf->mtype = F_AUDIO;
             frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -415,8 +416,7 @@ struct msi *amr_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *audec
 		if(frame_buf->data == NULL) {
 			AMR_INFO("amr decode malloc framebuff data fail!\r\n");
 			goto amr_decode_init_err;       
-		}  
-		frame_buf->priv = &(amr_decode_s->audio_track);;	
+		}  	
 	}
     if(filename) {
         amr_decode_s->amr_fp = osal_fopen((const char*)filename, "rb");

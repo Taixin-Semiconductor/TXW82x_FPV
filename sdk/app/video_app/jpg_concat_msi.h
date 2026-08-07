@@ -25,7 +25,7 @@ struct jpg_V3_msi_s
     uint16_t           jpg_node_len;
     uint8_t            jpg_node_count;
     uint8_t            qt;
-    uint8_t            which : 1, running : 1, src_from : 3, scale1_flag : 1, vpp_close_flag : 1, rev : 1;
+    uint8_t            which : 1, running : 1, src_from : 3, scale1_flag : 1, vpp_close_flag : 1, end_flag : 1;
     uint8_t            datatag;
     uint8_t            gen420_type; // 如果是gen420的编码,这里需要配置一下类型,因为gen420来源很多地方,也因为是手动kick的,所以这里可以gen420配置了类型再kick,done的时候配置对应类型
     uint8_t            scale1_type;
@@ -56,7 +56,7 @@ struct jpg_V3_msi_s
     uint16_t jpg_node_len;
     uint8_t  jpg_node_count;
     uint8_t  qt;
-    uint8_t  which : 1, running : 1, src_from : 3, scale1_flag : 1, vpp_close_flag : 1, rev : 1;
+    uint8_t  which : 1, running : 1, src_from : 3, scale1_flag : 1, vpp_close_flag : 1, end_flag : 1;
     uint8_t  datatag;
     uint8_t  gen420_type; // 如果是gen420的编码,这里需要配置一下类型,因为gen420来源很多地方,也因为是手动kick的,所以这里可以gen420配置了类型再kick,done的时候配置对应类型
     uint8_t  scale1_type;

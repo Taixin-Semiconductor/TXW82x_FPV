@@ -365,7 +365,7 @@ struct msi *gen420_hardware_msi_init()
         msi->enable = 1;
         //创建线程
         gen420_msgq = &gen420->msgq;
-        OS_TASK_INIT("gen420_s", &gen420->task, gen420_hardware_thread, (void*)msi, OS_TASK_PRIORITY_ABOVE_NORMAL+0xf, NULL, 768);
+        OS_TASK_INIT("gen420_s", &gen420->task, gen420_hardware_thread, (void*)msi, OS_TASK_PRIORITY_ABOVE_NORMAL+0xf, NULL, 1024);
     }
     return msi;
 }

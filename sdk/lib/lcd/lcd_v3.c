@@ -343,9 +343,9 @@ void lcd_table_init(struct spi_device *spi_dev,uint8_t *lcd_table){
 }
 
 
-void lcd_table_init_MCU(struct lcdc_device *lcd_dev,uint8_t (*lcd_table)[2])
+void lcd_table_init_MCU(struct lcdc_device *lcd_dev,const uint8_t (*lcd_table)[2])
 {
-  uint8_t (*table)[2];
+  const uint8_t (*table)[2];
   int      i; 
   uint32_t dat_cmd;
   uint32_t data;

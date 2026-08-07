@@ -6,12 +6,9 @@
 #include "stream_define.h"
 #include "app/video_app/file_thumb.h"
 #include "app/recorder/file_process.h"
+#include "app/ffavimuxer/avimuxer.h"
+#include "app/record/mux_file.h"
 
-void    *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int gop, int h265, int sampnum);
-uint32_t avimuxer_video2(void *ctx, unsigned char *buf, int len, int key, unsigned pts, uint8_t insert);
-uint32_t avimuxer_audio2(void *ctx, unsigned char *buf, int len, int key, unsigned pts);
-void     avimuxer_sync(void *ctx);
-void     avimuxer_exit2(void *ctx);
 struct msi *avi_thumb_msi_init(const char *filename, uint8_t srcID, uint8_t filter);
 
 // 结构体申请空间函数
@@ -27,6 +24,24 @@ struct msi *avi_thumb_msi_init(const char *filename, uint8_t srcID, uint8_t filt
 #ifndef MAX_SINGLE_AVI_SIZE
 #define MAX_SINGLE_AVI_SIZE (100 * 1024 * 1024)
 #endif
+
+#define AVI_VIDEO_FPS                       30U
+#define AVI_AUDIO_FPS                       50U
+#define AVI_FRAME_COUNT(fps, ms)            (((fps) * (ms) + 999U) / 1000U)
+
+#define AVI_VIDEO_QUEUE_COUNT               AVI_FRAME_COUNT(AVI_VIDEO_FPS, 2500)
+#define AVI_AUDIO_QUEUE_COUNT               AVI_FRAME_COUNT(AVI_AUDIO_FPS, 2500)
+#define AVI_MSI_QUEUE_SIZE                  (AVI_VIDEO_QUEUE_COUNT + AVI_AUDIO_QUEUE_COUNT)
+
+// 按实际音频参数计算：8kHz × 单声道 × 16bit × 帧时长
+// 20ms/帧: 8000 × 1 × 2 × 0.02 = 320 字节
+#define AVI_AUDIO_WRITE_FRAME_NUM           1U  // 音频N帧写入一次，N=1则直接写入
+#define AVI_AUDIO_BATCH_SIZE                AVI_AUDIO_WRITE_FRAME_NUM
+#define AVI_AUDIO_BATCH_TIMEOUT_MS          ((AVI_AUDIO_BATCH_SIZE * 1000U) / AVI_AUDIO_FPS + 20U)
+#define AVI_AUDIO_BATCH_MAX_FRAME_SIZE      512U
+#define AVI_AUDIO_BATCH_BUF_SIZE            (AVI_AUDIO_BATCH_SIZE * AVI_AUDIO_BATCH_MAX_FRAME_SIZE)
+
+#define AVI_WRITE_LOCK_TIME                  500U   // 写卡锁持续时间，多路写卡时使用
 
 enum
 {
@@ -48,11 +63,71 @@ struct avi_encode_msi_s
     struct os_event     evt;
     struct file_process file_process;
     uint8_t             filter_type;
-    uint8_t             rec_time;
-    uint16_t            rec_second;
+    uint32_t            rec_time;
+    uint32_t            rec_second;
     uint32_t            file_size;
     uint32_t            audio_encode;
+    uint8_t            *audio_batch_buf;       // 预分配的音频批量拼接缓冲区
+    uint32_t            audio_batch_buf_size;  // 缓冲区大小
 };
+
+static uint32_t avi_encode_audio_batch_write(void *ctx, struct avi_encode_msi_s *avi_encode,
+                                              struct framebuff **audio_batch, uint32_t *audio_batch_cnt)
+{
+    uint32_t total_len = 0;
+    uint32_t offset    = 0;
+    uint32_t res       = 0;
+
+    if (!avi_encode || !audio_batch_cnt || *audio_batch_cnt == 0)
+    {
+        return 0;
+    }
+
+    if (!ctx)
+    {
+        for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+        {
+            msi_delete_fb(NULL, audio_batch[i]);
+            audio_batch[i] = NULL;
+        }
+        *audio_batch_cnt = 0;
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+    {
+        total_len += audio_batch[i]->len;
+    }
+
+    if (avi_encode->audio_batch_buf && total_len <= avi_encode->audio_batch_buf_size && *audio_batch_cnt > 1)
+    {
+        // 多帧拼接后一次写入
+        for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+        {
+            os_memcpy(avi_encode->audio_batch_buf + offset, audio_batch[i]->data, audio_batch[i]->len);
+            offset += audio_batch[i]->len;
+            msi_delete_fb(NULL, audio_batch[i]);
+            audio_batch[i] = NULL;
+        }
+
+        _os_printf(KERN_INFO "A%d", *audio_batch_cnt);
+        res |= avimuxer_audio(ctx, avi_encode->audio_batch_buf, total_len);
+    }
+    else
+    {
+        // 单帧或总长度超出缓冲区，逐帧写入
+        for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+        {
+            _os_printf(KERN_INFO "A");
+            res |= avimuxer_audio(ctx, audio_batch[i]->data, audio_batch[i]->len);
+            msi_delete_fb(NULL, audio_batch[i]);
+            audio_batch[i] = NULL;
+        }
+    }
+
+    *audio_batch_cnt = 0;
+    return res;
+}
 
 static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, const char *avi_filename, uint32_t filesize)
 {
@@ -63,23 +138,43 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
     uint32_t sys_start_time    = os_jiffies();
     uint32_t count_fps         = 0;
     uint32_t audio_fps         = 0;
-    uint32_t last_syn_time     = os_jiffies();
+    uint32_t last_syn_time     = 0;
     uint32_t already_save_time = 0;
     uint32_t fbtime            = 0;
+    uint32_t audio_first_time  = 0;
+    uint8_t  holding_lock      = 0;
+    uint8_t  stop_draining     = 0;
 
     struct avi_encode_msi_s *avi_encode     = (struct avi_encode_msi_s *) msi->priv;
     struct msi              *avi_thumb_msi  = NULL;
     struct framebuff        *fb             = NULL;
-    uint32_t                 fps            = 25;
+    uint32_t                 fps            = 30;
     uint32_t                 fps_time       = 1000 / fps;
-    void                    *ctx = avimuxer_init2(fp, filesize, 1280, 720, fps, 0, 0, 0);
+    void                    *mux_file       = NULL;
+    file_ops_t               file_ops;
+    void                    *ctx            = NULL;
+
+    /* 音频批量写入: 累积N帧后拼接成一块一次写入 */
+    struct framebuff *audio_batch[AVI_AUDIO_BATCH_SIZE] = {0};
+    uint32_t          audio_batch_cnt         = 0;
+    uint32_t          audio_batch_start_time  = 0;
+
+    if (fp)
+    {
+        mux_file = mux_file_open((F_FILE *) fp, filesize, MUX_FILE_ALIGN_EN);
+        if (mux_file)
+        {
+            mux_file_get_ops(mux_file, &file_ops);
+            ctx = avimuxer_init_with_file(fp, &file_ops, filesize, 1280, 720, fps, 0, avi_encode->audio_encode);
+        }
+    }
 
     os_printf(KERN_INFO"fp:%X\tctx:%X\n", fp, ctx);
-    if (!fp || !ctx)
+    if (!fp || !mux_file || !ctx)
     {
         os_sleep_ms(1);
         ret = AVI_ENCODE_ERR_NO_SD;
-        goto avi_encode_thread_end;
+        goto avi_encode_thread_clean_end;
     }
 
     avi_thumb_msi = avi_thumb_msi_init(avi_filename, FRAMEBUFF_SOURCE_USB, FSTYPE_NONE);
@@ -92,10 +187,34 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
         if (AVI_status & MSI_AVI_STOP)
         {
             ret = 1;
-            os_printf("%s:%d", __FUNCTION__, __LINE__);
+            msi->enable = 0;
+            stop_draining = 1;
+        }
+
+        if (fb == NULL)
+        {
+            fb = msi_get_fb(msi, 1);
+            // 写卡锁控制: 仅need_lock=1时使用mutex，持有锁且缓冲区已写完且无音频缓存时释放锁
+            if(avi_encode->file_process.need_lock && holding_lock && (fb == NULL || os_jiffies() - mult_record.start_time > AVI_WRITE_LOCK_TIME) && audio_batch_cnt == 0)
+            {
+                holding_lock = 0;
+                mult_record.start_time = 0;
+                os_mutex_unlock(&mult_record.mutex);
+            }
+        }
+
+        if (stop_draining && fb == NULL)
+        {
             goto avi_encode_thread_end;
         }
-        fb = msi_get_fb(msi, 0);
+
+        // 有数据要写时加锁，仅need_lock=1时使用mutex
+        if (avi_encode->file_process.need_lock && fb != NULL && !holding_lock)
+        {
+            os_mutex_lock(&mult_record.mutex, osWaitForever);
+            mult_record.start_time = os_jiffies();
+            holding_lock = 1;
+        }
         if (fb && fb->mtype == F_JPG)
         {
             if (write_start_time == 0)
@@ -109,31 +228,59 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                 uint32_t insert_num = ((fb->time - write_start_time) / fps_time) - count_fps;
                 for (int i = 0; i < insert_num; i++)
                 {
-                    res |= avimuxer_video2(ctx, fb->data, fb->len, 1, 40, 1);
+                    res |= avimuxer_video(ctx, fb->data, fb->len, 1, 1);
                     count_fps++;
                 }
             }
-            res |= avimuxer_video2(ctx, fb->data, fb->len, 1, 40, 0);
-            fbtime = fb->time;
+            res |= avimuxer_video(ctx, fb->data, fb->len, 1, 0);
 
+            fbtime = fb->time;
             msi_delete_fb(NULL, fb);
             fb = NULL;
-            if (res || fbtime - write_start_time >= save_time)
+
+            if (res)
+            {
+                goto avi_encode_thread_clean_end;
+            }
+
+            if(!stop_draining && fbtime - write_start_time >= save_time)
             {
                 goto avi_encode_thread_end;
             }
         }
-        // 音频添加
         else if (avi_encode->audio_encode && write_start_time && fb && fb->mtype == F_AUDIO)
         {
-            _os_printf(KERN_INFO "A");
-            audio_fps++;
-            res |= avimuxer_audio2(ctx, fb->data, fb->len, 0, 0);
-            msi_delete_fb(NULL, fb);
-            fb = NULL;
-            if (res)
+            if (audio_first_time == 0)
             {
-                goto avi_encode_thread_end;
+                if (fb->time >= write_start_time)
+                {
+                    audio_first_time = fb->time;
+                }
+                else
+                {
+                    _os_printf("P");
+                    // 音频时间不对,直接删除
+                    msi_delete_fb(NULL, fb);
+                    fb = NULL;
+                    continue;
+                }
+            }
+            audio_fps++;
+            audio_batch[audio_batch_cnt++] = fb;
+            fb = NULL;
+            if (audio_batch_cnt == 1)
+            {
+                audio_batch_start_time = os_jiffies();
+            }
+
+            if (audio_batch_cnt >= AVI_AUDIO_BATCH_SIZE)
+            {
+                res |= avi_encode_audio_batch_write(ctx, avi_encode, audio_batch, &audio_batch_cnt);
+                audio_batch_start_time = 0;
+                if (res)
+                {
+                    goto avi_encode_thread_clean_end;
+                }
             }
         }
         else if (fb)
@@ -141,27 +288,55 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             msi_delete_fb(NULL, fb);
             fb = NULL;
         }
-        else
-        {
-            os_sleep_ms(1);
-        }
 
         // 如果系统时间超过了30s依然没有保存完成,就直接退出
         if (os_jiffies() - sys_start_time >= save_time + 30 * 1000)
         {
-            goto avi_encode_thread_end;
+            goto avi_encode_thread_clean_end;
         }
+
+        // 音频批量写入超时检查: 未满batch但超时则flush
+        if (audio_batch_cnt > 0 && audio_batch_start_time &&
+            (stop_draining || os_jiffies() - audio_batch_start_time >= AVI_AUDIO_BATCH_TIMEOUT_MS))
+        {
+            res |= avi_encode_audio_batch_write(ctx, avi_encode, audio_batch, &audio_batch_cnt);
+            audio_batch_start_time = 0;
+            if (res)
+            {
+                goto avi_encode_thread_clean_end;
+            }
+        }
+
+        avimuxer_sync_time(ctx, 1000);
 
         if (fbtime - last_syn_time > 1000)
         {
-            // avimuxer_sync(ctx);
             last_syn_time = fbtime;
             already_save_time = fbtime - write_start_time;
             avi_encode->rec_second = already_save_time / 1000;
-            os_printf(KERN_INFO"sync:%d %d %d\n", already_save_time, count_fps, audio_fps);
+            os_printf(KERN_DEBUG "avi second: %d\n", already_save_time / 1000);
         }
+    }
 
-        os_sleep_ms(1);
+avi_encode_thread_clean_end:
+    if (fb)
+    {
+        msi_delete_fb(NULL, fb);
+		fb = NULL;
+    }
+
+    msi->enable = 0;
+    while(1)
+    {
+        fb = msi_get_fb(msi, 0);
+        if(fb)
+        {
+            msi_delete_fb(NULL, fb);
+        }
+        else
+        {
+            break;
+        }
     }
 
 avi_encode_thread_end:
@@ -170,14 +345,27 @@ avi_encode_thread_end:
 
     os_printf(KERN_EMERG "%s:%d\tres:%d\n", __FUNCTION__, __LINE__, res);
 
-    if (fb)
+    // 退出前flush剩余音频batch
+    if (ctx && audio_batch_cnt > 0)
     {
-        msi_delete_fb(NULL, fb);
+        res |= avi_encode_audio_batch_write(ctx, avi_encode, audio_batch, &audio_batch_cnt);
     }
 
     if (ctx)
     {
-        avimuxer_exit2(ctx);
+        avimuxer_exit(ctx);
+    }
+    if (mux_file)
+    {
+        mux_file_close(mux_file);
+        mux_file = NULL;
+    }
+
+    // 释放写卡锁
+    if (holding_lock)
+    {
+        os_mutex_unlock(&mult_record.mutex);
+        holding_lock = 0;
     }
 
     if (fp)
@@ -191,7 +379,6 @@ avi_encode_thread_end:
         msi_destroy(avi_thumb_msi);
     }
 
-    // os_printf("save time:%d\tv_count:%d\n",(uint32_t)os_jiffies(),v_count);
     os_printf("avi encode end\n");
     return ret;
 }
@@ -214,19 +401,18 @@ static void avi_encode_thread(void *d)
 
     while(msi)
     {
-        filesize = avi_encode->rec_time * avi_encode->file_size;
+        filesize = ((avi_encode->rec_time / 60) + (avi_encode->rec_time % 60 ? 1 : 0)) * avi_encode->file_size;
         if(file_process->create_file)
         {
             fp = file_process->create_file(file_process, filename, filepath, filesize);
         }
-        ret         = avi_encode_running(msi, avi_encode->rec_time * 60 * 1000, fp, filename, filesize);
+        ret         = avi_encode_running(msi, avi_encode->rec_time * 1000, fp, filename, filesize);
         msi->enable = 0;
-        if(file_process->lock_file && ret != 2)
+        if(file_process->lock_file && ret != AVI_ENCODE_ERR_NO_SD)
         {
             file_process->lock_file(filename, filepath);
         }
-
-        os_printf(KERN_EMERG "%s %d end\n", __FUNCTION__, __LINE__);
+        
         if (ret)
         {
             if (file_process->loop_free)
@@ -279,7 +465,19 @@ static int32_t avi_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
         case MSI_CMD_POST_DESTROY:
             os_event_wait(&avi_encode->evt, MSI_AVI_THREAD_DEAD, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, -1);
             os_event_del(&avi_encode->evt);
+            if (avi_encode->audio_batch_buf)
+            {
+                STREAM_FREE(avi_encode->audio_batch_buf);
+                avi_encode->audio_batch_buf = NULL;
+            }
             STREAM_LIBC_FREE(avi_encode);
+            // 引用计数减少，最后一个实例销毁时释放mutex
+            mult_record.count--;
+            if (mult_record.count == 0 && mult_record.init)
+            {
+                os_mutex_del(&mult_record.mutex);
+                mult_record.init = 0;
+            }
             break;
         case MSI_CMD_PRE_DESTROY:
             os_event_set(&avi_encode->evt, MSI_AVI_STOP, NULL);
@@ -325,6 +523,9 @@ static int32_t avi_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
                 case MSI_MEDIA_CTRL_SET_RECORD_SIZE:
                     avi_encode->file_size = arg;
                     break;
+                case MSI_MEDIA_CTRL_SET_RECORD_SEC:
+                    avi_encode->rec_time = arg;
+                    break;
             }
         }
         break;
@@ -337,7 +538,7 @@ struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint8_t srcID, uint8_
 {
     uint8_t is_new = 0;
     struct avi_encode_msi_s *avi_encode = NULL;
-    struct msi              *msi        = msi_new(avi_msi_name, 64, &is_new);
+    struct msi              *msi        = msi_new(avi_msi_name, AVI_MSI_QUEUE_SIZE, &is_new);
     (void) srcID;
     (void) mode;
     if (is_new)
@@ -345,8 +546,20 @@ struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint8_t srcID, uint8_
         avi_encode = (struct avi_encode_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct avi_encode_msi_s));
         ASSERT(avi_encode);
         avi_encode->filter_type  = filter_type;
-        avi_encode->rec_time     = rec_time;
+        avi_encode->rec_time     = (uint32_t)rec_time * 60U;
         avi_encode->file_size    = MAX_SINGLE_AVI_SIZE;
+
+        avi_encode->audio_encode = audio_encode;
+        avi_encode->audio_batch_buf_size = (audio_encode && AVI_AUDIO_BATCH_SIZE > 1U) ? AVI_AUDIO_BATCH_BUF_SIZE : 0;
+        if (avi_encode->audio_batch_buf_size > 0)
+        {
+            avi_encode->audio_batch_buf = (uint8_t *)STREAM_MALLOC(avi_encode->audio_batch_buf_size);
+            if (!avi_encode->audio_batch_buf)
+            {
+                avi_encode->audio_batch_buf_size = 0;
+            }
+        }
+
         if(file_process == NULL)
         {
             // 配置默认值
@@ -356,18 +569,17 @@ struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint8_t srcID, uint8_
             avi_encode->file_process.create_file = rec_create_file;
             avi_encode->file_process.loop_free = rec_loop_free;
             avi_encode->file_process.lock_file = NULL;
+            avi_encode->file_process.need_lock = 0;
         }
         else
         {
             os_memcpy(&avi_encode->file_process, file_process, sizeof(struct file_process));
         }
         
-        avi_encode->audio_encode = audio_encode;
         msi->priv                = avi_encode;
         os_event_init(&avi_encode->evt);
         avi_encode->msi = msi;
         msi->action     = avi_encode_msi_action;
-        msi->enable     = 1;
     }
     else
     {
@@ -381,10 +593,22 @@ struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint8_t srcID, uint8_
         goto avi_encode_msi_init_end;
     }
 
+    if(avi_encode->file_process.need_lock && !mult_record.init)
+    {
+        os_mutex_init(&mult_record.mutex);
+        mult_record.init = 1;
+    }
+    mult_record.count++;
+    
     void *avi_hdl = os_task_create("avi_encode", avi_encode_thread, msi, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 2048);
     os_printf("avi_hdl:%X\n", avi_hdl);
     if (!avi_hdl && avi_encode)
     {
+        if (avi_encode->audio_batch_buf)
+        {
+            STREAM_FREE(avi_encode->audio_batch_buf);
+            avi_encode->audio_batch_buf = NULL;
+        }
         os_event_set(&avi_encode->evt, MSI_AVI_THREAD_DEAD, NULL);
     }
 avi_encode_msi_init_end:

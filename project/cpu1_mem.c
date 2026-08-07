@@ -44,7 +44,7 @@ void *cpu1_RXBUF_heap()
     }
     cpu1_mem_info_msg->rxbuf_heap = os_malloc(CONFIG_CORE_RXBUF_SIZE);
     cpu1_mem_info_msg->rxbuf_heap_size = CONFIG_CORE_RXBUF_SIZE;
-    return os_malloc(CONFIG_CORE_RXBUF_SIZE);
+    return cpu1_mem_info_msg->rxbuf_heap;
 }
 
 void *cpu1_skb_heap_get(uint32_t *size)

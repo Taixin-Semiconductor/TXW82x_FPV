@@ -794,12 +794,12 @@ static void add_new_device(INTERCOM_STRUCT *intercom_s, uint32_t new_identify_nu
 	device->identify_num = new_identify_num;
 	device->ip_addr = remote_trans_addr->sin_addr.s_addr;
 	list_move_tail((struct list_head *)device, (struct list_head *)&(intercom_s->device_head));
-	intercom_s->connected_num++;
 	device->online = 1;
 	device->timeout_cnt = TIMEOUT_COUNT;
 	device->dev_id = ((remote_trans_addr->sin_addr.s_addr & 0xFF000000) >> 24) - 100;
 	os_printf("\n*****intercom add new device,ip:%x,id:%d*****\n",device->ip_addr,device->dev_id);
-	if(switch_new) {
+	intercom_s->connected_num++;
+	if(switch_new || device->dev_id == intercom_s->current_dev_id) {
 		send_start_flag = 0;
 		g_r_identify_num = new_identify_num;
 		intercom_s->remote_trans_addr.sin_addr.s_addr = remote_trans_addr->sin_addr.s_addr;
@@ -939,7 +939,7 @@ recv_data_again:
 				is_new = is_new_device(intercom_s, &remote_trans_addr);
 				os_mutex_lock(&intercom_s->send_mutex, osWaitForever);
 				if(is_new) {
-					add_new_device(intercom_s, sublist_n->identify_num, &remote_trans_addr, 1);
+					add_new_device(intercom_s, sublist_n->identify_num, &remote_trans_addr, 0);
 				}
 				else {
 					device = find_device(intercom_s, &remote_trans_addr);
@@ -1491,8 +1491,6 @@ struct msi *intercom_init(void)
     fbpool_init(&intercom_s->tx_pool, MAX_INTERCOM_TXBUF);
     for(uint32_t i=0; i<MAX_INTERCOM_TXBUF; i++) {
 		frame_buf = (intercom_s->tx_pool.pool)+i;
-        frame_buf->data = NULL;
-		frame_buf->priv = NULL;
 		frame_buf->priv = (AUDECODER_OPERATION*)INTERCOM_ZALLOC(sizeof(AUDECODER_OPERATION));
 		if(!frame_buf->priv)
 			goto intercom_init_err;

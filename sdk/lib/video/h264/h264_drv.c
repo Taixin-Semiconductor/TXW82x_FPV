@@ -73,7 +73,7 @@ uint8_t *h264_ref_lu_base_psram2 = NULL;
 uint8_t *h264_ref_ch_base_psram2 = NULL;
 
 uint8_t *h264_room_psram = NULL;
-
+extern volatile uint32_t photo_complex;
 
 uint8_t *h264_ref_memory_base[10];
 
@@ -86,6 +86,7 @@ volatile struct list_head *h264_app_p;			//应用的节点指针
 volatile struct list_head* h264_f_p;			//当前264所使用的frame
 volatile h264_node h264_node_src[H264_NODE_NUM];
 volatile struct list_head h264_free_tab;			//空闲列表，存放空间节点
+volatile struct list_head h264_ready_tab;
 volatile uint8 h264_error = 0;
 volatile uint8 frame_done = 0;
 
@@ -110,12 +111,11 @@ void h264wq_sema_up()
 }
 
 
-/**@brief 
+/**@brief
  * 将传入的frame根节点下的buf池都送回空间池（free_tab）中
  */
 static bool free_get_node_list(volatile struct list_head *head,volatile struct list_head *free){
 	bool ret = 1;
-	uint32_t flags = disable_irq();
 	if(list_empty((struct list_head *)head)){
 		ret = 0;
 		goto free_get_node_list_end;
@@ -123,54 +123,53 @@ static bool free_get_node_list(volatile struct list_head *head,volatile struct l
 
 	list_splice_init((struct list_head *)head,(struct list_head *)free);
 	free_get_node_list_end:
-	enable_irq(flags);
 	return ret;
+}
+
+
+static void h264_prepare_frame(h264_frame *hf,uint8_t devid,uint8_t is_iframe)
+{
+	hf->usable = 1;
+	if(is_iframe){
+		hf->h264_type = 1;
+	}else{
+		hf->h264_type = 2;
+	}
+	hf->h264_dev_id = devid;
+	INIT_LIST_HEAD(&hf->ready_list);
 }
 
 /**@brief 
  * 从初始化的frame根节点中抽取其中一个空闲的根节点进行使用，并标记frame的使用状态为正在使用
  * @param 是否开启抢占模式，如果开启，则将上一帧已完成的帧节点删掉，并返回
  */
-
-
 volatile struct list_head* get_h264_new_frame_head(int grab,uint8_t devid,uint8_t is_iframe){
 	uint8 frame_num = 0;
+	uint32_t flags = disable_irq();
 	for(frame_num = 0;frame_num < H264_FRAME_NUM;frame_num++){
 		if(h264_frame_point[frame_num].usable == 0){
-			h264_frame_point[frame_num].usable = 1;
-			if(is_iframe){
-				h264_frame_point[frame_num].h264_type = 1;
-			}else{
-				h264_frame_point[frame_num].h264_type = 2;
-			}	
-			h264_frame_point[frame_num].h264_dev_id = devid;
+			h264_prepare_frame((h264_frame *)&h264_frame_point[frame_num],devid,is_iframe);
+			enable_irq(flags);
 			return &h264_frame_point[frame_num].list;
 		}
 
 	}
 
-	if(grab)								//是否开启抢占模式,开启抢占后，肯定有frame返回，上一帧没使用的frame肯定usable为2
+	if(grab && !list_empty((struct list_head *)&h264_ready_tab))								//是否开启抢占模式,开启抢占后，丢弃最老的待取frame
 	{
-		
-		for(frame_num = 0;frame_num < H264_FRAME_NUM;frame_num++){
-			if(h264_frame_point[frame_num].usable == 2){
-				h264_frame_point[frame_num].usable = 1;
-				if(is_iframe){
-					h264_frame_point[frame_num].h264_type = 1;
-				}else{
-					h264_frame_point[frame_num].h264_type = 2;
-				}				
-				h264_frame_point[frame_num].h264_dev_id = devid;
-				free_get_node_list(&h264_frame_point[frame_num].list,&h264_free_tab);
-				return &h264_frame_point[frame_num].list;
-			}
-		}
+		h264_frame *hf = list_entry(h264_ready_tab.next,h264_frame,ready_list);
+		list_del_init(&hf->ready_list);
+		h264_prepare_frame(hf,devid,is_iframe);
+		free_get_node_list(&hf->list,&h264_free_tab);
+		enable_irq(flags);
+		return &hf->list;
 	}
-	
+
+	enable_irq(flags);
 	return 0;
 }
 
-/**@brief 
+/**@brief
  * 初始化free_tab池，将mjpeg_node的节点都放到空闲池中，供frame后面提取使用
  * @param ftb 空闲池头指针
  * @param jpn mjpeg_node节点源
@@ -182,14 +181,17 @@ void h264_free_table_init(volatile struct list_head *ftb, volatile h264_node* h2
 	int itk;
 	for(itk = 0;itk < use_num;itk++){
 		h264n->buf_addr = (uint8*)(addr + itk*buf_len);
-		list_add_tail((struct list_head *)&h264n->list,(struct list_head *)ftb); 
+		list_add_tail((struct list_head *)&h264n->list,(struct list_head *)ftb);
 		h264n++;
 	}
 }
 
 static void set_frame_ready(h264_frame *hf){
+	uint32_t flags = disable_irq();
 	hf->timestamp = os_jiffies();
 	hf->usable = 2;
+	list_add_tail(&hf->ready_list,(struct list_head *)&h264_ready_tab);
+	enable_irq(flags);
 }
 
 
@@ -241,19 +243,19 @@ static uint32 get_addr(volatile struct list_head *list){
  */
 void del_264_frame(volatile struct list_head* frame_list)
 {
-
-
 	h264_frame* fl;
 	uint32_t flags;
 	flags = disable_irq();
-	if(list_empty((struct list_head *)frame_list) != TRUE){	
+	fl = list_entry((struct list_head *)frame_list,h264_frame,list);
+	if(fl->usable == 2){
+		list_del_init(&fl->ready_list);
+	}
+	if(list_empty((struct list_head *)frame_list) != TRUE){
 		free_get_node_list(frame_list,&h264_free_tab);
-		fl = list_entry((struct list_head *)frame_list,h264_frame,list);
 		fl->usable = 0;
 		goto del_264_frame_end;
 
 	}else{
-		fl = list_entry((struct list_head *)frame_list,h264_frame,list);
 		fl->usable = 0;
 		goto del_264_frame_end;
 	}
@@ -271,21 +273,23 @@ void del_h264_frame(void *d)
 {
 	h264_frame* get_f = (h264_frame*)d;
 	del_264_frame((struct list_head*)get_f);
-
 }
 
 struct list_head* get_h264_frame()
 {
-	uint8 frame_num = 0;
-	
-	for(frame_num = 0;frame_num < H264_FRAME_NUM;frame_num++){
-		if(h264_frame_point[frame_num].usable == 2){
-			h264_frame_point[frame_num].usable = 1;
-			return (struct list_head *)&h264_frame_point[frame_num].list;
-		}
+	h264_frame *hf;
+	uint32_t flags = disable_irq();
+
+	if(list_empty((struct list_head *)&h264_ready_tab)){
+		enable_irq(flags);
+		return NULL;
 	}
 
-	return NULL;	
+	hf = list_entry(h264_ready_tab.next,h264_frame,ready_list);
+	list_del_init(&hf->ready_list);
+	hf->usable = 1;
+	enable_irq(flags);
+	return (struct list_head *)&hf->list;
 }
 
 
@@ -415,9 +419,11 @@ void h264_room_init(){
 	uint8_t i;
 	for(i = 0;i < H264_FRAME_NUM;i++){
 		INIT_LIST_HEAD((struct list_head *)&h264_frame_point[i].list);
+		INIT_LIST_HEAD((struct list_head *)&h264_frame_point[i].ready_list);
 	}
 
 	INIT_LIST_HEAD((struct list_head *)&h264_free_tab);
+	INIT_LIST_HEAD((struct list_head *)&h264_ready_tab);
 	uint32_t h264_rom_addr = ((uint32_t)h264_room_psram + 0x3ff)&(~0x3ff);
 	h264_free_table_init(&h264_free_tab,(h264_node*)&h264_node_src,H264_NODE_NUM,(uint32)h264_rom_addr,H264_NODE_LEN);
 
@@ -658,8 +664,17 @@ uint8_t h264_cfg_modify(struct h264_cfg_t *enc_cfg,uint8_t dev_num){
 }
 
 void h264_ini_recfg(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl){
+	uint32 itk;
+	uint32 reduce_mil = 1000;
+	if(enc_cfg->pixel_fast_reduce_level){
+		for(itk = 0;itk < enc_cfg->pixel_fast_reduce_level;itk++){    //每个等级降低之前带宽的20%
+			reduce_mil = (reduce_mil-(reduce_mil/5));
+		}
+	}
+	
 	enc_ctl->frm_qp    = enc_cfg->ini_qp;
-	enc_ctl->target_gop = ( ((uint32_t)enc_cfg->enc_bps * 1000 * (uint32_t)enc_cfg->frm_gop) / enc_cfg->frm_rate ) >> 3;  //byte target
+	enc_ctl->target_gop = (((((uint32_t)enc_cfg->enc_bps * 1000 * (uint32_t)enc_cfg->frm_gop) / enc_cfg->frm_rate ) >> 3)*7)/10;   ;  //group total len*0.7, enc_bps for max bps
+	enc_ctl->target_gop = (enc_ctl->target_gop*reduce_mil)/1000;          
 	rc_ctl->i_qp      = enc_cfg->ini_qp;
 	rc_ctl->p_qp      = enc_cfg->ini_qp;
 	//--- cal I frame target byte
@@ -671,7 +686,7 @@ void h264_ini_recfg(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, stru
 
 void h264_ini_seting_cfg(struct h264_device *p_h264,struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl,uint8_t dev_num) {
   h264_reflash_new_gop(dev_num,0);
-  h264_recfg_bsp(dev_num,enc_cfg->move_enc_bps,enc_cfg->move_enc_bps);
+  h264_recfg_bsp(dev_num,enc_cfg->move_enc_bps,enc_cfg->still_enc_bps);
   h264_recfg_rate(dev_num,enc_cfg->frm_rate);
   h264_recfg_frm_gop(dev_num,enc_cfg->frm_gop);
   h264_recfg_ini_qp(dev_num,enc_cfg->ini_qp);
@@ -723,6 +738,7 @@ void h264_ini_seting_cfg(struct h264_device *p_h264,struct h264_cfg_t *enc_cfg, 
   rc_ctl->i_frm_min = (enc_ctl->target_gop * enc_cfg->frm_ip_rate_min) / (enc_cfg->frm_gop - 1 + enc_cfg->frm_ip_rate_min);
   
 }
+
 
 void h264_enc_eof_update(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl) {
   
@@ -1224,7 +1240,8 @@ uint32 h264_rc_cal(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, struc
 }
 
 extern volatile uint32_t vpp_md_cnt;
-void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl) {
+void h264_start_enc_frm_noready(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl)
+{
   uint32   rc_grp_byte     ;
   //uint32   frm_target_step ;
   uint32   lpf_lu_base     ;
@@ -1264,21 +1281,10 @@ void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, 
 		else
 			penc_cfg->run_gop_3dnr--;
 	}
-
-	if(penc_cfg->stilltomove != 0){
-		if(penc_cfg->move_remain_gop){
-			penc_cfg->move_remain_gop--;
-			penc_cfg->enc_bps = penc_cfg->move_enc_bps;
-		}else{
-			penc_cfg->enc_bps = penc_cfg->still_enc_bps;
-		}
-		
-		enc_ctl->target_gop = ( ((uint32_t)penc_cfg->enc_bps * 1000 * (uint32_t)penc_cfg->frm_gop) / penc_cfg->frm_rate ) >> 3;
-	}
-
 	
     enc_ctl->frm_type = 2;
     rc_ctl->gop_remain_byte = enc_ctl->target_gop;
+	_os_printf("gop remain(%x):%d\r\n",penc_cfg,rc_ctl->gop_remain_byte);
     enc_ctl->frm_qp   = rc_ctl->i_qp;
   } else {	
     enc_ctl->frm_type = 0;
@@ -1437,25 +1443,30 @@ void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, 
   }
 
   penc_cfg->enc_runing = 1;
-
-  //p_h264->MB_PIPE = wdata;
   h264_set_mb_pipe(p_h264,wdata);
-  //configure ROI window
-  //p_h264->WRAP_CON |= BIT(7);
-  h264_set_sw_ready(p_h264);
-//  if(con&BIT(1)){
-//	  _os_printf("is iframe \r\n");
-//  }else{
-//	  _os_printf("is pframe \r\n");
-//  }
-//  ll_gpio_bit_set(GPIOD,BIT(9));
-//  ll_gpio_bit_reset(GPIOD,BIT(9));
-//  _os_printf("  [CON:%x ] ",con);
-  //--- start encode a frame
-  //enc_ctl->bs_buf_id = 0;
+}
+void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl) {
+	h264_start_enc_frm_noready(p_h264,penc_cfg,enc_ctl,rc_ctl);
+  	h264_set_sw_ready(p_h264);
+}
+//双镜头拼接重新rekick(遇到不同步的时候)
+static int32_t h264_dual_splice_rekick(uint32_t irq_data)
+{
+    struct h264_device      *h264_dev   = (struct h264_device*)irq_data;
+    // 如果需要拼接,就要等待镜头2完成才能启动
+    if (video_msg.video_type_cur == ISP_VIDEO_1 || video_msg.camera_mode != CAM_DUAL_SPLICE_SLAVE_MODE)
+    {
+        h264_set_sw_ready(h264_dev);
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
 }
 
 void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
+	uint8_t ismove = 0;
 	h264_frame* hf;
 	uint32 	  rdata;
 	uint16 imb_mov_num;
@@ -1484,25 +1495,21 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 //	}else{
 		//ll_m2m_memcpy(M2M_DMA0,frame_cache+frame_offset,h264_dat_buf[1],dat_ofs,0);
 //	}
-	//帧OK
-	if(penc_ctl->gop_frm_cnt != 0){
-		if(penc_cfg->stilltomove == 0){
-			penc_cfg->still_enc_bps = penc_cfg->enc_bps;
-			penc_cfg->move_enc_bps = penc_cfg->enc_bps;
-		}else{
-			imb_mov_num = h264_get_imb_num(p_h264);
-			if(((imb_mov_num*1000)/((penc_cfg->frm_width * penc_cfg->frm_height)/256)) > penc_cfg->stilltomove){
-				//_os_printf("dev running ,cfg move enc_fps(%d)",h264_get_imb_num(p_h264));
-				penc_cfg->move_remain_gop = penc_cfg->move_keep_gop;
-			}
-		}
-	}
-		
+	
 	hf = list_entry((struct list_head *)h264_f_p,h264_frame,list);
 	hf->frame_len = rdata;
 	hf->which = penc_cfg->src_from;
-	hf->srcID = video_msg.video_type_cur + FRAMEBUFF_SOURCE_CAMERA0; 
+	//镜头拼接,都当作是镜头1
+	if(video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+	{
+		hf->srcID = FRAMEBUFF_SOURCE_CAMERA0;
+	}
+	else
+	{
+		hf->srcID = video_msg.video_type_cur + FRAMEBUFF_SOURCE_CAMERA0; 
+	}
 	
+
 	//因为有预分配机制，所以要先去掉最后一个节点
 	//_os_printf("bw_rd:%d   bw_wr:%d\r\n",h264_get_bandwidth_rd(p_h264),h264_get_bandwidth_wr(p_h264));
 	//os_printf("---H(%d  %d)",h264_dev_num,penc_cfg->src_from);
@@ -1530,12 +1537,41 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	
 	h264_enc_eof_update((struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
 
+	ismove = 0;
+	//帧OK
+	if(penc_ctl->gop_frm_cnt == 0){
+		if(penc_cfg->stilltomove == 0){
+			penc_cfg->still_enc_bps = penc_cfg->enc_bps;
+			penc_cfg->move_enc_bps = penc_cfg->enc_bps;
+			imb_mov_num = h264_get_imb_num(p_h264);
+			if(((imb_mov_num*1000)/((penc_cfg->frm_width * penc_cfg->frm_height)/256)) > 100){    //10%的画面变化，表示动
+				ismove = 1;
+			}
+		}else{
+			imb_mov_num = h264_get_imb_num(p_h264);
+			if(((imb_mov_num*1000)/((penc_cfg->frm_width * penc_cfg->frm_height)/256)) > penc_cfg->stilltomove){     //移动比例超过设定，让为在运动
+				penc_cfg->move_remain_gop = penc_cfg->move_keep_gop;
+				ismove = 1;
+			}
+
+			if(penc_cfg->ptd_complex < photo_complex){    //场景复杂度超过设定的复杂度阀值，用运动的bps
+				penc_cfg->move_remain_gop = penc_cfg->move_keep_gop;
+			}
+		}
+	}
+	
+
+
 	if(h264_is_running(p_h264) == 0){
 		del_264_frame(h264_f_p);
 		return;
 	}
 
 	if(param || h264_is_err(p_h264)){
+		if(penc_cfg->pixel_fast_reduce_level){
+			os_printf("pixel fast,reduce bps\r\n");
+		}
+	
 		os_printf("isp ov,h264 frame drop\r\n");
 		drop = 1;
 		h264_set_err(p_h264,0);
@@ -1550,6 +1586,32 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 			recfg_h264_new_grop[0] = 1; 	  //重新配置成I帧
 		}
 		os_printf("grop[0]:%d\tgrop[1]:%d\tfrom:%d\n",recfg_h264_new_grop[0],recfg_h264_new_grop[1],penc_cfg->src_from);
+		h264_ini_recfg((struct h264_cfg_t *)penc_cfg,(struct h264_ctl_t *)penc_ctl,(struct h264_rc_ctl_t *)prc_ctl);
+	}else{
+		if(penc_cfg->pixel_fast_reduce_level){       //出过pixel fast
+			if(ismove){
+				penc_cfg->pixel_fast_reduce_level--;
+				h264_ini_recfg((struct h264_cfg_t *)penc_cfg,(struct h264_ctl_t *)penc_ctl,(struct h264_rc_ctl_t *)prc_ctl);
+			}		
+		}
+		
+	}
+
+
+
+	//os_printf("G4(%x  %d)",penc_cfg,penc_ctl->gop_frm_cnt);
+	if(penc_ctl->gop_frm_cnt == 0){
+		if(penc_cfg->stilltomove != 0){          //如果用动静态区分机制
+			if(penc_cfg->move_remain_gop){
+				penc_cfg->move_remain_gop--;
+				penc_cfg->enc_bps = penc_cfg->move_enc_bps;
+			}else{
+				penc_cfg->enc_bps = penc_cfg->still_enc_bps;
+			}
+			os_printf("\r\nY3(%x  b:%d  m:%d  s:%d)\r\n",penc_cfg,penc_cfg->enc_bps,penc_cfg->move_enc_bps,penc_cfg->still_enc_bps);
+			h264_ini_recfg((struct h264_cfg_t *)penc_cfg,(struct h264_ctl_t *)penc_ctl,(struct h264_rc_ctl_t *)prc_ctl);
+			//enc_ctl->target_gop = (((((uint32_t)penc_cfg->enc_bps * 1000 * (uint32_t)penc_cfg->frm_gop) / penc_cfg->frm_rate ) >> 3 )*7)/10;   //group total len*0.7, enc_bps for max bps
+		}
 	}
 
 ///////////////////////////////////////////////////////
@@ -1614,8 +1676,18 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	}else{
 		if(!penc_cfg->timeLapse_en)
 		{
-			h264_cfg_srcdat(p_h264,penc_cfg->src_from);
-			h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+			if(video_msg.video_type_cur == ISP_VIDEO_0 && video_msg.camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE)
+			{
+				h264_cfg_srcdat(p_h264,penc_cfg->src_from);
+				h264_start_enc_frm_noready(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+				vppdone_func_register(VPP_H264_ISR_START, h264_dual_splice_rekick, (uint32_t) p_h264);
+			}
+			else
+			{
+				h264_cfg_srcdat(p_h264,penc_cfg->src_from);
+				h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+			}
+
 		}
 		else
 		{
@@ -1810,11 +1882,16 @@ void h264_frame_fast_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 
 
 void h264_pixel_fast_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
-//	struct h264_device *p_h264 = (struct h264_device *)irq_data;
-	
+	struct h264_device *p_h264 = (struct h264_device *)irq_data;
+	static uint8_t err_count_num = 0;
+
+	if(err_count_num == penc_cfg->count) return;
+		
 	printf(KERN_INFO"(P)");
 //	printf("******************************** %s  %d\r\n",__func__,__LINE__);
 //	h264_error = 1;
+	penc_cfg->pixel_fast_reduce_level++;	
+	h264_set_err(p_h264,1);
 }
 
 void h264_soft_slow_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
@@ -1825,8 +1902,7 @@ void h264_soft_slow_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 
 void h264_pixel_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	//struct h264_device *p_h264 = (struct h264_device *)irq_data;
-	//_os_printf("mbl_calc:%d   mb_calc_max:%d\r\n",h264_get_mbl_calc(p_h264),h264_get_mbl_calc_max(p_h264));
-
+	
 }
 
 void h264_enc_timeout_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
@@ -1884,7 +1960,8 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	enc_cfg.roi_qp			= 22;	//QP used in ROI windows
 	enc_cfg.gop_rst_3dnr    = 10;   //10个ip gop后，重新使能一下3dnr
 	enc_cfg.auto_ctl_3dnr   = 0;    //需要打开vpp移动帧测，否则无效
-
+    enc_cfg.ptd_complex     = 20;
+	enc_cfg.pixel_fast_reduce_level = 0;
 	enc_cfg.run_gop_3dnr    = enc_cfg.gop_rst_3dnr;
 	h264_ini_seting_cfg(p_h264,(struct h264_cfg_t *)&enc_cfg, (struct h264_ctl_t *)&enc_ctl, (struct h264_rc_ctl_t *)&rc_ctl,1);
 	if(enc_cfg.flt3d_en) {
@@ -1908,7 +1985,7 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	
 	enc_cfg.still_enc_bps   = 600;    //Kbit pre second
 	enc_cfg.move_enc_bps    = 4000;   //Kbit pre second	
-	enc_cfg.stilltomove     = 0;    //permil for judgmemnt is move or still
+	enc_cfg.stilltomove     = 100;    //permil for judgmemnt is move or still
 	enc_cfg.move_keep_gop   = 5;
 	enc_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY 
@@ -1933,7 +2010,8 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	enc_cfg.roi_qp			= 22;	//QP used in ROI windows
 	enc_cfg.gop_rst_3dnr    = 10;   //10个ip gop后，重新使能一下3dnr
 	enc_cfg.auto_ctl_3dnr   = 1;    //需要打开vpp移动帧测，否则无效
-
+	enc_cfg.ptd_complex     = 20;
+	enc_cfg.pixel_fast_reduce_level = 0;
 	enc_cfg.run_gop_3dnr    = enc_cfg.gop_rst_3dnr;
 	h264_ini_seting_cfg(p_h264,(struct h264_cfg_t *)&enc_cfg, (struct h264_ctl_t *)&enc_ctl, (struct h264_rc_ctl_t *)&rc_ctl,1);
 	if(enc_cfg.flt3d_en) {
@@ -1959,7 +2037,7 @@ void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uin
 
 	enc_2_cfg.still_enc_bps = 300;    //Kbit pre second
 	enc_2_cfg.move_enc_bps  = 1000;   //Kbit pre second	
-	enc_2_cfg.stilltomove   = 0;    //permil for judgmemnt is move or still
+	enc_2_cfg.stilltomove   = 100;    //permil for judgmemnt is move or still
 	enc_2_cfg.move_keep_gop = 5;
 	enc_2_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY
@@ -1984,7 +2062,8 @@ void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uin
 	enc_2_cfg.roi_qp		= 22;	//QP used in ROI windows
 	enc_2_cfg.gop_rst_3dnr	= 10;	//10个ip gop后，重新使能一下3dnr
 	enc_2_cfg.auto_ctl_3dnr	= 1;   
-
+	enc_2_cfg.ptd_complex     = 20;
+	enc_cfg.pixel_fast_reduce_level = 0;
 	enc_2_cfg.run_gop_3dnr	= enc_2_cfg.gop_rst_3dnr;
 	h264_ini_seting_cfg(p_h264,(struct h264_cfg_t *)&enc_2_cfg, (struct h264_ctl_t *)&enc_2_ctl, (struct h264_rc_ctl_t *)&rc_2_ctl,2);
 	if(enc_2_cfg.flt3d_en) {
@@ -2142,7 +2221,7 @@ int h264_enc(uint32_t drv1_from,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_fr
 
 	struct h264_device *h264_dev;
 	h264_dev = (struct h264_device *)dev_get(HG_H264_DEVID);	
-
+	vppdone_func_unregister(VPP_H264_ISR_START);
 	_os_printf("%s  %d  drv2_w:%d\r\n",__func__,__LINE__,drv2_w);
 	
 	if(drv2_w != 0){
@@ -2425,6 +2504,7 @@ void get_h264_stream_w_h(uint16_t* w,uint16_t* h,uint8_t *h264data){
 
 extern uint8_t h264_dec_sps_src_param(uint32 w, uint32 h, uint8_t *buf);
 void h264_dec_src_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_t devid){
+	static uint32 h264_dnum = 0;
 	//--- platform initial 
 #if VIDEO_YUV_RANGE_TYPE
 	uint8_t spsbuf[20];
@@ -2439,7 +2519,8 @@ void h264_dec_src_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_
 	p_h264 = (struct h264_device *)dev_get(HG_H264_DEVID);
 
 	//file_size = file_size-4;
-	//_os_printf("fs(%d)",file_size);
+	_os_printf("fs(%d  %d)",h264_dnum,file_size);
+	h264_dnum++;
     mbs_ptr = src_file;   //文件地址	
 	//decoder reference frame addr setting
 

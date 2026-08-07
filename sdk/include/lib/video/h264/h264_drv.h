@@ -5,7 +5,7 @@
 
 struct  h264_cfg_t {
 	uint8_t    enc_mode      ; //0:dec, 1:enc
-	uint8_t		enc_bs_buf_size;//0:1KB; 1:2KB; 2:4KB; 3:8KB; 4:16KB
+	uint8_t	   enc_bs_buf_size;//0:1KB; 1:2KB; 2:4KB; 3:8KB; 4:16KB
 	uint16_t   frm_width     ;
 	uint16_t   frm_height    ;
 	uint16_t   wrap_width;
@@ -42,8 +42,9 @@ struct  h264_cfg_t {
 	uint8_t    enc_runing;
 	uint8_t    move_keep_gop;   //still to move,keep x gop for mov_enc_bps
 	uint8_t    move_remain_gop;   
+	uint8_t    pixel_fast_reduce_level;   
 	volatile uint8_t    timeLapse_en:1,timeLapse_ready_kick:1,rev:6;	//分别是缩时录影的使能和是否可以kick(不能随便使用,除非知道流程)
-
+	uint32_t   ptd_complex;
 };
 
 struct  h264_ctl_t {
@@ -126,6 +127,7 @@ struct  h264_header {
 typedef struct 
 {
 	struct list_head list;				//h264_frame的节点头
+	struct list_head ready_list;
 	uint32 frame_len;						//帧长度
 	uint8 usable;							//判断是否可用       0:空闲
 											//			   1:节点补充中或正在使用中

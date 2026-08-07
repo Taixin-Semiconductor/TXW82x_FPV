@@ -65,7 +65,7 @@ enum dma2d_alpha_type {
 };
 
 struct dma2d_src_param {
-    uint32 alpha_val : 8, alpha_mode : 8, alpha_reverse : 1, r_b_swap : 1, clut_mode : 4, reserved : 10;
+    uint32 alpha_val : 8, alpha_mode : 3, alpha_reverse : 1, r_b_swap : 1, clut_mode : 4, reserved : 15;
 };
 
 struct dma2d_dst_param {
@@ -109,26 +109,42 @@ struct dma2d_memset_param {
 struct dma2d_convert_param {
     uint32 src_addr;
     uint32 dst_addr;
-    uint32 photo_pixel_width  : 16,
-           photo_pixel_height : 16;
-    uint32 src_color_mode     : 16,
-           dst_color_mode     : 16;
+    uint32 photo_pixel_width      : 16,
+           photo_pixel_height     : 16;
+    uint32 src_color_mode         : 16,
+           dst_color_mode         : 16;
+    uint32 src_pixel_width        : 16,
+           dst_pixel_width        : 16;
+    uint32 src_pixel_start_width  : 16,
+           src_pixel_start_height : 16;
+    uint32 dst_pixel_start_width  : 16,
+           dst_pixel_start_height : 16;
     struct dma2d_src_param    src_param;
     struct dma2d_dst_param    dst_param;
 };
 
 struct dma2d_mixture_param {
-    uint32 photo0_addr;
-    uint32 photo1_addr;
-    uint32 output_addr;
-    uint32 photo0_color_val;
-    uint32 photo1_color_val;
-    uint32 photo_pixel_width  : 16,
-           photo_pixel_height : 16;
-    uint32 photo0_color_mode  : 10,
-           photo1_color_mode  : 10,
-           output_color_mode  : 10,
-           reserved           :  2;
+    uint32 photo0_addr                   ;
+    uint32 photo1_addr                   ;
+    uint32 output_addr                   ;
+    uint32 photo0_color_val              ;
+    uint32 photo1_color_val              ;
+    uint32 mixture_pixel_width       : 16,
+           mixture_pixel_height      : 16;
+    uint32 photo0_color_mode         : 10,
+           photo1_color_mode         : 10,
+           output_color_mode         : 10,
+           reserved0                 :  2;
+    uint32 photo0_pixel_width        : 16,
+           photo1_pixel_width        : 16;
+    uint32 output_pixel_width        : 16,
+           reserved1                 : 16; 
+    uint32 photo0_pixel_start_width  : 16,
+           photo0_pixel_start_height : 16;
+    uint32 photo1_pixel_start_width  : 16,
+           photo1_pixel_start_height : 16;
+    uint32 output_pixel_start_width  : 16,
+           output_pixel_start_height : 16;
     struct dma2d_src_param    src_param[2];
     struct dma2d_dst_param    dst_param;
 };

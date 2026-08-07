@@ -21,13 +21,20 @@
 
 #define AUADC_QUEUE_NUM       3
 
-#define AUADC_TIME_INTERVAL   20
-#define AUPROC_FRAME_MS       10
+#ifndef MAX_AUADC_TXBUF
 #define MAX_AUADC_TXBUF       4
-#define AUADC_TASK_PRIORITY   (OS_TASK_PRIORITY_ABOVE_NORMAL-1)
+#endif
+#ifndef AUADC_TIME_INTERVAL
+#define AUADC_TIME_INTERVAL   20
+#endif
+#ifndef AUADC_TASK_PRIORITY
+#define AUADC_TASK_PRIORITY   OS_TASK_PRIORITY_ABOVE_NORMAL
+#endif
+#ifndef AUDIO_PROCESS
+#define AUDIO_PROCESS         0
+#endif
 
 #define AUADC_OUTPUT_SIN      0
-#define AUDIO_PROCESS         1
 
 int32_t audio_adc_init(enum ausys_ad_platform platform, uint32_t sampleRate, uint32_t channels, uint32_t soft_gain, uint32_t auproc_enable);
 int32_t audio_adc_deinit(enum ausys_ad_platform platform);

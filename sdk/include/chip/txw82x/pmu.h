@@ -514,6 +514,7 @@ enum pmu_con7_bits_funcs {
 #define pmu_vcam_oc_detect_dis()                    PMU_REG_CLR_BITS(PMU->PMUCON11, BIT(15))
 #define pmu_vcam_en()                               PMU_REG_SET_BITS(PMU->PMUCON11, BIT(14))
 #define pmu_vcam_dis()                              PMU_REG_CLR_BITS(PMU->PMUCON11, BIT(14))
+#define pmu_vcam_is_en()                            (PMU->PMUCON11 & BIT(14))
 #define pmu_vcam_discharge_en()                     PMU_REG_SET_BITS(PMU->PMUCON11, BIT(13))
 #define pmu_vcam_discharge_dis()                    PMU_REG_CLR_BITS(PMU->PMUCON11, BIT(13))
 
@@ -541,8 +542,10 @@ enum vcam_vol_level {
     VCAM_VOL_3V15,
     VCAM_VOL_3V20,
     VCAM_VOL_3V25,
+    VCAM_VOL_3V30, // PG MODE
 };
 #define pmu_set_vcam_vol(vcam_vol_level)            PMU_REG_SET_VALUE(PMU->PMUCON11, 0x01e00000, vcam_vol_level, 21)
+#define pmu_get_vcam_vol()                          ((PMU->PMUCON11 & 0x01e00000) >> 21)
 enum vcam_oc_level {
     VCAM_OC_750MA,
     VCAM_OC_300MA,
@@ -550,6 +553,7 @@ enum vcam_oc_level {
     VCAM_OC_100MA,
 };
 #define pmu_vcam_oc_set(vcam_oc_level)              PMU_REG_SET_VALUE(PMU->PMUCON11, 0x00000600, vcam_oc_level, 9)
+
 
 
 /* CORE_RFCON0 */
@@ -593,6 +597,15 @@ enum vcc_ldo_vol_level {
     VCC_LDO_VOL_2V50,
     VCC_LDO_VOL_2V55,
 };
+
+#define pmu_set_vcam2_vol(vcc_ldo_vol_level)            PMU_REG_SET_VALUE(PMU->PMUCON16, 0x07800000, vcc_ldo_vol_level, 23)
+enum vcam2_oc_level {
+    VCAM2_OC_750MA,
+    VCAM2_OC_250MA,
+    VCAM2_OC_150MA,
+    VCAM2_OC_100MA,
+};
+#define pmu_vcam2_oc_set(vcam2_oc_level)                PMU_REG_SET_VALUE(PMU->PMUCON16, 0x00600000, vcam2_oc_level, 21)
 
 struct system_reset_pending_bits {
   uint32  srp_mclr : 1,           /* mclr pin reset */
@@ -647,7 +660,10 @@ int pmu_get_vdd18_ldo_vol(void);
 int32 pmu_vcam2_ldo_en(uint32 en, enum vcc_ldo_vol_level vol);
 int pmu_is_vcam2_ldo_en(void);
 int pmu_get_vcam2_ldo_vol(void);
-
+/*
+ * vcam ldo enable,  you maybe need pmu_get_vcam_vol(); pmu_vcam_is_en();
+ */
+int32 pmu_vcam_ldo_en(uint32 en, enum vcam_vol_level vol);
 
 void pmu_tsensor_chan_sel_sec(uint8 chan_idx);
 void pmu_pd_set_anatop_en_sec(void);

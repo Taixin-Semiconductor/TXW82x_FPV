@@ -1,12 +1,5 @@
 #ifndef __AVIDEMUX_H
 #define __AVIDEMUX_H
-typedef unsigned long DWORD;
-//typedef unsigned int uint32_t;
-//typedef unsigned int uint32_t;
-typedef unsigned short int WORD;
-typedef unsigned char BYTE;
-//typedef unsigned char uint8_t;
-
 
 struct avi_msg
 {

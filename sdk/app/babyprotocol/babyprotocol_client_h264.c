@@ -384,10 +384,12 @@ void udp_handle_client_status_read_workqueue(){
 	os_mutex_unlock(&thread_lock);
 
 	ie = disable_irq();
-	if(status_unlock){
-		status_unlock = 0;
-		net_h264_status_sema_up();
-	}	
+	if(msg_head->type == 0){
+		if(status_unlock){
+			status_unlock = 0;
+			net_h264_status_sema_up();
+		}	
+	}
 	enable_irq(ie);
 }
 

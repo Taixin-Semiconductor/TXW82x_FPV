@@ -1,6 +1,4 @@
 #include "sys_config.h"
-
-#include "integer.h"
 #include "diskio.h"
 #include "ff.h"
 #include <stdio.h>

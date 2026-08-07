@@ -5,6 +5,9 @@
 #include "lib/multimedia/framebuff.h"
 #include "lib/multimedia/msi.h"
 #include "lib/video/dvp/jpeg/jpg.h"
+#include "app_iic/app_iic.h"
+#include "hal/vpp.h"
+#include "lib/video/vpp/vpp_dev.h"
 
 #if ISP_TUNNING_EN
 struct isp_tunnning_dev *isp_tunning = NULL;
@@ -232,6 +235,120 @@ void isp_tunning_dump_data(struct isp_tunnning_dev *p_dev, uint32 data_addr, uin
 __err:
     isp_tunning_response(p_dev, ret_val);
     return;
+}
+
+uint32 isp_tuning_get_yuv_data(struct isp_tunnning_dev *p_dev){
+    uint32     ret_val        = TUNNING_ERR_CODE_RIGHT;
+    uint32     offset         = 0;
+    uint32     flen           = 0;
+	uint8      first_packet   = 0;
+
+
+    uint16_t yuv_h = 720;
+    uint16_t yuv_w = 1280;
+    uint32_t yuv_size = (yuv_h * yuv_w) + (yuv_h * yuv_w/2);
+    uint8 *yuv_data = os_malloc_psram(yuv_size);
+    if(yuv_data==NULL){
+        os_printf("malloc err\r\n");
+        ret_val = TUNNING_ERR_CODE_MALLOC_ERR;
+        goto __err;
+    }
+    flen = yuv_size;
+
+    vpp_set_watermark0_enable(isp_tunning->p_vpp, 0);
+    vpp_itp_save_only(isp_tunning->p_vpp, yuv_w, yuv_h, (uint32) yuv_data);
+
+    p_dev->write_data.size = TUNNING_PACKET_SIZE;
+    p_dev->write_data.addr = os_zalloc(TUNNING_PACKET_SIZE+4);
+
+    if (p_dev->write_data.addr)
+    {
+        isp_tunning_message_head(p_dev, (uint32)yuv_data, flen);
+        p_dev->write_data.addr[TUNNING_PACKET_SIZE+0] = 0x00;
+        p_dev->write_data.addr[TUNNING_PACKET_SIZE+1] = 0x00;
+        p_dev->write_data.addr[TUNNING_PACKET_SIZE+2] = 0x0d;
+        p_dev->write_data.addr[TUNNING_PACKET_SIZE+3] = 0x0a;
+        while (flen)
+        {
+            offset = (flen > TUNNING_PACKET_SIZE) ? (TUNNING_PACKET_SIZE) : (flen);
+            hw_memcpy((void *)p_dev->write_data.addr, yuv_data, offset);
+            yuv_data += offset;
+            flen     -= offset;
+            if (offset < TUNNING_PACKET_SIZE)
+            {
+                p_dev->write_data.addr[offset+0] = 0x00;
+                p_dev->write_data.addr[offset+1] = 0x00;
+                p_dev->write_data.addr[offset+2] = 0x0d;
+                p_dev->write_data.addr[offset+3] = 0x0a;
+            }
+            p_dev->write_handle(p_dev->device, 0, (void *)p_dev->write_data.addr, offset+4);
+            if (first_packet == 0) {
+                os_sleep_ms(10);
+                first_packet = 1;
+            }else {
+                os_sleep_ms(1);
+            }
+        }
+        os_free(p_dev->write_data.addr);
+    }
+
+    os_free_psram(yuv_data);
+
+__err:
+    isp_tunning_response(p_dev, ret_val);
+
+    return ret_val;
+}
+
+uint8_t isp_read_sensor_reg(struct isp_device *isp,uint16_t reg_adrr,enum sensor_type type)
+{
+    uint8_t tablebuf[8];
+    uint8_t index = 3;
+    uint32_t iic_dev[3];
+    isp_get_sensor_iic_dev(isp,iic_dev,type);
+    uint8_t csi_iic_dev = iic_dev[0];
+    uint8_t addr_len    = iic_dev[1];
+    uint8_t data_len    = iic_dev[2];
+    tablebuf[0] = addr_len;
+    tablebuf[1] = data_len;
+    // tablebuf[2] = slave_id>>1;
+    if(addr_len == SENSOR_REG_WIDTH_16){
+        tablebuf[index++] = (reg_adrr >> 8) & 0xFF;
+        tablebuf[index++] = reg_adrr & 0xFF;
+    } else if(addr_len == SENSOR_REG_WIDTH_8){
+        tablebuf[index++] = reg_adrr & 0xFF;
+    }  
+    wake_up_iic_queue(csi_iic_dev,tablebuf,0,0,(uint8_t*)NULL);
+    while(iic_devid_finish(csi_iic_dev) != 1){
+        os_sleep_ms(1);
+    }
+    return tablebuf[index];
+}
+
+uint8_t isp_write_sensor_reg(struct isp_device *isp, uint16_t reg_adrr, uint8_t write_data,enum sensor_type type)
+{
+    uint8_t     tablebuf[8];
+    uint8_t     index = 3;
+    uint32_t    iic_dev[3];
+    isp_get_sensor_iic_dev(isp,iic_dev,type);
+    uint8_t csi_iic_dev  = iic_dev[0];
+    uint8_t addr_len     = iic_dev[1];
+    uint8_t data_len     = iic_dev[2];
+    tablebuf[0] = addr_len;
+    tablebuf[1] = data_len;
+    // tablebuf[2] = slave_id>>1;
+    if(addr_len == SENSOR_REG_WIDTH_16){
+        tablebuf[index++] = (reg_adrr >> 8) & 0xFF;
+        tablebuf[index++] = reg_adrr & 0xFF;
+    } else if(addr_len == SENSOR_REG_WIDTH_8){
+        tablebuf[index++] = reg_adrr & 0xFF;
+    }  
+    tablebuf[index++] = write_data;
+    wake_up_iic_queue(csi_iic_dev,tablebuf,0,1,(uint8_t*)NULL);
+    while(iic_devid_finish(csi_iic_dev) != 1){
+        os_sleep_ms(1);
+    }
+    return 0;
 }
 
 void isp_tunning_thread(void *dev)
@@ -624,6 +741,32 @@ void isp_tunning_thread(void *dev)
                 isp_dyn_gamma_param(p_dev->p_isp, p_dev->p_data[0], p_dev->p_data[1], p_dev->cmd_channel);
                 break;
 
+            case ISP_IOCTL_CMD_GET_YUV_DATA:
+                ret_val = isp_tuning_get_yuv_data(p_dev);
+                response_flag = 0;
+                break;
+
+            case ISP_IOCTL_CMD_RW_SENSOR_REG:
+            {
+                TUNING_SENSOR_IIC iic_data;
+                iic_data.reg_length = p_dev->p_data[0];
+                iic_data.rw_mode    = p_dev->p_data[1];
+                iic_data.reg_adrr   = p_dev->p_data[2];
+                //write
+                if(iic_data.rw_mode == 1) {
+                    iic_data.reg_data   = p_dev->p_data[3];
+                }
+//                isp_tuning_rw_sensor_reg(p_dev->p_isp, &iic_data,p_dev->cmd_channel);
+                //read
+                if(iic_data.rw_mode == 0){
+                    dump_data.addr = &iic_data.reg_data;
+                    dump_data.size = SENSOR_REG_WIDTH_8;
+                    isp_tunning_dump_data(p_dev, (uint32)dump_data.addr, dump_data.size);
+                    response_flag = 0;
+                }
+                break;
+            }
+                
             default:
                 os_printf("tunning get cmd type : %d err type : %d!\r\n", p_dev->cmd_num, ret_val);
                 break;
@@ -677,6 +820,7 @@ void isp_tunning_init(uint32 img_w, uint32 img_h)
     isp_tunning->tunning_err  = 0x5a5a;
     isp_tunning->p_isp        = (struct isp_device  *)dev_get(HG_ISP_DEVID);
     isp_tunning->p_dual       = (struct dual_device *)dev_get(HG_DUALORG_DEVID);
+    isp_tunning->p_vpp        = (struct vpp_device *) dev_get(HG_VPP_DEVID);
     isp_tunning->write_handle = cdc_usb_write;
     isp_tunning_get_img_msi_create(isp_tunning, TUNNING_IMG_JPEG, img_w, img_h, 0);
     if ((isp_tunning->p_isp == NULL) || (isp_tunning->p_dual == NULL) || (isp_tunning->video_msi == NULL))

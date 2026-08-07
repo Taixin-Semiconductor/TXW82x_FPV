@@ -55,7 +55,7 @@ void auadc_deal_task(void *d)
     while(1) {
 		if(auadc_s->auadc_stop)
 			break;
-		ret = ausys_ad_get_msg(auadc_s->platform, &ausys_msg, osWaitForever);
+		ret = ausys_ad_get_msg(auadc_s->platform, &ausys_msg, 10);
 		if((ret == RET_OK) && (ausys_msg.type == AUSYS_AD_MSG_PLAY_DONE)) {
 get_frame_buf:
 			frame_buf = fbpool_get(&auadc_s->tx_pool, 0, auadc_s->msi);
@@ -83,7 +83,8 @@ get_frame_buf:
 				msi_output_fb(auadc_s->msi, frame_buf);
 			}
 			else {
-				os_sleep_ms(1);
+                AUADC_INFO("ad loss:%d\n",auadc_s->platform);
+				os_sleep_ms(10);
 				goto get_frame_buf;
 			}
 		}
@@ -118,7 +119,7 @@ int32_t auadc_start(struct auadc_struct *s, uint32_t auproc_enable)
 	}
 #if AUDIO_PROCESS
 	if(auproc_enable && global_auproc_hdl == NULL) {
-		auadc_s->auproc_hdl = audio_process_init(auadc_s->sampleRate, 1, (auadc_s->sampleRate/1000*AUPROC_FRAME_MS));
+		auadc_s->auproc_hdl = audio_process_init(auadc_s->sampleRate, 1);
 		if(auadc_s->auproc_hdl == NULL) {
 			AUADC_INFO("audio_process_init fail!\r\n");
 			return RET_ERR;

@@ -40,6 +40,7 @@ enum jpg_ioctl_cmd {
 	JPG_IOCTL_CMD_SET_OE_SELECT,	
 	JPG_IOCTL_CMD_SET_OE,
 	JPG_IOCTL_CMD_GET_OE,
+	JPG_IOCTL_CMD_SET_AUTOSCALE1,
 };
 
 
@@ -91,6 +92,7 @@ int32 jpg_timeout_cfg_enable(struct jpg_device *p_jpg, uint8 enable);
 int32 jpg_timeout_cfg(struct jpg_device *p_jpg, uint32 timeout);
 int32 jpg_auto_rekick_cfg(struct jpg_device *p_jpg, uint8 enable);
 int32 jpg_try_dec_cfg(struct jpg_device *p_jpg, uint8 enable);
+int32 jpg_set_autoscale(struct jpg_device *p_jpg, uint32 autoflag);
 
 #ifdef __cplusplus
 }

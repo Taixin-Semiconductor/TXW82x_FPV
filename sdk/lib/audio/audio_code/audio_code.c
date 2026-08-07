@@ -218,7 +218,7 @@ AUCODE_HDL *audio_coder_open(uint32_t coder, uint32_t samplerate, uint32_t chann
             void *alaw_enc = NULL;
 #if ALAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
             alaw_enc = alaw_encoder_open();
-else
+#else
             if(g_aucode_manage->task_hdl == NULL) {
                 audio_coder_run_rpc(g_aucode_manage);
             }
@@ -245,9 +245,9 @@ else
         case ALAW_DEC:
         {
             void *alaw_dec = NULL;
-#if ALAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
+#if ALAW_DEC_CTRL == AUCODER_RUN_IN_CPU0
             alaw_dec = alaw_decoder_open();
-else
+#else
             if(g_aucode_manage->task_hdl == NULL) {
                 audio_coder_run_rpc(g_aucode_manage);
             }
@@ -276,7 +276,7 @@ else
             void *ulaw_enc = NULL;
 #if ALAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
             ulaw_enc = ulaw_encoder_open();
-else
+#else
             if(g_aucode_manage->task_hdl == NULL) {
                 audio_coder_run_rpc(g_aucode_manage);
             }
@@ -303,9 +303,9 @@ else
         case ULAW_DEC:
         {
             void *ulaw_dec = NULL;
-#if ULAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
+#if ULAW_DEC_CTRL == AUCODER_RUN_IN_CPU0
             ulaw_dec = ulaw_decoder_open();
-else
+#else
             if(g_aucode_manage->task_hdl == NULL) {
                 audio_coder_run_rpc(g_aucode_manage);
             }

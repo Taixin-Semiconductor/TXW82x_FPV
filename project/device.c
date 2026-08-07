@@ -45,6 +45,7 @@
 #include "dev/isp/hgisp_v0.h"
 //#include "dev/isp/hgftusb3_v0.h"
 #include "dev/pwm/hgpwm_v0.h"
+#include "dev/capture/hgcapture_v0.h"
 #include "dev/dma2d/hg_dma2d_v0.h"
 #include "lib/syscfg/syscfg.h"
 #include "syscfg.h"
@@ -354,6 +355,12 @@ struct hgpwm_v0 pwm = {
     .channel[2] = (void *) &timer2,
 };
 
+struct hgcapture_v0 capture = {
+    .channel[0] = (void *) &timer0,
+    .channel[1] = (void *) &timer1,
+    .channel[2] = (void *) &timer2,
+};
+
 struct hgisp_v0 isp = {
     .hw           = IMAGE_ISP_BASE,
     .data_hw      = ISP_R_GAMMA_BASE,
@@ -384,7 +391,7 @@ struct hg_audio_v0 auadc = {
     .hw       = AUDIO_BASE,
     .irq_num  = AUDIO_SUBSYS1_IRQn,
     .p_comm   = (void *)&auadc.comm_dat,
-    .comm_dat.comm_bits.ana_rfb_level = 0,  //set_rfb = (1 << ana_rfb_level)
+    .comm_dat.comm_bits.ana_rfb_level = 1,  //set_rfb = (1 << ana_rfb_level)
     .comm_dat.comm_bits.ana_rin_level = 1,  //set_rin = (1 << ana_rin_level)
 //    .comm_dat.comm_bits.ana_driver_version = 1,
     .dev_type = AUDIO_TYPE_AUADC,
@@ -456,6 +463,11 @@ static void core_vdd_voltage()
     os_printf("CoreVdd Voltage:%.2fV\r\n", ((double)core_vdd_voltage/2048.0)*3.0);
 }
 
+static void cpu1_ctl1_run_pwm_in_debug(void)
+{
+    SYSCTRL->CPU1_CON1 &= ~(0x1F << 16);//clear 0x4002019C bit[20:16]
+}
+
 void device_init(void)
 {
     extern uint32_t get_flash_cap();
@@ -481,7 +493,7 @@ void device_init(void)
     hgtimer_v4_attach(HG_TIMER2_DEVID, &timer2);
     hgtimer_v4_attach(HG_TIMER3_DEVID, &timer3);
     hgtimer_v7_attach(HG_SIMTMR5_DEVID, &simple_timer5);
-    
+    cpu1_ctl1_run_pwm_in_debug();
 
     hgi2s_v0_attach(HG_IIS0_DEVID, &i2s0);
     hgi2s_v0_attach(HG_IIS1_DEVID, &i2s1);
@@ -559,6 +571,7 @@ hgpara_in_attach(HG_PARA_IN_DEVID, &para_in);
 #endif
 
     hgpwm_v0_attach(HG_PWM0_DEVID, &pwm);
+    hgcapture_v0_attach(HG_CAPTURE0_DEVID, &capture);
 
     hgdual_attach(HG_DUALORG_DEVID,&dual);
     hgcsc_attach(HG_CSC_DEVID,&csc);

@@ -70,7 +70,7 @@ static void takephoto_photo_720P_init(const char *thumb_msi_name)
     // 将AUTO_JPG绑定缩略图
     // msi_add_output(NULL, AUTO_JPG, R_JPG_THUMB); // 拍照缩略图
 
-    struct msi *scale3_msi     = scale3_normal_msi(S_SCALE3_720P, 1280, 720);
+    struct msi *scale3_msi     = scale3_normal_msi(S_PREVIEW_SCALE3, 1280, 720);
     struct msi *gen420_jpg_msi = gen420_jpg_msi_init(SR_GEN420_720P_JPG, JPGID0, FSTYPE_GEN420_720P, JPG_LOCK_NORMAL_ENCODE, GEN420_QUEUE_JPEG, NULL, filter_720P);
 
     if (scale3_msi && gen420_jpg_msi)
@@ -171,6 +171,12 @@ void common_takephoto_noraml_api(struct msi *jpg_normal_msi)
 {
     msi_do_cmd(jpg_normal_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t) "0:/IMG");
     msi_do_cmd(jpg_normal_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO, 1);
+}
+
+void common_takephoto_noraml_api_with_path(struct msi *jpg_normal_msi,uint8_t takephoto_num,const char *path)
+{
+    msi_do_cmd(jpg_normal_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t) path);
+    msi_do_cmd(jpg_normal_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO, takephoto_num);
 }
 
 #define MAX_USER_VIDEO_TX 16

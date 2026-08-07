@@ -121,7 +121,7 @@ int32 ble_adv_tx_data(uint8 *data, int32 len)
 		memcpy(adv_info.payload_info.data, data + start_pos, cur_section_len);
 
         buff = os_malloc(adv_info.header_info.length + 2 + 1);
-        if (buff) {
+        if (!buff) {
             return RET_ERR;
         }
         os_memcpy(buff+1, &adv_info, adv_info.header_info.length + 2);

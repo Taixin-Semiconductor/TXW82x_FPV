@@ -75,7 +75,7 @@ SECTIONS
 		. = ALIGN(0x10) ;
         KEEP(*(SYS_PARAM))     /*如果预留参数区的Size 大于4K时 不能再放在此位置*/
         . = ALIGN(0x1000);
-        . = . + 0x61fb4; /*预留CodeCode Size大小区间*/
+        . = . + 0x62218; /*预留CodeCode Size大小区间*/
         . = ALIGN(0x4);
         __stext = . ;
         *(.text)

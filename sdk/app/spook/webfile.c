@@ -10,7 +10,6 @@
 #include "rtsp_common.h"
 #include "osal/string.h"
 #include "stream_define.h"
-#include "video_app/video_app.h"
 #include "stream_frame.h"
 #include "log.h"
 #include "avidemux.h"

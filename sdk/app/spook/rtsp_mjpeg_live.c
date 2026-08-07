@@ -10,7 +10,6 @@
 #include "rtsp_common.h"
 #include "osal/string.h"
 #include "stream_define.h"
-#include "video_app/video_app.h"
 #include "stream_frame.h"
 #include "log.h"
 #include "lib/video/dvp/jpeg/jpg.h"
@@ -31,7 +30,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 {
 	source->priv = (struct rtsp_priv*)os_zalloc(sizeof(struct rtsp_priv));
 	struct rtsp_priv *r = (struct rtsp_priv*)source->priv;
-	AUENC_INIT auenc_init;
+	
 	if(source->priv)
 	{	
 		r->live_node = &source->live_node;
@@ -40,6 +39,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 		{
 			r->v_msi = rtsp_msi_init(R_RTP_JPEG,~0,0);
 #if AUDIO_EN == 1
+			AUENC_INIT auenc_init;
 			r->a_msi = rtsp_audio_msi_init(R_RTP_AUDIO2);
             auenc_init.destroy_self = 0;
             auenc_init.src_msi = get_auadc_msi(AUSYS_AUAD);

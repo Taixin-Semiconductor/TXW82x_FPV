@@ -16,6 +16,7 @@ S_PREVIEW_SCALE3   -----|
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
 #include "scale_msi/scale3_normal_msi.h"
+#include "takephoto_module/takephoto.h"
 
 extern void common_takephoto_over_dpi_api(struct msi *scale3, uint16_t normal_w, uint16_t noraml_h, uint16_t thumb_w, uint16_t thumb_h);
 extern void common_takephoto_noraml_api(struct msi *jpg_normal_msi);
@@ -99,7 +100,7 @@ static void takephoto_action(lv_event_t *e)
     }
 
     //测试代码,如果是需要插值拍照
-    if (0)
+    if (1)
     {
         // 设置需要拍照的分辨率,这里是demo,暂时固定,实际需要通过设置文件去配置
         uint32_t w       = 2560;
@@ -110,7 +111,7 @@ static void takephoto_action(lv_event_t *e)
 
         // 缩略图320x240
         // 原图yuv
-        common_takephoto_over_dpi_api(ui_s->s, 0, 0, 320, 240);
+        common_takephoto_over_api(w, h, 320, 240,1);
     }
     //非插值拍照
     else

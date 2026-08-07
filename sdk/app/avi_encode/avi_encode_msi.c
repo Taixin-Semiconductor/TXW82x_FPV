@@ -7,12 +7,8 @@
 #include "stream_define.h"
 #include "video_app/file_common_api.h"
 #include "loop_record_moudle/loop_record_moudle.h"
-
-void    *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int gop, int h265, int sampnum);
-uint32_t avimuxer_video2(void *ctx, unsigned char *buf, int len, int key, unsigned pts, uint8_t insert);
-uint32_t avimuxer_audio2(void *ctx, unsigned char *buf, int len, int key, unsigned pts);
-void     avimuxer_sync(void *ctx);
-void     avimuxer_exit2(void *ctx);
+#include "app/ffavimuxer/avimuxer.h"
+#include "app/record/mux_file.h"
 
 // 结构体申请空间函数
 #define STREAM_MALLOC av_psram_malloc
@@ -293,11 +289,28 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time)
     uint32_t                 fps        = 25;
     uint32_t                 fps_time   = 1000 / fps;
     char                     filename[64];
-    void                    *fp  = creat_avi_file(&avi_encode->loop, filename);
-    void                    *ctx = avimuxer_init2(fp, AVI_MAX_SINGLE_SIZE, 1280, 720, fps, 0, 0, 0);
+    void                    *fp         = creat_avi_file(&avi_encode->loop, filename);
+    void                    *mux_file   = NULL;
+    file_ops_t               file_ops;
+    void                    *ctx        = NULL;
+
+    if (fp)
+    {
+        mux_file = mux_file_open((F_FILE *) fp, AVI_MAX_SINGLE_SIZE, MUX_FILE_ALIGN_EN);
+        if (mux_file)
+        {
+            mux_file_get_ops(mux_file, &file_ops);
+            ctx = avimuxer_init_with_file(fp, &file_ops, AVI_MAX_SINGLE_SIZE, 1280, 720, fps, 0, 1);
+        }
+    }
 
     os_printf(KERN_INFO"fp:%X\tctx:%X\n", fp, ctx);
-    if (fp && ctx)
+    if (!fp || !mux_file || !ctx)
+    {
+        ret = 1;
+        goto avi_encode_thread_end;
+    }
+    else
     {
         ret = 0;
     }
@@ -326,11 +339,11 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time)
                 uint32_t insert_num = ((fb->time - write_start_time) / fps_time) - count_fps;
                 for (int i = 0; i < insert_num; i++)
                 {
-                    res |= avimuxer_video2(ctx, fb->data, fb->len, 1, 40, 1);
+                    res |= avimuxer_video(ctx, fb->data, fb->len, 1, 1);
                     count_fps++;
                 }
             }
-            res |= avimuxer_video2(ctx, fb->data, fb->len, 1, 40, 0);
+            res |= avimuxer_video(ctx, fb->data, fb->len, 1, 0);
             fbtime = fb->time;
 
             msi_delete_fb(NULL, fb);
@@ -345,7 +358,7 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time)
         {
             _os_printf(KERN_INFO "A");
             audio_fps++;
-            res |= avimuxer_audio2(ctx, fb->data, fb->len, 0, 0);
+            res |= avimuxer_audio(ctx, fb->data, fb->len);
             msi_delete_fb(NULL, fb);
             fb = NULL;
             if (res)
@@ -389,7 +402,13 @@ avi_encode_thread_end:
 
     if (ctx)
     {
-        avimuxer_exit2(ctx);
+        avimuxer_exit(ctx);
+    }
+
+    if (mux_file)
+    {
+        mux_file_close(mux_file);
+        mux_file = NULL;
     }
 
     if (fp)

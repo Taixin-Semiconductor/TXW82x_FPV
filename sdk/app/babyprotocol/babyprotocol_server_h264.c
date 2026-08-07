@@ -911,8 +911,8 @@ void protocol_server_init(){
     }
 	
 	for(i = 0;i < STA_NUM;i++){
-		server_resolution[i].target_width = 1280;
-		server_resolution[i].target_high = 720;
+		server_resolution[i].target_width = 640;
+		server_resolution[i].target_high = 360;
 	}
 
 	//scaler_msi_gol = scale2;

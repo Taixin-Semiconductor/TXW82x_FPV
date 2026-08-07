@@ -4,7 +4,6 @@
 #include "osal/task.h"
 #include "osal_file.h"
 #include "lib/net/eloop/eloop.h"
-#include "video_app/video_app.h"
 #include "lwip/api.h"
 #include "lwip/sockets.h"
 #include "lwip/etharp.h"

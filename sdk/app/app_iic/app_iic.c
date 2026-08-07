@@ -204,6 +204,8 @@ void iic_run_thread(void *d){
 						}
 						if(iicdev->id_addr == 0){
 							i2c_ioctl(iicdev->i2c,IIC_SET_DEVICE_ADDR,iicdev->table[2]);
+						}else{
+							i2c_ioctl(iicdev->i2c,IIC_SET_DEVICE_ADDR,iicdev->id_addr);
 						}
 						//printf("scl_io:%x  sda_io:%x\r\n",iicdev->scl_io,iicdev->sda_io);
 						if(iicdev->rw_sta == 0){
@@ -251,7 +253,7 @@ void iic_thread_init(){
 	iic_dev2 = (struct i2c_device *)dev_get(HG_I2C2_DEVID);
 
 	i2c_open(iic_dev, IIC_MODE_MASTER, IIC_ADDR_7BIT, 0);
-	i2c_set_baudrate(iic_dev,250000UL);
+	i2c_set_baudrate(iic_dev,120000UL);
 	i2c_ioctl(iic_dev,IIC_SDA_OUTPUT_DELAY,20);	
 	i2c_ioctl(iic_dev,IIC_FILTERING,20);
 	i2c_ioctl(iic_dev,IIC_SET_WRITE_TABLE_MODE, 1);

@@ -424,6 +424,12 @@ static int32_t thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param
                     if (arg && arg->yuv_arg.type == YUV_ARG_TAKEPHOTO)
                     {
                         os_memcpy(t_fb.path, arg->name, os_strlen(arg->name) + 1);
+                        //没有空间,就将之前的移除
+                        if(RB_FULL(&thumb_msi->rb))
+                        {
+                            struct thumb_queue_fb del_fb;
+                            RB_INT_GET(&thumb_msi->rb, del_fb);
+                        }
                         if (RB_INT_SET(&thumb_msi->rb, t_fb))
                         {
                             // 转发出去
@@ -434,10 +440,6 @@ static int32_t thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param
                                 msi_output_fb(msi, c_fb);
                             }
                         }
-                    }
-                    else
-                    {
-                        msi_delete_fb(NULL, fb);
                     }
                 }
                 // 不需要接收到队列

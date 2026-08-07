@@ -459,7 +459,7 @@ static void takephoto_demo(void *d)
                 msi_put(over_dpi_recode_msi);
             }
 
-            struct msi *over_dpi_msi = msi_find(S_SCALE3_OVER_DPI, 0);
+            struct msi *over_dpi_msi = msi_find(S_PREVIEW_SCALE3, 0);
             if (over_dpi_msi)
             {
                 msi_do_cmd(over_dpi_msi, MSI_CMD_TAKEPHOTO_SCALE3, MSI_TAKEPHOTO_SCALE3_KICK, takephoto_num);

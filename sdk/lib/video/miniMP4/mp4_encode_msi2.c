@@ -9,6 +9,7 @@
 #include "audio_msi/audio_adc.h"
 #include "app/video_app/file_thumb.h"
 #include "app/recorder/file_process.h"
+#include "app/record/mux_file.h"
 
 #ifdef PIN_FROM_PARAM
 #include "pin_param.h"
@@ -17,45 +18,53 @@
 #include "mp4/mp4_encode.h"
 
 // data 申请空间函数
-#define STREAM_MALLOC       av_psram_malloc
-#define STREAM_FREE         av_psram_free
-#define STREAM_ZALLOC       av_psram_zalloc
+#define STREAM_MALLOC av_psram_malloc
+#define STREAM_FREE   av_psram_free
+#define STREAM_ZALLOC av_psram_zalloc
 
 // 结构体申请空间函数
-#define STREAM_LIBC_MALLOC  os_malloc
-#define STREAM_LIBC_FREE    os_free
-#define STREAM_LIBC_ZALLOC  os_zalloc
+#define STREAM_LIBC_MALLOC os_malloc
+#define STREAM_LIBC_FREE   os_free
+#define STREAM_LIBC_ZALLOC os_zalloc
 
-#define MP4_TIMELAPSE_TIME                   40
-#define AVERAGE_BASE                         6
+#define MP4_TIMELAPSE_TIME 40
+#define AVERAGE_BASE       6
 
-#define MP4_VIDEO_FPS                        25U
-#define MP4_AUDIO_FPS                        8U     // 实际为 8000Hz/1024≈7.8 约为128ms一帧
-#define MP4_FRAME_COUNT(fps, ms)             (((fps) * (ms) + 999U) / 1000U)
+#define MP4_VIDEO_FPS            25U
+#define MP4_AUDIO_FPS            8U // 实际为 8000Hz/1024≈7.8 约为128ms一帧
+#define MP4_FRAME_COUNT(fps, ms) (((fps) * (ms) + 999U) / 1000U)
+
+#define MP4_AUDIO_WRITE_FRAME_NUM      1U
+#define MP4_AUDIO_BATCH_SIZE           MP4_AUDIO_WRITE_FRAME_NUM
+#define MP4_AUDIO_BATCH_TIMEOUT_MS     ((MP4_AUDIO_BATCH_SIZE * 1000U) / MP4_AUDIO_FPS + 20U)
+#define MP4_AUDIO_BATCH_MAX_FRAME_SIZE 1024U
+#define MP4_AUDIO_BATCH_BUF_SIZE       (MP4_AUDIO_BATCH_SIZE * MP4_AUDIO_BATCH_MAX_FRAME_SIZE)
 
 // 预录时间及缓冲区大小
-#define MP4_EVENT_PRERECORD_MS               3000U
-#define MP4_EVENT_BUFFER_MARGIN_MS           1000U
-#define MP4_EVENT_BUFFER_MAX_MS              (MP4_EVENT_PRERECORD_MS + MP4_EVENT_BUFFER_MARGIN_MS)
-#define MP4_EVENT_BUFFER_VIDEO_COUNT         MP4_FRAME_COUNT(MP4_VIDEO_FPS, MP4_EVENT_BUFFER_MAX_MS)
-#define MP4_EVENT_BUFFER_AUDIO_COUNT         MP4_FRAME_COUNT(MP4_AUDIO_FPS, MP4_EVENT_BUFFER_MAX_MS)
-#define MP4_EVENT_BUFFER_MAX_COUNT           (MP4_EVENT_BUFFER_VIDEO_COUNT + MP4_EVENT_BUFFER_AUDIO_COUNT)
+#define MP4_EVENT_PRERECORD_MS       3000U
+#define MP4_EVENT_BUFFER_MARGIN_MS   1000U
+#define MP4_EVENT_BUFFER_MAX_MS      (MP4_EVENT_PRERECORD_MS + MP4_EVENT_BUFFER_MARGIN_MS)
+#define MP4_EVENT_BUFFER_VIDEO_COUNT MP4_FRAME_COUNT(MP4_VIDEO_FPS, MP4_EVENT_BUFFER_MAX_MS)
+#define MP4_EVENT_BUFFER_AUDIO_COUNT MP4_FRAME_COUNT(MP4_AUDIO_FPS, MP4_EVENT_BUFFER_MAX_MS)
+#define MP4_EVENT_BUFFER_MAX_COUNT   (MP4_EVENT_BUFFER_VIDEO_COUNT + MP4_EVENT_BUFFER_AUDIO_COUNT)
 
 // 普通模式录卡缓冲区大小 2.5s
-#define MP4_MAX_VIDEO_EXTRA_COUNT            MP4_FRAME_COUNT(MP4_VIDEO_FPS, 2500)
-#define MP4_MAX_AUDIO_EXTRA_COUNT            MP4_FRAME_COUNT(MP4_VIDEO_FPS, 2500)
-#define MP4_VIDEO_I_EXTRA_COUNT              12U    // 缓冲区不足时只接收 I 帧
+#define MP4_MAX_VIDEO_EXTRA_COUNT MP4_FRAME_COUNT(MP4_VIDEO_FPS, 2500)
+#define MP4_MAX_AUDIO_EXTRA_COUNT MP4_FRAME_COUNT(MP4_AUDIO_FPS, 2500)
+#define MP4_VIDEO_I_EXTRA_COUNT   12U // 缓冲区不足时只接收 I 帧
 
-#define MP4_MAX_VIDEO_COUNT_NORMAL           MP4_MAX_VIDEO_EXTRA_COUNT
-#define MP4_MAX_AUDIO_COUNT_NORMAL           MP4_MAX_AUDIO_EXTRA_COUNT
-#define MP4_MAX_COUNT_NORMAL                 (MP4_MAX_VIDEO_COUNT_NORMAL + MP4_MAX_AUDIO_COUNT_NORMAL + MP4_VIDEO_I_EXTRA_COUNT)
+#define MP4_MAX_VIDEO_COUNT_NORMAL MP4_MAX_VIDEO_EXTRA_COUNT
+#define MP4_MAX_AUDIO_COUNT_NORMAL MP4_MAX_AUDIO_EXTRA_COUNT
+#define MP4_MAX_COUNT_NORMAL       (MP4_MAX_VIDEO_COUNT_NORMAL + MP4_MAX_AUDIO_COUNT_NORMAL + MP4_VIDEO_I_EXTRA_COUNT)
 
-#define MP4_MAX_VIDEO_COUNT_EVENT            (MP4_EVENT_BUFFER_VIDEO_COUNT + MP4_MAX_VIDEO_EXTRA_COUNT)
-#define MP4_MAX_AUDIO_COUNT_EVENT            (MP4_EVENT_BUFFER_AUDIO_COUNT + MP4_MAX_AUDIO_EXTRA_COUNT)
-#define MP4_MAX_COUNT_EVENT                  (MP4_MAX_VIDEO_COUNT_EVENT + MP4_MAX_AUDIO_COUNT_EVENT + MP4_VIDEO_I_EXTRA_COUNT)
+#define MP4_MAX_VIDEO_COUNT_EVENT (MP4_EVENT_BUFFER_VIDEO_COUNT + MP4_MAX_VIDEO_EXTRA_COUNT)
+#define MP4_MAX_AUDIO_COUNT_EVENT (MP4_EVENT_BUFFER_AUDIO_COUNT + MP4_MAX_AUDIO_EXTRA_COUNT)
+#define MP4_MAX_COUNT_EVENT       (MP4_MAX_VIDEO_COUNT_EVENT + MP4_MAX_AUDIO_COUNT_EVENT + MP4_VIDEO_I_EXTRA_COUNT)
+
+#define MP4_WRITE_LOCK_TIME 500U // 写卡锁持续时间，多路写卡时使用
 
 #ifndef MAX_SINGLE_MP4_SIZE
-#define MAX_SINGLE_MP4_SIZE                  (100 * 1024 * 1024)
+#define MAX_SINGLE_MP4_SIZE (100 * 1024 * 1024)
 #endif
 
 enum
@@ -78,9 +87,9 @@ enum
 // 录制模式
 enum
 {
-    MP4_MODE_NORMAL,        // 普通录像模式
-    MP4_MODE_TIME_LAPSE,    // 缩时录影模式
-    MP4_MODE_EVETN,         // 事件录像模式
+    MP4_MODE_NORMAL,     // 普通录像模式
+    MP4_MODE_TIME_LAPSE, // 缩时录影模式
+    MP4_MODE_EVENT,      // 事件录像模式
 };
 
 struct mp4_event_buffer_s
@@ -100,19 +109,21 @@ struct mp4_event_ctx_s
 
 struct mp4_encode_msi_s
 {
-    struct msi              *msi;
+    struct msi             *msi;
     struct os_event         evt;
     struct file_process     file_process;
-    struct mp4_event_ctx_s  *event;
-    void                    *fb;
+    struct mp4_event_ctx_s *event;
+    void                   *fb;
     uint8_t                 filter_type;
     uint8_t                 srcID;
-    uint8_t                 mode;       // 普通录像 / 缩时录影 / 事件触发
+    uint8_t                 mode; // 普通录像 / 缩时录影 / 事件触发
     int16_t                 max_video_count;
     uint32_t                rec_time;
     uint32_t                rec_second;
     uint32_t                audio_encode;
-	uint32_t                timeLapse_count;
+    uint8_t                *audio_batch_buf;
+    uint32_t                audio_batch_buf_size;
+    uint32_t                timeLapse_count;
     uint32_t                file_size;
 };
 
@@ -120,12 +131,12 @@ extern struct msi *mp4_thumb_msi_init(const char *filename, uint8_t srcID, uint8
 
 static int mp4_is_event_mode(const struct mp4_encode_msi_s *mp4_encode)
 {
-    return mp4_encode->mode == MP4_MODE_EVETN && mp4_encode->event != NULL;
+    return mp4_encode->mode == MP4_MODE_EVENT && mp4_encode->event != NULL;
 }
 
 static uint16_t mp4_msi_queue_count(uint8_t mode)
 {
-    if (mode == MP4_MODE_EVETN)
+    if (mode == MP4_MODE_EVENT)
     {
         return MP4_MAX_COUNT_EVENT;
     }
@@ -153,7 +164,7 @@ static const char *mp4_mode_str(const struct mp4_encode_msi_s *mp4_encode)
     {
         return "TIME_LAPSE";
     }
-    if (mp4_encode->mode == MP4_MODE_EVETN)
+    if (mp4_encode->mode == MP4_MODE_EVENT)
     {
         return "EVENT";
     }
@@ -162,7 +173,7 @@ static const char *mp4_mode_str(const struct mp4_encode_msi_s *mp4_encode)
 
 static void mp4_event_buffer_drop_head(struct mp4_encode_msi_s *mp4_encode)
 {
-    struct mp4_event_ctx_s    *event        = mp4_encode->event;
+    struct mp4_event_ctx_s    *event = mp4_encode->event;
     struct mp4_event_buffer_s *event_buffer;
     struct framebuff          *fb;
 
@@ -177,9 +188,9 @@ static void mp4_event_buffer_drop_head(struct mp4_encode_msi_s *mp4_encode)
         return;
     }
 
-    fb = event_buffer->frames[event_buffer->head];
+    fb                                       = event_buffer->frames[event_buffer->head];
     event_buffer->frames[event_buffer->head] = NULL;
-    event_buffer->head = (event_buffer->head + 1) % MP4_EVENT_BUFFER_MAX_COUNT;
+    event_buffer->head                       = (event_buffer->head + 1) % MP4_EVENT_BUFFER_MAX_COUNT;
     event_buffer->count--;
     if (event_buffer->count == 0)
     {
@@ -222,7 +233,7 @@ static struct framebuff *mp4_event_buffer_first(const struct mp4_encode_msi_s *m
 
 static struct framebuff *mp4_event_buffer_pop(struct mp4_encode_msi_s *mp4_encode)
 {
-    struct mp4_event_ctx_s    *event        = mp4_encode->event;
+    struct mp4_event_ctx_s    *event = mp4_encode->event;
     struct mp4_event_buffer_s *event_buffer;
     struct framebuff          *fb;
 
@@ -237,9 +248,9 @@ static struct framebuff *mp4_event_buffer_pop(struct mp4_encode_msi_s *mp4_encod
         return NULL;
     }
 
-    fb = event_buffer->frames[event_buffer->head];
+    fb                                       = event_buffer->frames[event_buffer->head];
     event_buffer->frames[event_buffer->head] = NULL;
-    event_buffer->head = (event_buffer->head + 1) % MP4_EVENT_BUFFER_MAX_COUNT;
+    event_buffer->head                       = (event_buffer->head + 1) % MP4_EVENT_BUFFER_MAX_COUNT;
     event_buffer->count--;
     if (event_buffer->count == 0)
     {
@@ -252,7 +263,7 @@ static struct framebuff *mp4_event_buffer_pop(struct mp4_encode_msi_s *mp4_encod
 
 static void mp4_event_buffer_push(struct mp4_encode_msi_s *mp4_encode, struct framebuff *fb)
 {
-    struct mp4_event_ctx_s    *event        = mp4_encode->event;
+    struct mp4_event_ctx_s    *event = mp4_encode->event;
     struct mp4_event_buffer_s *event_buffer;
     struct framebuff          *first_fb;
 
@@ -268,7 +279,7 @@ static void mp4_event_buffer_push(struct mp4_encode_msi_s *mp4_encode, struct fr
     }
 
     event_buffer->frames[event_buffer->tail] = fb;
-    event_buffer->tail = (event_buffer->tail + 1) % MP4_EVENT_BUFFER_MAX_COUNT;
+    event_buffer->tail                       = (event_buffer->tail + 1) % MP4_EVENT_BUFFER_MAX_COUNT;
     event_buffer->count++;
     event_buffer->latest_time = fb->time;
 
@@ -296,11 +307,11 @@ static void mp4_event_buffer_push(struct mp4_encode_msi_s *mp4_encode, struct fr
 
 static int mp4_event_buffer_prepare(struct mp4_encode_msi_s *mp4_encode)
 {
-    struct mp4_event_ctx_s    *event        = mp4_encode->event;
+    struct mp4_event_ctx_s    *event = mp4_encode->event;
     struct mp4_event_buffer_s *event_buffer;
-    uint32_t                   target_time  = 0;
-    int32_t                    first_i_off  = -1;
-    int32_t                    start_off    = -1;
+    uint32_t                   target_time = 0;
+    int32_t                    first_i_off = -1;
+    int32_t                    start_off   = -1;
     uint16_t                   i;
 
     if (event == NULL)
@@ -382,7 +393,7 @@ static struct framebuff *mp4_get_next_fb(struct msi *msi)
 
     if (fb == NULL)
     {
-        fb = msi_get_fb(msi, 0);
+        fb = msi_get_fb(msi, 1);
         if (fb && (fb->mtype == F_H264))
         {
             mp4_encode->max_video_count--;
@@ -438,7 +449,7 @@ static int mp4_event_wait_record_start(struct msi *msi)
             }
         }
 
-        if(mp4_encode->fb)
+        if (mp4_encode->fb)
         {
             fb = mp4_encode->fb;
             mp4_encode->max_video_count++;
@@ -448,7 +459,7 @@ static int mp4_event_wait_record_start(struct msi *msi)
         {
             fb = msi_get_fb(msi, 0);
         }
-        
+
         if (fb)
         {
             if (fb->mtype == F_H264)
@@ -596,6 +607,91 @@ static uint8_t *get_sps_pps_nal_size(uint8_t *buf, uint32_t size, uint32_t *nal_
     return ret_buf;
 }
 
+static void mp4_encode_audio_fb_free(struct framebuff **fb)
+{
+    if (fb && *fb)
+    {
+        msi_delete_fb(NULL, *fb);
+        *fb = NULL;
+    }
+}
+
+static uint32_t mp4_encode_audio_batch_write(void *mp4_msg, struct mp4_encode_msi_s *mp4_encode, struct framebuff **audio_batch, uint32_t *audio_batch_cnt)
+{
+    uint32_t total_len = 0;
+    uint32_t offset    = 0;
+    uint32_t res       = 0;
+    uint8_t  can_batch = 1;
+    uint32_t sizes[MP4_AUDIO_BATCH_SIZE];
+    uint32_t durations[MP4_AUDIO_BATCH_SIZE];
+    uint32_t start = 0, end = 0;
+
+    if (!audio_batch_cnt || *audio_batch_cnt == 0)
+    {
+        return 0;
+    }
+
+    if (!mp4_msg)
+    {
+        for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+        {
+            mp4_encode_audio_fb_free(&audio_batch[i]);
+        }
+        *audio_batch_cnt = 0;
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+    {
+        if (!audio_batch[i] || audio_batch[i]->len <= 7)
+        {
+            can_batch = 0;
+            continue;
+        }
+        sizes[i]     = audio_batch[i]->len - 7;
+        durations[i] = 128;
+        total_len += sizes[i];
+    }
+
+    if (!mp4_encode || MP4_AUDIO_BATCH_SIZE <= 1U || !mp4_encode->audio_batch_buf || total_len > mp4_encode->audio_batch_buf_size)
+    {
+        can_batch = 0;
+    }
+
+    if (can_batch)
+    {
+        for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+        {
+            os_memcpy(mp4_encode->audio_batch_buf + offset, audio_batch[i]->data + 7, sizes[i]);
+            offset += sizes[i];
+            mp4_encode_audio_fb_free(&audio_batch[i]);
+        }
+        _os_printf(KERN_INFO "U%d", *audio_batch_cnt);
+        start = os_jiffies();
+        res |= write_aac_data_batch(mp4_msg, mp4_encode->audio_batch_buf, total_len, sizes, durations, *audio_batch_cnt);
+        end = os_jiffies();
+        if (end - start > 500)
+        {
+            os_printf(KERN_ERR "write_aac_data_batch times: %d\n", end - start);
+        }
+    }
+    else
+    {
+        for (uint32_t i = 0; i < *audio_batch_cnt; i++)
+        {
+            if (audio_batch[i] && audio_batch[i]->len > 7)
+            {
+                _os_printf(KERN_INFO "U");
+                res |= write_aac_data(mp4_msg, audio_batch[i]->data + 7, audio_batch[i]->len - 7, 128);
+            }
+            mp4_encode_audio_fb_free(&audio_batch[i]);
+        }
+    }
+
+    *audio_batch_cnt = 0;
+    return res;
+}
+
 static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, const char *h264_filename, uint32_t filesize)
 {
     int                      ret        = MP4_ENCODE_ERR_NONE;
@@ -604,9 +700,11 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
     mp4_encode->fb                      = NULL;
     struct msi *mp4_thumb_msi           = NULL;
     void       *mp4_msg                 = NULL;
-    int32_t     error                   = 0;
-    uint32_t    MP4_status              = 0;
-    uint32_t    write_start_time        = os_jiffies();
+    void       *mux_file                = NULL;
+    file_ops_t  file_ops;
+    int32_t     error            = 0;
+    uint32_t    MP4_status       = 0;
+    uint32_t    write_start_time = os_jiffies();
     uint32_t    nal_size;
     uint8_t     nal_head_size;
     uint8_t    *buf;
@@ -622,13 +720,19 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
     uint32_t audio_first_time     = 0;
     uint32_t second               = 0;
     uint32_t last_adjust_pts_time = os_jiffies();
-    int      delta                = 40;
+    int      delta                = 66;
     int      average_pts          = delta * 90;
     int      acc_pts              = 0;
     int      acc_pts_tmp          = 0;
 
-    int      write_size = 0;
-    uint32_t v_count    = 0;
+    int               write_size                        = 0;
+    uint32_t          v_count                           = 0;
+    uint8_t           holding_lock                      = 0;
+    uint8_t           stop_draining                     = 0;
+    struct framebuff *audio_batch[MP4_AUDIO_BATCH_SIZE] = {0};
+    uint32_t          audio_batch_cnt                   = 0;
+    uint32_t          audio_batch_start_time            = 0;
+    uint32_t          start = 0, end = 0;
 
     os_printf(KERN_DEBUG "max_video_count: %d, mode: %s\r\n", mp4_encode->max_video_count, mp4_mode_str(mp4_encode));
 
@@ -641,7 +745,12 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
 
     // 根据模式决定是否包含音频
     int has_audio = mp4_has_audio(mp4_encode);
-    mp4_msg       = MP4_open_init((F_FILE *) fp, has_audio);
+    mux_file      = mux_file_open((F_FILE *) fp, filesize, MUX_FILE_ALIGN_EN);
+    if (mux_file)
+    {
+        mux_file_get_ops(mux_file, &file_ops);
+        mp4_msg = MP4_open_init_with_file((F_FILE *) fp, &file_ops, has_audio);
+    }
     if (!mp4_msg)
     {
         goto mp4_encode_running_clean_end;
@@ -671,8 +780,9 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
         // 结束写卡
         if (MP4_status & MSI_MP4_STOP)
         {
-            ret = MP4_ENCODE_ERR_STOP;
-            goto mp4_encode_running_clean_end;
+            ret           = MP4_ENCODE_ERR_STOP;
+            msi->enable   = 0;
+            stop_draining = 1;
         }
 
         if (mp4_is_event_mode(mp4_encode) && (MP4_status & MSI_MP4_EVENT_STOP))
@@ -684,6 +794,26 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
         if (fb == NULL)
         {
             fb = mp4_get_next_fb(msi);
+            // 写卡锁控制: 仅need_lock=1时使用mutex，持有锁且缓冲区已写完时释放锁
+            if (mp4_encode->file_process.need_lock && holding_lock && (fb == NULL || os_jiffies() - mult_record.start_time > MP4_WRITE_LOCK_TIME) && audio_batch_cnt == 0)
+            {
+                holding_lock           = 0;
+                mult_record.start_time = 0;
+                os_mutex_unlock(&mult_record.mutex);
+            }
+        }
+
+        if (stop_draining && fb == NULL)
+        {
+            goto mp4_encode_running_end;
+        }
+
+        // 有数据要写时加锁，仅need_lock=1时使用mutex
+        if (mp4_encode->file_process.need_lock && fb != NULL && !holding_lock)
+        {
+            os_mutex_lock(&mult_record.mutex, osWaitForever);
+            mult_record.start_time = os_jiffies();
+            holding_lock           = 1;
         }
 
         if (fb && (fb->mtype == F_H264))
@@ -694,11 +824,12 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             if (mp4_is_realtime_mode(mp4_encode))
             {
                 // 检查录制时间
-                if (video_first_time != 0 && fb->time >= video_first_time && fb->time - video_first_time >= save_time)
+                if (!stop_draining && video_first_time != 0 && fb->time >= video_first_time && fb->time - video_first_time >= save_time)
                 {
                     if (h264_priv->type == 1)
                     {
                         mp4_encode->fb = fb;
+                        fb             = NULL;
                         if (mp4_is_event_mode(mp4_encode))
                         {
                             goto mp4_encode_running_event_end;
@@ -707,7 +838,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                     }
                 }
                 // 超时退出 3s
-                if (os_jiffies() - write_start_time >= save_time + 3000)
+                if (!stop_draining && os_jiffies() - write_start_time >= save_time + 3000)
                 {
                     if (mp4_is_event_mode(mp4_encode))
                     {
@@ -788,7 +919,14 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                     write_start_time = os_jiffies();
                 }
                 mp4_video_cfg_init(mp4_msg, h264_priv->w, h264_priv->h);
+                start = os_jiffies();
                 error |= write_h264_pps_sps(mp4_msg, nal_head_buf, nal_size + nal_head_size);
+                end = os_jiffies();
+                if (end - start > 500)
+                {
+                    os_printf(KERN_ERR "write_h264_pps_sps times: %d\n", end - start);
+                }
+
                 if (0 != error)
                 {
                     os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
@@ -824,7 +962,13 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             else
             {
                 _os_printf(KERN_INFO "M");
+                start = os_jiffies();
                 error |= write_h264_data(mp4_msg, last_nal_head_buf, fb->len - (last_nal_head_buf - fb->data), delta);
+                end = os_jiffies();
+                if (end - start > 500)
+                {
+                    os_printf(KERN_ERR "write_h264_data times: %d\n", end - start);
+                }
             }
 
             if (0 != error)
@@ -845,7 +989,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             if (!mp4_is_realtime_mode(mp4_encode))
             {
                 // 每帧立即同步
-                error |= mp4_syn(mp4_msg);
+                error |= mp4_sync(mp4_msg);
                 if (0 != error)
                 {
                     os_printf("%s:%d\n", __FUNCTION__, __LINE__);
@@ -858,24 +1002,11 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             }
             else
             {
-                // 每秒同步一次
                 if ((now_time - video_first_time) / 1000 > second)
                 {
                     second                 = (now_time - video_first_time) / 1000;
                     mp4_encode->rec_second = second;
-                    os_printf(KERN_DEBUG "save second: %d\n", second);
-#if 1
-                    error |= mp4_syn(mp4_msg);
-                    if (0 != error)
-                    {
-                        os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
-                        if (mp4_is_event_mode(mp4_encode))
-                        {
-                            goto mp4_encode_running_event_clean_end;
-                        }
-                        goto mp4_encode_running_clean_end;
-                    }
-#endif
+                    os_printf(KERN_DEBUG "mp4 second: %d\n", second);
                 }
             }
         }
@@ -896,9 +1027,39 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                     continue;
                 }
             }
-            buf = fb->data;
-            _os_printf("U");
-            error |= write_aac_data(mp4_msg, buf + 7, fb->len - 7, 128);
+            audio_batch[audio_batch_cnt++] = fb;
+            fb                             = NULL;
+
+            if (audio_batch_cnt == 1)
+            {
+                audio_batch_start_time = os_jiffies();
+            }
+
+            if (audio_batch_cnt >= MP4_AUDIO_BATCH_SIZE)
+            {
+                error |= mp4_encode_audio_batch_write(mp4_msg, mp4_encode, audio_batch, &audio_batch_cnt);
+                audio_batch_start_time = 0;
+                if (0 != error)
+                {
+                    os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
+                    if (mp4_is_event_mode(mp4_encode))
+                    {
+                        goto mp4_encode_running_event_clean_end;
+                    }
+                    goto mp4_encode_running_clean_end;
+                }
+            }
+        }
+        else if (fb)
+        {
+            msi_delete_fb(NULL, fb);
+            fb = NULL;
+        }
+
+        if (audio_batch_cnt > 0 && audio_batch_start_time && (stop_draining || os_jiffies() - audio_batch_start_time >= MP4_AUDIO_BATCH_TIMEOUT_MS))
+        {
+            error |= mp4_encode_audio_batch_write(mp4_msg, mp4_encode, audio_batch, &audio_batch_cnt);
+            audio_batch_start_time = 0;
             if (0 != error)
             {
                 if (mp4_is_event_mode(mp4_encode))
@@ -907,23 +1068,34 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                 }
                 goto mp4_encode_running_clean_end;
             }
-            msi_delete_fb(NULL, fb);
-            fb = NULL;
-        }
-        else
-        {
-            msi_delete_fb(NULL, fb);
-            fb = NULL;
         }
 
-        os_sleep_ms(1);
+        if (mp4_msg && sps_pps_flag && mp4_is_realtime_mode(mp4_encode))
+        {
+            start = os_jiffies();
+            error |= mp4_sync_time(mp4_msg, 1000);
+            end = os_jiffies();
+            if (end - start > 500)
+            {
+                os_printf(KERN_ERR "mp4_syn_time times: %d\n", end - start);
+            }
+            if (0 != error)
+            {
+                os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
+                if (mp4_is_event_mode(mp4_encode))
+                {
+                    goto mp4_encode_running_event_clean_end;
+                }
+                goto mp4_encode_running_clean_end;
+            }
+        }
     }
 
 mp4_encode_running_clean_end:
     if (fb)
     {
         msi_delete_fb(NULL, fb);
-		fb = NULL;
+        fb = NULL;
     }
 
     // 清空缓冲区
@@ -933,6 +1105,10 @@ mp4_encode_running_clean_end:
         fb = msi_get_fb(msi, 0);
         if (fb)
         {
+            if (fb->mtype == F_H264)
+            {
+                mp4_encode->max_video_count--;
+            }
             msi_delete_fb(NULL, fb);
         }
         else
@@ -945,17 +1121,18 @@ mp4_encode_running_event_clean_end:
     if (fb)
     {
         msi_delete_fb(NULL, fb);
-		fb = NULL;
+        fb = NULL;
     }
 
 mp4_encode_running_event_end:
+
     // 清空预录缓冲区
     if (mp4_is_event_mode(mp4_encode))
     {
-        while(1)
+        while (1)
         {
             fb = mp4_event_buffer_pop(mp4_encode);
-            if(fb)
+            if (fb)
             {
                 msi_delete_fb(NULL, fb);
             }
@@ -968,11 +1145,28 @@ mp4_encode_running_event_end:
 
 mp4_encode_running_end:
 
+    // 释放写卡锁
+    if (mp4_msg && audio_batch_cnt > 0)
+    {
+        error |= mp4_encode_audio_batch_write(mp4_msg, mp4_encode, audio_batch, &audio_batch_cnt);
+    }
+
+    if (holding_lock)
+    {
+        os_mutex_unlock(&mult_record.mutex);
+        holding_lock = 0;
+    }
+
     mp4_encode->rec_second = 0;
 
     if (mp4_msg)
     {
         mp4_deinit(mp4_msg);
+    }
+    if (mux_file)
+    {
+        mux_file_close(mux_file);
+        mux_file = NULL;
     }
 
     if (fp)
@@ -1018,29 +1212,29 @@ static void mp4_encode_thread(void *d)
         if (mp4_is_event_mode(mp4_encode))
         {
             msi->enable = 1;
-            ret = mp4_event_wait_record_start(msi);
+            ret         = mp4_event_wait_record_start(msi);
             if (ret == MP4_ENCODE_ERR_STOP)
             {
                 break;
             }
 
             struct framebuff *first_fb = NULL;
-            first_fb = mp4_event_buffer_first(mp4_encode);
-            file_process->frame_time = first_fb ? first_fb->time : 0;
+            first_fb                   = mp4_event_buffer_first(mp4_encode);
+            file_process->frame_time   = first_fb ? first_fb->time : 0;
         }
 
         if (file_process->create_file)
         {
             if (!mp4_is_event_mode(mp4_encode) && mp4_encode->fb)
             {
-                struct framebuff *fb = mp4_encode->fb;
+                struct framebuff *fb     = mp4_encode->fb;
                 file_process->frame_time = fb->time;
             }
             fp = file_process->create_file(file_process, filename, filepath, filesize);
         }
 
-        // 如果时缩时录影，寻找到I帧再继续录制，这里需要发送一个命令，强行产生一帧I帧
-        if(file_process->start_encode)
+        // 如果是缩时录影，寻找到I帧再继续录制，这里需要发送一个命令，强行产生一帧I帧
+        if (file_process->start_encode)
         {
             file_process->param = mp4_encode->mode;
             file_process->start_encode(file_process);
@@ -1048,18 +1242,18 @@ static void mp4_encode_thread(void *d)
 
         ret = mp4_encode_running(msi, mp4_encode->rec_time * 1000, fp, filename, filesize);
 
+        file_process->frame_time = 0;
+
         if (file_process->lock_file && ret != MP4_ENCODE_ERR_NO_SD)
         {
             file_process->lock_file(filename, filepath);
         }
 
-        if(file_process->end_encode)
+        if (file_process->end_encode)
         {
             file_process->param = ret;
             file_process->end_encode(file_process);
         }
-
-        os_printf(KERN_DEBUG "%s %d end\n", __FUNCTION__, __LINE__);
 
         if (mp4_is_event_mode(mp4_encode))
         {
@@ -1090,7 +1284,7 @@ static void mp4_encode_thread(void *d)
         {
             if (file_process->loop_free)
             {
-                
+
                 file_process->loop_free(&file_process->loop);
             }
             // 如果是sd异常,延迟1s然后重新尝试重新录像(同时检测是否要停止)
@@ -1145,8 +1339,20 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
                 STREAM_LIBC_FREE(mp4_encode->event);
                 mp4_encode->event = NULL;
             }
+            if (mp4_encode->audio_batch_buf)
+            {
+                STREAM_FREE(mp4_encode->audio_batch_buf);
+                mp4_encode->audio_batch_buf = NULL;
+            }
             os_event_del(&mp4_encode->evt);
             STREAM_LIBC_FREE(mp4_encode);
+            // 引用计数减少，最后一个实例销毁时释放mutex
+            mult_record.count--;
+            if (mult_record.count == 0 && mult_record.init)
+            {
+                os_mutex_del(&mult_record.mutex);
+                mult_record.init = 0;
+            }
             break;
         case MSI_CMD_PRE_DESTROY:
             os_event_set(&mp4_encode->evt, MSI_MP4_STOP, NULL);
@@ -1211,7 +1417,7 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
         case MSI_CMD_MEDIA_CTRL:
         {
             uint32_t cmd_self = (uint32_t) param1;
-            uint32_t arg = (uint32_t) param2;
+            uint32_t arg      = (uint32_t) param2;
             switch (cmd_self)
             {
                 case MSI_MEDIA_CTRL_GET_RECTIME:
@@ -1224,14 +1430,14 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
                     os_event_set(&mp4_encode->evt, MSI_MP4_START, NULL);
                 }
                 break;
-				case MSI_MEDIA_CTRL_SET_RECORD_SIZE:
+                case MSI_MEDIA_CTRL_SET_RECORD_SIZE:
                 {
                     mp4_encode->file_size = arg;
                 }
                 break;
                 case MSI_MEDIA_CTRL_SET_RECORD_SEC:
                 {
-                    mp4_encode->rec_time = arg;
+                    mp4_encode->rec_time        = arg;
                     mp4_encode->timeLapse_count = arg * (1000 / MP4_TIMELAPSE_TIME);
                 }
                 break;
@@ -1258,8 +1464,7 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
     return ret;
 }
 
-struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time, 
-                                uint32_t audio_encode, struct file_process *file_process, uint8_t mode)
+struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time, uint32_t audio_encode, struct file_process *file_process, uint8_t mode)
 {
     uint8_t                  is_new     = 0;
     struct mp4_encode_msi_s *mp4_encode = NULL;
@@ -1270,11 +1475,11 @@ struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_
         ASSERT(mp4_encode);
         mp4_encode->filter_type     = filter_type;
         mp4_encode->srcID           = srcID;
-        mp4_encode->rec_time        = rec_time * 60;
+        mp4_encode->rec_time        = (uint32_t) rec_time * 60U;
         mp4_encode->mode            = mode; // 设置录制模式
         mp4_encode->timeLapse_count = rec_time * 60 * (1000 / MP4_TIMELAPSE_TIME);
         mp4_encode->file_size       = MAX_SINGLE_MP4_SIZE;
-        if (mode == MP4_MODE_EVETN)
+        if (mode == MP4_MODE_EVENT)
         {
             mp4_encode->event = (struct mp4_event_ctx_s *) STREAM_LIBC_ZALLOC(sizeof(struct mp4_event_ctx_s));
             if (mp4_encode->event == NULL)
@@ -1311,12 +1516,20 @@ struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_
         {
             mp4_encode->audio_encode = audio_encode;
         }
+        mp4_encode->audio_batch_buf_size = (mp4_encode->audio_encode && MP4_AUDIO_BATCH_SIZE > 1U) ? MP4_AUDIO_BATCH_BUF_SIZE : 0;
+        if (mp4_encode->audio_batch_buf_size > 0)
+        {
+            mp4_encode->audio_batch_buf = (uint8_t *) STREAM_MALLOC(mp4_encode->audio_batch_buf_size);
+            if (!mp4_encode->audio_batch_buf)
+            {
+                mp4_encode->audio_batch_buf_size = 0;
+            }
+        }
 
         os_event_init(&mp4_encode->evt);
         mp4_encode->msi = msi;
         msi->priv       = mp4_encode;
         msi->action     = MP4_encode_msi_action;
-        msi->enable = 1;
     }
     else
     {
@@ -1328,6 +1541,13 @@ struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_
         goto mp4_encode_msi_init_end;
     }
 
+    if (mp4_encode->file_process.need_lock && !mult_record.init)
+    {
+        os_mutex_init(&mult_record.mutex);
+        mult_record.init = 1;
+    }
+    mult_record.count++;
+
     void *mp4_hdl = os_task_create("mp4_encode", mp4_encode_thread, msi, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 2048);
     os_printf(KERN_DEBUG "mp4_hdl: %x\n", mp4_hdl);
     if (!mp4_hdl && mp4_encode)
@@ -1338,3 +1558,13 @@ mp4_encode_msi_init_end:
     return msi;
 }
 
+
+struct msi *gen_mp4_thumb_init(const char *thumb_msi_name, uint32_t *magic, uint8_t jpg_num);
+struct msi *yuv_thumb_msi_init(const char *output_name,uint32_t magic);
+void mp4_thumb_init()
+{
+    uint32_t    thumb_magic = 0;
+    struct msi *thumb       = gen_mp4_thumb_init(S_MP4_THUMB, &thumb_magic, 0);
+    struct msi *yuv         = yuv_thumb_msi_init(thumb->name, thumb_magic);
+    msi_add_output(NULL, S_PREVIEW_SCALE3, yuv->name);
+}

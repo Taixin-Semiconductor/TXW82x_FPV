@@ -178,6 +178,7 @@ static void mp3_file_decode(struct mp3_decode_struct *s)
 			}
             enc_ptr_offset += mp3_info.frame_bytes;
             unproc_data_size -= mp3_info.frame_bytes;
+            frame_buf->priv = &s->audio_track;
             frame_buf->len = dec_samples*2;
             frame_buf->mtype = F_AUDIO;
             frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -410,6 +411,7 @@ mp3_get_first_frame:
 			}
             enc_ptr_offset += mp3_info.frame_bytes;
             unproc_data_size -= mp3_info.frame_bytes;
+            send_frame_buf->priv = &s->audio_track;
             send_frame_buf->len = dec_samples*2;
             send_frame_buf->mtype = F_AUDIO;
             send_frame_buf->stype = FSTYPE_AUDIO_PCM;
@@ -716,12 +718,10 @@ struct msi *mp3_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *audec
 	for(uint32_t i=0; i<MAX_MP3_DECODE_TXBUF; i++) {
 		struct framebuff *frame_buf = (mp3_decode_s->tx_pool.pool)+i;
 		frame_buf->data = (uint8_t*)MP3_DECODE_MALLOC(1152 * sizeof(int16_t));
-		if(frame_buf->data == NULL)
-		{
+		if(frame_buf->data == NULL) {
 			MP3_INFO("mp3 decode malloc framebuff data fail!\r\n");
 			goto mp3_decode_init_err;       
 		}  
-		frame_buf->priv = &(mp3_decode_s->audio_track);	
 	}
     if(os_event_init(&mp3_decode_s->event) != RET_OK) {
         MP3_INFO("create mp3 decode event fail!\r\n");

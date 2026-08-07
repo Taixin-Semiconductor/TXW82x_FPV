@@ -404,14 +404,14 @@ static void disp_flush_rotate_msi(lv_disp_drv_t * disp_drv, const lv_area_t * ar
 	p_16 = (lv_color_t*)osd_menu565_buf;
     if(area->x1 == 0 && area->x2 == disp_drv->hor_res-1)
     {
-        hw_memcpy_no_cache(p_16+area->y1*disp_drv->hor_res,color_p,disp_drv->hor_res*(area->y2-area->y1+1) *sizeof(lv_color_t));
+        hw_memcpy(p_16+area->y1*disp_drv->hor_res,color_p,disp_drv->hor_res*(area->y2-area->y1+1) *sizeof(lv_color_t));
     }
     else
     {
         uint32_t y;
         for(y = area->y1; y <= area->y2; y++) 
         {
-            hw_memcpy_no_cache(p_16+y*disp_drv->hor_res+area->x1,color_p,(area->x2-area->x1+1)*sizeof(lv_color_t));
+            hw_memcpy(p_16+y*disp_drv->hor_res+area->x1,color_p,(area->x2-area->x1+1)*sizeof(lv_color_t));
             color_p += (area->x2-area->x1+1);
         }
     }

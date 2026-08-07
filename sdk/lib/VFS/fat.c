@@ -315,8 +315,9 @@ static int format(filesystem_t *fs, blockdevice_t *device)
 
     char id[3] = "0:";
     id[0] = '0' + context->id;
-
-    FRESULT res = f_mkfs((const TCHAR *)id, FM_ANY | FM_SFD, 0, work, 512);
+    MKFS_PARM opt = {0};
+    opt.fmt = FM_ANY | FM_SFD;
+    FRESULT res = f_mkfs((const TCHAR *)id, &opt, work, 512);
     if (res != FR_OK)
     {
         fs->unmount(fs);

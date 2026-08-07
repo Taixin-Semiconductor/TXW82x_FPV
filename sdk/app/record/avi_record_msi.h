@@ -1,9 +1,10 @@
 #ifndef __AVI_RECORD_MSI_H_
 #define __AVI_RECORD_MSI_H_
 
-typedef void (*user_callback)(void *user_priv);
+#include "lib/multimedia/msi.h"
+#include "app/recorder/file_process.h"
 
-uint32_t* avi_record_msi_init(uint32_t video_width, uint32_t video_height, uint8_t video_fps, uint32_t audio_frq, uint32_t record_time, user_callback cb, void *user_priv);
-int avi_record_msi_deinit();
+struct msi *avi_record_msi_init(const char *avi_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time,
+                                uint32_t audio_encode, struct file_process *file_process, uint8_t mode);
 
 #endif

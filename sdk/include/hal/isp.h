@@ -6,10 +6,13 @@ extern "C" {
 #endif
 #include "hal/isp_param.h"
 #include "lib/video/isp/isp_ircut.h"
+#include "hal/isp_tunning.h"
 
 #define EVENT_ISP_CALC      (BIT(0))
 #define EVENT_ISP_IMG_OPT   (BIT(1))
 #define EVENT_ISP_FPS_OPT   (BIT(2))
+#define EVENT_ISP_DOEN_OPT  (BIT(3))
+#define EVENT_FYSNC_CNT     (BIT(4))
 
 enum sensor_type {
     SENSOR_TYPE_MASTER = 0,
@@ -31,6 +34,13 @@ enum isp_input_dat_src{
 enum isp_yuv_range {
     ISP_YUV_RANGE_NARROW = 0,
     ISP_YUV_RANGE_FULL,
+};
+
+
+enum camera_mode{
+    CAM_SINGLE_MASTER_MODE = 0,  /* Single sensor, master mode*/
+    CAM_DUAL_MASTER_SLAVE_MODE,  /* MIPI dual sensor, use dual_org_module, master-slave mode*/
+    CAM_DUAL_SPLICE_SLAVE_MODE,  /* MIPI dual sensor, spliced one way, 2 slaves*/
 };
 
 enum isp_yuv_gamut {
@@ -261,9 +271,20 @@ enum isp_ioctl_cmd {
     ISP_IOCTL_CMD_GET_AE_LUMA_AVG,
     ISP_IOCTL_CMD_GET_SENSOR_YGAMMA,
     ISP_IOCTL_CMD_DYN_YGAMMA_OPT,
-    ISP_IOCTL_CMD_SENSOR_DEINIT,
     ISP_IOCTL_CMD_GET_AWB_RGB,
     ISP_IOCTL_CMD_GET_ISP_IRCUT_STAT,
+    ISP_IOCTL_CMD_GET_AE_AWB_INFO,
+    ISP_IOCTL_CMD_GET_YUV_DATA,
+    ISP_IOCTL_CMD_GET_SENSOR_IIC_DEV,
+    ISP_IOCTL_CMD_RW_SENSOR_REG,
+    ISP_IOCTL_CMD_SETTING_BAYER_PATTEN,
+    ISP_IOCTL_CMD_GET_HIST_RGB,
+    ISP_IOCTL_CMD_SET_FRAME_LEN,
+    ISP_IOCTL_CMD_CAMERA_MODE,
+    ISP_IOCTL_CMD_GET_CALC_FPS,
+    ISP_IOCTL_CMD_GET_SENSOR_OPT,
+    ISP_IOCTL_CMD_SET_ANTI_FLICKER,
+
 };
 
 enum isp_module_clk {
@@ -304,6 +325,17 @@ enum isp_awb_mode {
     ISP_AWB_MODE_SUNNY_SKY,
 };
 
+
+enum sensor_reg_width{
+    SENSOR_REG_WIDTH_8  = 1,  // 8-bit register data
+    SENSOR_REG_WIDTH_16 = 2,  // 16-bit register data
+};
+
+enum fps_mode{
+    FPS_MODE_DAY_NORMAL = 0,    // 白天正常帧率
+    FPS_MODE_NIGHT_LOW,          // 夜视降帧率
+};
+
 struct isp_awb_mode_param {
     uint16 awb_mode;
     uint16 awb_gain_r, awb_gain_gr, awb_gain_gb, awb_gain_b;
@@ -327,13 +359,24 @@ struct isp_exposure_opt {
 struct isp_sensor_opt
 {
     scatter_data data;
-    uint32 devid_id   : 8,
-           slave_id   : 8,
-           reverse_en : 4,
-           mirror_en  : 4,    
-           cmd_len    : 8;     
+    uint32 devid_id    : 8,
+           slave_id    : 8,
+           reverse_en  : 4,
+           mirror_en   : 4,    
+           cmd_len     : 8;     
     uint32 curr_length ;
     uint32 total_length;
+    uint32 last_timestamp;
+    uint32 fps_cnt     : 8, 
+           fps_init    : 8, 
+           calc_fps_q8 : 16;
+    float  fps_f;
+    uint16 fps_buf[5];
+    uint32 addr_num   : 8,
+           data_num   : 8,
+           fps_mode   : 8,
+           reserved1  : 8;
+    uint32 sensor_cmd;
 };  
 
 
@@ -374,7 +417,7 @@ int32 isp_sensor_init(struct isp_device *isp, enum sensor_type type, enum isp_in
 int32 isp_crop_input_size(struct isp_device *isp, uint32 start_v, uint32 start_h, uint32 end_v, uint32 end_h, enum sensor_type type);
 int32 isp_crop_output_size(struct isp_device *isp, uint32 start_v, uint32 start_h, uint32 end_v, uint32 end_h, enum sensor_type type);
 int32 isp_sensor_iic_devid_init(struct isp_device *isp, uint32 devid_id, enum sensor_type type);
-int32 isp_sensor_iic_cmd_init(struct isp_device *isp, uint32 cmd_id, enum sensor_type type);
+int32 isp_sensor_iic_cmd_init(struct isp_device *isp, uint32 cmd_id, uint32 addr_len, uint32 data_len , enum sensor_type type);
 int32 isp_sensor_slave_index(struct isp_device *isp);
 int32 isp_black_white_enable(struct isp_device *isp, uint32 enable, enum sensor_type type);
 int32 isp_mirror_enable(struct isp_device *isp, uint32 enable, enum sensor_type type);
@@ -402,8 +445,8 @@ int32 isp_awb_gain_fine_constraint(struct isp_device *isp, uint32 addr, enum sen
 int32 isp_awb_crop_range(struct isp_device *isp, uint32 start_v, uint32 start_h, uint32 end_v, uint32 end_h, enum sensor_type type);
 int32 isp_get_awb_ycbcr(struct isp_device *isp, uint32 *arr_ycbcr, enum sensor_type type);
 int32 isp_get_awb_rb_gain(struct isp_device *isp, uint32 *arr_rbgain, enum sensor_type type);
-int32 isp_get_awb_rgb(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type);
-
+int32 isp_get_awb_rgb_mean(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type);
+int32 isp_get_hist_rgb_mean(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type);
 int32 isp_get_isp_ircut_statistics(struct isp_device *isp, ISP_IRCUT_STAT *isp_stat, enum sensor_type type);
 
 int32 isp_get_current_bv(struct isp_device *isp, uint32 *bv, enum sensor_type type);
@@ -480,12 +523,19 @@ int32 isp_wdr_en_config(struct isp_device *isp, uint32 wdr_en, enum sensor_type 
 int32 isp_wdr_noise_floor_config(struct isp_device *isp, uint32 cfg_noise_floor, uint32 cfg_noise_floor_out, enum sensor_type type);
 int32 isp_wdr_tunning(struct isp_device *isp, uint32 addr, enum sensor_type type);
 int32 isp_yuv_range(struct isp_device *isp, enum isp_yuv_range range_type);
+int32 isp_set_camera_mode(struct isp_device *isp, enum camera_mode camera_mode);
 int32 isp_ce_adj_by_bv_enable(struct isp_device *isp, uint32 enable, enum sensor_type type);
 int32 isp_gamma_by_bv_enable(struct isp_device *isp, uint32 enable, enum sensor_type type);
 int32 isp_gamma_by_bv_param(struct isp_device *isp, uint32 data, enum sensor_type type);
 int32 isp_dyn_gamma_param(struct isp_device *isp, uint32 dyn_gamma_en, uint32 ygamma_opt, enum sensor_type type);
 int32 isp_sensor_fps_opt(struct isp_device *isp, float fps, enum sensor_type type);
-int32 isp_sensor_deinit(struct isp_device *isp, enum sensor_type type);
+int32 isp_get_sensor_iic_dev(struct isp_device *isp,  uint32 *iic_dev, enum sensor_type type);
+int32 isp_get_ae_awb_info(struct isp_device *isp,  ISP_AE_AWB_INFO *data, enum sensor_type type);
+int32 isp_setting_bayer_patten(struct isp_device *isp, enum isp_bayer_format format, enum sensor_type type);
+int32 isp_sensor_set_frame_len(struct isp_device *isp,  uint32 frame_len, uint32 isfirst, enum sensor_type type);
+int32 isp_get_sensor_fps(struct isp_device *isp, uint32 *curr_fps, enum sensor_type type);
+int32 isp_get_sensor_opt(struct isp_device *isp, struct isp_sensor_opt *sensor_opt, enum sensor_type type);
+int32 isp_setting_anti_flicker(struct isp_device *isp, uint32 anti_flicker_en, uint32 flicker_freq,  uint32 flicker_gain_th ,enum sensor_type type);
 #ifdef __cplusplus
 }
 #endif

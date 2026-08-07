@@ -895,10 +895,15 @@ static int timer_pin_func(int dev_id, int request)
                 /* 0: none */
                 case (0):
                     gpio_set_dir(MACRO_PIN(PIN_PWM_CHANNEL_2), GPIO_DIR_INPUT);
+                    gpio_set_dir(MACRO_PIN(PIN_CAPTURE_CHANNEL_2), GPIO_DIR_INPUT);
                     break;
                 /* 1: pwm */
                 case (1):
                     gpio_iomap_output(MACRO_PIN(PIN_PWM_CHANNEL_2), GPIO_IOMAP_OUT_TMR2_PWM_OUT);
+                    break;
+                /* 2: capture */
+                case (2):
+                    gpio_iomap_input(MACRO_PIN(PIN_CAPTURE_CHANNEL_2), GPIO_IOMAP_IN_TMR2_CAP_IN);
                     break;
                 default:
                     ret = EINVAL;
@@ -1075,30 +1080,30 @@ static int lcdc_pin_func(int dev_id, int request)
             gpio_iomap_output(MACRO_PIN(LCD_DE_ERD), GPIO_IOMAP_OUT_LCD_DE_OR_ERD1);
             gpio_iomap_output(MACRO_PIN(LCD_DOTCLK_RWR), GPIO_IOMAP_OUT_LCD_DOTCLK_OR_RWR1);
             gpio_iomap_input(MACRO_PIN(LCD_TE), GPIO_IOMAP_IN_PORT_WKUP_IN3_LCD_TE_M0_10);
-            gpio_iomap_inout(MACRO_PIN(LCD_D0), GPIO_IOMAP_IN_LCD_D0_IN_M1_19 ,GPIO_IOMAP_OUT_LCD_DATA_O_0);
-            gpio_iomap_output(MACRO_PIN(LCD_D1), GPIO_IOMAP_OUT_LCD_DATA_O_1);
-            gpio_iomap_output(MACRO_PIN(LCD_D2), GPIO_IOMAP_OUT_LCD_DATA_O_2);
-            gpio_iomap_output(MACRO_PIN(LCD_D3), GPIO_IOMAP_OUT_LCD_DATA_O_3);
-            gpio_iomap_output(MACRO_PIN(LCD_D4), GPIO_IOMAP_OUT_LCD_DATA_O_4);
-            gpio_iomap_output(MACRO_PIN(LCD_D5), GPIO_IOMAP_OUT_LCD_DATA_O_5);
-            gpio_iomap_output(MACRO_PIN(LCD_D6), GPIO_IOMAP_OUT_LCD_DATA_O_6);
-            gpio_iomap_output(MACRO_PIN(LCD_D7), GPIO_IOMAP_OUT_LCD_DATA_O_7);		
-            gpio_iomap_output(MACRO_PIN(LCD_D8), GPIO_IOMAP_OUT_LCD_DATA_O_8);
-            gpio_iomap_output(MACRO_PIN(LCD_D9), GPIO_IOMAP_OUT_LCD_DATA_O_9);
-            gpio_iomap_output(MACRO_PIN(LCD_D10), GPIO_IOMAP_OUT_LCD_DATA_O_10);
-            gpio_iomap_output(MACRO_PIN(LCD_D11), GPIO_IOMAP_OUT_LCD_DATA_O_11);
-            gpio_iomap_output(MACRO_PIN(LCD_D12), GPIO_IOMAP_OUT_LCD_DATA_O_12);
-            gpio_iomap_output(MACRO_PIN(LCD_D13), GPIO_IOMAP_OUT_LCD_DATA_O_13);
-            gpio_iomap_output(MACRO_PIN(LCD_D14), GPIO_IOMAP_OUT_LCD_DATA_O_14);
-            gpio_iomap_output(MACRO_PIN(LCD_D15), GPIO_IOMAP_OUT_LCD_DATA_O_15);
-            gpio_iomap_output(MACRO_PIN(LCD_D16), GPIO_IOMAP_OUT_LCD_DATA_O_16);
-            gpio_iomap_output(MACRO_PIN(LCD_D17), GPIO_IOMAP_OUT_LCD_DATA_O_17);
-            gpio_iomap_output(MACRO_PIN(LCD_D18), GPIO_IOMAP_OUT_LCD_DATA_O_18);
-            gpio_iomap_output(MACRO_PIN(LCD_D19), GPIO_IOMAP_OUT_LCD_DATA_O_19);
-            gpio_iomap_output(MACRO_PIN(LCD_D20), GPIO_IOMAP_OUT_LCD_DATA_O_20);
-            gpio_iomap_output(MACRO_PIN(LCD_D21), GPIO_IOMAP_OUT_LCD_DATA_O_21);
-            gpio_iomap_output(MACRO_PIN(LCD_D22), GPIO_IOMAP_OUT_LCD_DATA_O_22);
-            gpio_iomap_output(MACRO_PIN(LCD_D23), GPIO_IOMAP_OUT_LCD_DATA_O_23);
+            gpio_iomap_inout(MACRO_PIN(LCD_D0), GPIO_IOMAP_IN_LCD_D0_IN_M1_19, GPIO_IOMAP_OUT_LCD_DATA_O_0);
+            gpio_iomap_inout(MACRO_PIN(LCD_D1), GPIO_IOMAP_IN_LCD_D1_IN_M1_20, GPIO_IOMAP_OUT_LCD_DATA_O_1);
+            gpio_iomap_inout(MACRO_PIN(LCD_D2), GPIO_IOMAP_IN_LCD_D2_IN_M1_21, GPIO_IOMAP_OUT_LCD_DATA_O_2);
+            gpio_iomap_inout(MACRO_PIN(LCD_D3), GPIO_IOMAP_IN_STMR0_CAP_IN_LCD_D3_IN_M1_22_EPWM_SYNC_IO_M3_6, GPIO_IOMAP_OUT_LCD_DATA_O_3);
+            gpio_iomap_inout(MACRO_PIN(LCD_D4), GPIO_IOMAP_IN_STMR1_CAP_IN_LCD_D4_IN_M1_23, GPIO_IOMAP_OUT_LCD_DATA_O_4);
+            gpio_iomap_inout(MACRO_PIN(LCD_D5), GPIO_IOMAP_IN_STMR2_CAP_IN_LCD_D5_IN_M1_24, GPIO_IOMAP_OUT_LCD_DATA_O_5);
+            gpio_iomap_inout(MACRO_PIN(LCD_D6), GPIO_IOMAP_IN_STMR3_CAP_IN_LCD_D6_IN_M1_25, GPIO_IOMAP_OUT_LCD_DATA_O_6);
+            gpio_iomap_inout(MACRO_PIN(LCD_D7), GPIO_IOMAP_IN_PORT_WKUP_IN1_LCD_D7_IN_M1_26, GPIO_IOMAP_OUT_LCD_DATA_O_7);		
+            gpio_iomap_inout(MACRO_PIN(LCD_D8), GPIO_IOMAP_IN_PORT_WKUP_IN2_LCD_D8_IN_M1_27, GPIO_IOMAP_OUT_LCD_DATA_O_8);
+            gpio_iomap_inout(MACRO_PIN(LCD_D9), GPIO_IOMAP_IN_UART1_IN_LCD_D9_IN_M1_28, GPIO_IOMAP_OUT_LCD_DATA_O_9);
+            gpio_iomap_inout(MACRO_PIN(LCD_D10), GPIO_IOMAP_IN_UART1_CTS_DE_IN_LCD_D10_IN_M1_29, GPIO_IOMAP_OUT_LCD_DATA_O_10);
+            gpio_iomap_inout(MACRO_PIN(LCD_D11), GPIO_IOMAP_IN_SPI1_NSS_IN_LCD_D11_IN_M1_30, GPIO_IOMAP_OUT_LCD_DATA_O_11);
+            gpio_iomap_inout(MACRO_PIN(LCD_D12), GPIO_IOMAP_IN_SPI1_IO1_IN_LCD_D12_IN_M1_31, GPIO_IOMAP_OUT_LCD_DATA_O_12);
+            gpio_iomap_inout(MACRO_PIN(LCD_D13), GPIO_IOMAP_IN_SPI2_NSS_IN_LCD_D13_IN_M2_0, GPIO_IOMAP_OUT_LCD_DATA_O_13);
+            gpio_iomap_inout(MACRO_PIN(LCD_D14), GPIO_IOMAP_IN_SPI2_IO1_IN_LCD_D14_IN_M2_1, GPIO_IOMAP_OUT_LCD_DATA_O_14);
+            gpio_iomap_inout(MACRO_PIN(LCD_D15), GPIO_IOMAP_IN_SPI2_IO2_IN_LCD_D15_IN_M2_2, GPIO_IOMAP_OUT_LCD_DATA_O_15);
+            gpio_iomap_inout(MACRO_PIN(LCD_D16), GPIO_IOMAP_IN_SPI2_IO3_IN_LCD_D16_IN_M2_3, GPIO_IOMAP_OUT_LCD_DATA_O_16);
+            gpio_iomap_inout(MACRO_PIN(LCD_D17), GPIO_IOMAP_IN_STMR4_CAP_IN_LCD_D17_IN_M2_4, GPIO_IOMAP_OUT_LCD_DATA_O_17);
+            gpio_iomap_inout(MACRO_PIN(LCD_D18), GPIO_IOMAP_IN_STMR5_CAP_IN_LCD_D18_IN_M2_5, GPIO_IOMAP_OUT_LCD_DATA_O_18);
+            gpio_iomap_inout(MACRO_PIN(LCD_D19), GPIO_IOMAP_IN_IIS0_MCLK_IN_LCD_D19_IN_M2_6, GPIO_IOMAP_OUT_LCD_DATA_O_19);
+            gpio_iomap_inout(MACRO_PIN(LCD_D20), GPIO_IOMAP_IN_IIS0_WSCLK_IN_LCD_D20_IN_M2_7, GPIO_IOMAP_OUT_LCD_DATA_O_20);
+            gpio_iomap_inout(MACRO_PIN(LCD_D21), GPIO_IOMAP_IN_IIS0_BCLK_IN_LCD_D21_IN_M2_8, GPIO_IOMAP_OUT_LCD_DATA_O_21);
+            gpio_iomap_inout(MACRO_PIN(LCD_D22), GPIO_IOMAP_IN_IIS1_MCLK_IN_Uart5_IN_LCD_D22_IN_M2_9, GPIO_IOMAP_OUT_LCD_DATA_O_22);
+            gpio_iomap_inout(MACRO_PIN(LCD_D23), GPIO_IOMAP_IN_IIS1_WSCLK_IN_LCD_D23_IN_M2_10, GPIO_IOMAP_OUT_LCD_DATA_O_23);
         break;
         default:
             ret = EINVAL;

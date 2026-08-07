@@ -49,7 +49,8 @@ struct hgjpg {
     uint8                   opened       : 1,
                             jpg_run      : 1,
 							decode       : 1,
-							set_buf_len  : 1;
+							set_buf_len  : 1,
+							auto_scale1	 : 1;
 	uint8  addr_count;
 	uint8  deal_time;
 	uint32 *cfg_backup;

@@ -14,6 +14,7 @@
 #include "hal/jpeg.h"
 #include "hal/csi2.h"
 #include "hal/pwm.h"
+#include "hal/capture.h"
 #include "app_iic/app_iic.h"
 #include "lib/video/isp/isp_dev.h"
 #include "lib/video/vpp/vpp_dev.h"
@@ -27,323 +28,192 @@
 
 uint8 u8SensorwriteID2,u8SensorreadID2;
 uint8 u8Addrbytnum2,u8Databytnum2;
+uint32 sensor0_ident,sensor1_ident;
 
 _Sensor_Ident_ *devSensorInit2=NULL;
+const _Sensor_Ident_ null_init2={0x00,0x00,0x00,0x00,0x00,0x00};
 
 
+/* MIPI_CSI0 */
+static const SensorTable SensorTable_CSI0[] = {
 
-#define RESET_HIGH()		{gpio_set_val(rsn,1);}
-
-#define RESET_LOW()		    {gpio_set_val(rsn,0);}
-
-static const _Sensor_Ident_ *devSensorInitTable[] = {
-
-#if DEV_SENSOR_GC0308	
-	&gc0308_init,
+#if DEV_SENSOR_JXV3
+    { &jxv3_init,  &jxv3_cmd },
 #endif
 
-#if DEV_SENSOR_GC0309	
-	&gc0309_init,
+#if DEV_SENSOR_GC0308
+    { &gc0308_init, &gc0308_cmd },
 #endif
 
-#if DEV_SENSOR_GC0311	
-	&gc0311_init,
+#if DEV_SENSOR_GC0309
+    { &gc0309_init, &gc0309_cmd },
 #endif
 
-#if DEV_SENSOR_GC0312	
-	&gc0312_init,
+#if DEV_SENSOR_GC0311
+    { &gc0311_init, &gc0311_cmd },
 #endif
 
-#if DEV_SENSOR_GC0328	
-	&gc0328_init,
+#if DEV_SENSOR_GC0312
+    { &gc0312_init, &gc0312_cmd },
+#endif
+
+#if DEV_SENSOR_GC0328
+    { &gc0328_init, &gc0328_cmd },
 #endif
 
 #if DEV_SENSOR_GC0329
-	&gc0329_init,
+    { &gc0329_init, &gc0329_cmd },
 #endif
 
-#if DEV_SENSOR_BF3A03	
-	&bf3a03_init,
+#if DEV_SENSOR_BF3A03
+    { &bf3a03_init, &bf3a03_cmd },
 #endif
 
-#if DEV_SENSOR_BF3703	
-	&bf3703_init,
+#if DEV_SENSOR_BF3703
+    { &bf3703_init, &bf3703_cmd },
 #endif
 
-#if DEV_SENSOR_OV2640	
-	&ov2640_init,
+#if DEV_SENSOR_OV2640
+    { &ov2640_init, &ov2640_cmd },
 #endif
 
-#if DEV_SENSOR_OV7725	
-	&ov7725_init,
+#if DEV_SENSOR_OV7725
+    { &ov7725_init, &ov7725_cmd },
 #endif
 
-#if DEV_SENSOR_OV7670	
-	&ov7670_init,
-#endif
-
-#if DEV_SENSOR_BF2013
-	&bf2013_init,
-#endif
-
-#if DEV_SENSOR_H62
-    &h62_init,
-#endif
-
-#if DEV_SENSOR_H66
-    &h66_init,
-#endif
-
-#if DEV_SENSOR_GC1084
-   &gc1084_init,
-#endif
-
-#if DEV_SENSOR_GC1054
-   &gc1054_init,
-#endif
-
-#if DEV_SENSOR_SC1336
-    &sc1336_init,
-#endif
-
-#if DEV_SENSOR_SC1346
-    &sc1346_init,
-#endif
-
-#if DEV_SENSOR_XC7016_H63	
-	&xc7016_h63_init,
-#endif
-
-#if DEV_SENSOR_XC7011_H63	
-	&xc7011_h63_init,
-#endif
-
-#if DEV_SENSOR_XC7011_GC1054	
-	&xc7011_gc1054_init,
-#endif
-
-#if DEV_SENSOR_GC2053
-    &gc2053_init,
-#endif
-
-#if DEV_SENSOR_XCG532	
-	&xcg532_init,
-#endif
-
-#if DEV_SENSOR_GC2145
-	&gc2145_init,
-#endif
-
-#if DEV_SENSOR_SP0718
-	&sp0718_init,
-#endif
-	
-#if DEV_SENSOR_SP0A19
-	&sp0a19_init,
-#endif
-	
-#if DEV_SENSOR_BF3720
-	&bf3720_init,
-#endif
-
-#if DEV_SENSOR_SC2336P
-    &sc2336p_init,
-#endif
-
-#if DEV_SENSOR_GC2083
-    &gc2083_init,
-#endif
-
-#if DEV_SENSOR_OV9734
-    &ov9734_init,
-#endif
-
-#if DEV_SENSOR_GC20C3
-    &gc20C3_init,
-#endif
-
-#if DEV_SENSOR_XS9950
-    &xs9950_init,
-#endif
-
-#if DEV_SENSOR_F37P
-    &f37p_init,
-#endif
-
-#if DEV_SENSOR_F38P
-    &f38p_init,
-#endif
-
-
-#if DEV_SENSOR_IMX912
-	&imx219_init,
-#endif
-
-#if DEV_SENSOR_CV2008
-	&cv2008_init,
-#endif
-
-#if DEV_SENSOR_CV2005
-	&cv2005_init,
-#endif
-
-	NULL,
-};
-
-static const _Sensor_Adpt_ *devSensorOPTable[] = {
-
-#if DEV_SENSOR_GC0308	
-	&gc0308_cmd,
-#endif
-
-#if DEV_SENSOR_GC0309	
-	&gc0309_cmd,
-#endif
-
-#if DEV_SENSOR_GC0311	
-	&gc0311_cmd,
-#endif
-
-#if DEV_SENSOR_GC0312	
-	&gc0312_cmd,
-#endif
-
-#if DEV_SENSOR_GC0328	
-	&gc0328_cmd,
-#endif
-
-#if DEV_SENSOR_GC0329	
-	&gc0329_cmd,
-#endif
-
-#if DEV_SENSOR_BF3A03	
-	&bf3a03_cmd,
-#endif
-
-#if DEV_SENSOR_BF3703	
-	&bf3703_cmd,
-#endif
-
-#if DEV_SENSOR_OV2640	
-	&ov2640_cmd,
-#endif
-
-#if DEV_SENSOR_OV7725	
-	&ov7725_cmd,
-#endif
-
-#if DEV_SENSOR_OV7670	
-	&ov7670_cmd,
+#if DEV_SENSOR_OV7670
+    { &ov7670_init, &ov7670_cmd },
 #endif
 
 #if DEV_SENSOR_BF2013
-	&bf2013_cmd,
+    { &bf2013_init, &bf2013_cmd },
 #endif
 
 #if DEV_SENSOR_H62
-    &h62_cmd,
+    { &h62_init, &h62_cmd },
 #endif
 
 #if DEV_SENSOR_H66
-    &h66_cmd,
+    { &h66_init, &h66_cmd },
 #endif
 
 #if DEV_SENSOR_GC1084
-   &gc1084_cmd,
+    { &gc1084_init, &gc1084_cmd },
 #endif
 
 #if DEV_SENSOR_GC1054
-   &gc1054_cmd,
+    { &gc1054_init, &gc1054_cmd },
 #endif
 
 #if DEV_SENSOR_SC1336
-    &sc1336_cmd,
+    { &sc1336_init, &sc1336_cmd },
 #endif
 
 #if DEV_SENSOR_SC1346
-    &sc1346_cmd,
+    { &sc1346_init, &sc1346_cmd },
 #endif
 
 #if DEV_SENSOR_XC7016_H63
-	&xc7016_h63_cmd,
+    { &xc7016_h63_init, &xc7016_h63_cmd },
 #endif
 
 #if DEV_SENSOR_XC7011_H63
-	&xc7011_h63_cmd,
+    { &xc7011_h63_init, &xc7011_h63_cmd },
 #endif
 
-#if DEV_SENSOR_XC7011_GC1054	
-	&xc7011_gc1054_cmd,
+#if DEV_SENSOR_XC7011_GC1054
+    { &xc7011_gc1054_init, &xc7011_gc1054_cmd },
 #endif
 
 #if DEV_SENSOR_GC2053
-    &gc2053_cmd,
+    { &gc2053_init, &gc2053_cmd },
 #endif
 
-#if DEV_SENSOR_XCG532	
-	&xcg532_cmd,
+#if DEV_SENSOR_XCG532
+    { &xcg532_init, &xcg532_cmd },
 #endif
 
 #if DEV_SENSOR_GC2145
-	&gc2145_cmd,
+    { &gc2145_init, &gc2145_cmd },
 #endif
 
 #if DEV_SENSOR_SP0718
-	&sp0718_cmd,
+    { &sp0718_init, &sp0718_cmd },
 #endif
 
 #if DEV_SENSOR_SP0A19
-	&sp0a19_cmd,
+    { &sp0a19_init, &sp0a19_cmd },
 #endif
 
 #if DEV_SENSOR_BF3720
-	&bf3720_cmd,
+    { &bf3720_init, &bf3720_cmd },
 #endif
 
-
 #if DEV_SENSOR_SC2336P
-    &sc2336p_cmd,
+    { &sc2336p_init, &sc2336p_cmd },
 #endif
 
 #if DEV_SENSOR_GC2083
-    &gc2083_cmd,
+    { &gc2083_init, &gc2083_cmd },
 #endif
 
 #if DEV_SENSOR_OV9734
-    &ov9734_cmd,
+    { &ov9734_init, &ov9734_cmd },
 #endif
 
 #if DEV_SENSOR_GC20C3
-	&gc20C3_cmd,
+    { &gc20C3_init, &gc20C3_cmd },
 #endif
 
 #if DEV_SENSOR_XS9950
-    &xs9950_cmd,
+    { &xs9950_init, &xs9950_cmd },
 #endif
 
 #if DEV_SENSOR_F37P
-    &f37p_cmd,
+    { &f37p_init, &f37p_cmd },
 #endif
 
 #if DEV_SENSOR_F38P
-    &f38p_cmd,
+    { &f38p_init, &f38p_cmd },
 #endif
 
-#if DEV_SENSOR_IMX912
-	&imx219_cmd,
+#if DEV_SENSOR_H63P
+    { &h63p_init, &h63p_cmd },
+#endif
+
+#if DEV_SENSOR_H63S
+    { &h63s_init, &h63s_cmd },
+#endif
+
+#if DEV_SENSOR_IMX219
+    { &imx219_init, &imx219_cmd },
 #endif
 
 #if DEV_SENSOR_CV2008
-	&cv2008_cmd,
+    { &cv2008_init, &cv2008_cmd },
 #endif
 
 #if DEV_SENSOR_CV2005
-	&cv2005_cmd,
+    { &cv2005_init, &cv2005_cmd },
 #endif
 
+    { NULL, NULL },
 };
 
-const _Sensor_Ident_ null_init2={0x00,0x00,0x00,0x00,0x00,0x00};
+/* MIPI_CSI1 */
+static const SensorTable SensorTable_CSI1[] = {
+
+#if DEV_SENSOR_GC1084_CSI1
+    { &gc1084_init_csi1, &gc1084_cmd_csi1 },
+#endif
+
+#if DEV_SENSOR_GC2053_CSI1
+	{ &gc2053_init_csi1, &gc2053_cmd_csi1 },
+#endif
+
+    { NULL, NULL },
+};
+
 
 
 int sensor2CheckId(uint8_t devid,const _Sensor_Ident_ *p_sensor_ident,const _Sensor_Adpt_ *p_sensor_adpt)
@@ -351,7 +221,6 @@ int sensor2CheckId(uint8_t devid,const _Sensor_Ident_ *p_sensor_ident,const _Sen
 	int8 u8Buf[3];
 	uint8_t tablebuf[16];
 	uint32 id= 0;
-	uint32 i = 0;
 	uint32 k = 0;
 
 	u8SensorwriteID2 = p_sensor_ident->w_cmd;
@@ -360,30 +229,8 @@ int sensor2CheckId(uint8_t devid,const _Sensor_Ident_ *p_sensor_ident,const _Sen
 	u8Databytnum2 = p_sensor_ident->data_num;
 	tablebuf[0] = p_sensor_ident->addr_num;
 	tablebuf[1] = p_sensor_ident->data_num;
-	
-//	i2c_ioctl(p_iic,IIC_SET_DEVICE_ADDR,u8SensorwriteID2>>1);
+
 	tablebuf[2] = u8SensorwriteID2>>1;
-
-	if(p_sensor_adpt->preset){
-		for(i=0;;i+=p_sensor_ident->data_num+p_sensor_ident->addr_num){
-			if((p_sensor_adpt->preset[i]==0xFF)&&(p_sensor_adpt->preset[i+1]==0xFF)){
-				os_printf("preset table num:%d\r\n",i);
-				break;
-			}	
-			
-			for(k = 0;k < (p_sensor_ident->addr_num + p_sensor_ident->data_num);k++){
-				tablebuf[3+k] = p_sensor_adpt->preset[i+k];
-			}
-
-			wake_up_iic_queue(devid,tablebuf,0,1,(uint8_t*)NULL);
-			while(iic_devid_finish(devid) != 1){
-				os_sleep_ms(1);
-			}
-			//i2c_write(p_iic, (int8*)&p_sensor_adpt->preset[i],p_sensor_ident->addr_num, (int8*)&p_sensor_adpt->preset[i+p_sensor_ident->addr_num], p_sensor_ident->data_num);
-			
-		}		
-	}
-
 
 	u8Buf[0] = p_sensor_ident->id_reg;
 	if(p_sensor_ident->addr_num == 2)
@@ -425,153 +272,83 @@ int sensor2CheckId(uint8_t devid,const _Sensor_Ident_ *p_sensor_ident,const _Sen
 * Output         : None
 * Return         : None
 *******************************************************************************/
-__weak void mipi_sensor_reset(void){
-	uint8_t rsn,pdn;
-
-	pdn = MACRO_PIN(PIN_CSI0_PDN);//get_func_io("dvp", "PDN");
-	if(pdn != 255){
-		gpio_iomap_output(pdn,GPIO_IOMAP_OUTPUT);
-		gpio_set_val(pdn,0);
-		os_sleep_ms(2);
-		gpio_set_val(pdn,1);
-		os_sleep_ms(2);
-	}
-
-
-	rsn = MACRO_PIN(PIN_CSI0_RESET);//get_func_io("dvp", "RSN");
-	if(rsn != 255){
-		gpio_iomap_output(rsn,GPIO_IOMAP_OUTPUT);
-	}
-	else{
-		return;
-	}
-	
-	RESET_HIGH();
-	os_sleep_ms(50);
-	RESET_LOW();
-	os_sleep_ms(200);
-	RESET_HIGH();
-	os_sleep_ms(50);
-
-}
-
-/*******************************************************************************
-* Function Name  : sensor_reset
-* Description    : for sensor reset before start
-* Input          : nop number
-* Output         : None
-* Return         : None
-*******************************************************************************/
-__weak void mipi2_sensor_reset(void){
-	uint8_t rsn,pdn;
-
-	pdn = MACRO_PIN(PIN_CSI1_PDN);//get_func_io("dvp", "PDN");
-	if(pdn != 255){
-		gpio_iomap_output(pdn,GPIO_IOMAP_OUTPUT);
-		gpio_set_val(pdn,0);
-		os_sleep_ms(1);
-		gpio_set_val(pdn,1);
-	}
-
-
-	rsn = MACRO_PIN(PIN_CSI1_RESET);//get_func_io("dvp", "RSN");
-	if(rsn != 255){
-		gpio_iomap_output(rsn,GPIO_IOMAP_OUTPUT);
-	}
-	else{
-		return;
-	}
-	
-	RESET_HIGH();
-	os_sleep_ms(50);
-	RESET_LOW();
-	os_sleep_ms(200);
-	RESET_HIGH();
-	os_sleep_ms(50);
-
-}
-
-/*******************************************************************************
-* Function Name  : Sensor_ReadRegister
-* Description    : read sensor register
-* Input          : *pbdata :sensor register addr
-                   u8AddrLength:sensor register addr length
-                   u8DataLength:sensor register data length
-* Output         : None
-* Return         : u32i2cReadResult:the result from sensor register
-*******************************************************************************/
-static _Sensor_Adpt_ * sensorAutoCheck(uint8_t devid,uint8 *init_buf)
+void sensor_power_on(uint32_t csi_dev_id)
 {
-	uint8 i;
-	_Sensor_Adpt_ * devSensor_Struct=NULL;
-	for(i=0;devSensorInitTable[i] != NULL;i++)
-	{		
-		mipi_sensor_reset();
+    uint8_t rsn, pdn;
+
+    if (csi_dev_id == HG_MIPI_CSI_DEVID) {
+        /* CSI0 PDN */
+        pdn = MACRO_PIN(PIN_CSI0_PDN);
+        if (pdn != 255) {
+            gpio_iomap_output(pdn, GPIO_IOMAP_OUTPUT);
+            gpio_set_val(pdn, 0);
+            os_sleep_ms(2);
+            gpio_set_val(pdn, 1);
+        }
+
+        /* CSI0 RESET */
+        rsn = MACRO_PIN(PIN_CSI0_RESET);
+        if (rsn != 255) {
+            gpio_iomap_output(rsn, GPIO_IOMAP_OUTPUT);
+            gpio_set_val(rsn, 1);
+            os_sleep_ms(50);
+            gpio_set_val(rsn, 0);
+            os_sleep_ms(20);
+            gpio_set_val(rsn, 1);
+
+        }
+
+    } else if (csi_dev_id == HG_MIPI1_CSI_DEVID) {
+        /* CSI1 PDN */
+        pdn = MACRO_PIN(PIN_CSI1_PDN);
+        if (pdn != 255) {
+            gpio_iomap_output(pdn, GPIO_IOMAP_OUTPUT);
+            gpio_set_val(pdn, 0);
+            os_sleep_ms(2);
+            gpio_set_val(pdn, 1);
+        }
+
+        /* CSI1 RESET */
+        rsn = MACRO_PIN(PIN_CSI1_RESET);
+        if (rsn != 255) {
+            gpio_iomap_output(rsn, GPIO_IOMAP_OUTPUT);
+            gpio_set_val(rsn, 1);
+            os_sleep_ms(50);
+            gpio_set_val(rsn, 0);
+            os_sleep_ms(20);
+            gpio_set_val(rsn, 1);
+
+        }
+    }
+}
+
+
+static SensorTable *sensorAutoCheck(uint8_t csi_dev_id, uint8_t iic_devid)
+{
+    SensorTable *matched_entry = NULL;
+    const SensorTable *table = (csi_dev_id == HG_MIPI_CSI_DEVID) ? SensorTable_CSI0 : SensorTable_CSI1;
+
+    sensor_power_on(csi_dev_id);
+
+    for (uint8 i = 0; table[i].ident != NULL; i++) {
+        const SensorTable *entry = &table[i];
 		
-		//if(sensor2CheckId(devid,&gc1084_init2,&gc1084_cmd2)>=0)
-		if(sensor2CheckId(devid,devSensorInitTable[i],devSensorOPTable[i])>=0)
-		{
-			os_printf("id =%x num:%d \n",devSensorInitTable[i]->id,i);
-			//devSensorInit2 = (_Sensor_Ident_ *)&gc1084_init2;
-			devSensorInit2 = (_Sensor_Ident_ *) devSensorInitTable[i];
-//#if CMOS_AUTO_LOAD
-//			devSensor_Struct = sensor_adpt_load(devSensorInit->id,devSensorInit->w_cmd,devSensorInit->r_cmd,init_buf);
-//#else
-			devSensor_Struct = (_Sensor_Adpt_ *) devSensorOPTable[i];
-//#endif
-			break;
-		}
-	}
-	if(devSensor_Struct == NULL)
-	{
-		os_printf("Er: unkown!");
-		devSensorInit2 = (_Sensor_Ident_ *)&null_init2;
-		return NULL; // index 0 is test only
-	}
-	return devSensor_Struct;
+        if (sensor2CheckId(iic_devid, entry->ident, entry->adpt) >= 0) {
+			os_printf("sensor id=0x%x index=%d\n", entry->ident->id, i);
+            devSensorInit2   = (_Sensor_Ident_ *)entry->ident;
+            matched_entry 	 = (SensorTable *)entry;
+            break;
+        }
+    }
+
+    if (!matched_entry) {
+		os_printf("Er: unknown sensor!\n");
+        devSensorInit2 = (_Sensor_Ident_ *)&null_init2;
+    }
+
+    return matched_entry;
 }
 
-/*******************************************************************************
-* Function Name  : Sensor_ReadRegister
-* Description    : read sensor register
-* Input          : *pbdata :sensor register addr
-                   u8AddrLength:sensor register addr length
-                   u8DataLength:sensor register data length
-* Output         : None
-* Return         : u32i2cReadResult:the result from sensor register
-*******************************************************************************/
-
-static _Sensor_Adpt_ * sensor2AutoCheck(uint8_t devid,uint8 *init_buf)
-{
-#if MIPI_CSI_EN
-	uint8 i = 0;
-#endif
-	_Sensor_Adpt_ * devSensor_Struct=NULL;
-	//for(i=0;devSensorInitTable[i] != NULL;i++)
-	{		
-		#if MIPI_CSI_EN
-		//mipi2_sensor_reset();
-		if(sensor2CheckId(devid,&gc1084_init2,&gc1084_cmd2)>=0)
-		{
-			os_printf("id =%x num:%d \n",gc1084_init2.id,i);
-			devSensorInit2 = (_Sensor_Ident_ *)&gc1084_init2;
-//#if CMOS_AUTO_LOAD
-//			devSensor_Struct = sensor_adpt_load(devSensorInit->id,devSensorInit->w_cmd,devSensorInit->r_cmd,init_buf);
-//#else
-			devSensor_Struct = (_Sensor_Adpt_ *) &gc1084_cmd2;
-//#endif
-//			break;
-		}
-		#endif
-	}
-	if(devSensor_Struct == NULL)
-	{
-		os_printf("Er: unkown!");
-		devSensorInit2 = (_Sensor_Ident_ *)&null_init2;
-		return NULL; // index 0 is test only
-	}
-	return devSensor_Struct;
-}
 
 void mipi_csi_fovie_isr(uint32 irq,uint32 dev,uint32 param){
 	//dvp_vpp_reset();
@@ -580,7 +357,7 @@ void mipi_csi_fovie_isr(uint32 irq,uint32 dev,uint32 param){
 
 void mipi_csi_sip_isr(uint32 irq,uint32 dev,uint32 param){
 	//dvp_vpp_reset();
-	os_printf(KERN_ERR"sip reset mipi\r\n");
+	os_printf(KERN_ERR"sip reset mipi csi_dev %08x \r\n",param);
 }
 
 uint32_t io_mipi_csi1_remap_cfg(){
@@ -705,7 +482,8 @@ struct mipi_csi_priv {
 			mipi_csi1_en 			: 1,
 			mipi_csi0_init   		: 1,
 			mipi_csi1_init   		: 1,
-			mipi_mclk_init          : 1,	
+			mipi_mclk_init          : 1,
+			mipi_fsync_init			: 1,
 			mipi_csi0_data_lane_num : 2;
 };
 static struct mipi_csi_priv g_mipi_csi_priv = {0};
@@ -752,7 +530,7 @@ void mipi_csi_debug_config(struct mipi_csi_debug *p_debug, uint32 csi_dev_id)
     for (int i = 0; i < 3; i++)
     {
         os_printf(KERN_DEBUG"****** mipi id : %d debug %08x %08x %08x %08x************\r\n", csi_dev_id, debug[0], debug[1], debug[2], debug[3]);
-        os_sleep_ms(1000);
+        // os_sleep_ms(1000);
     }
 }
 extern struct sys_config sys_cfgs;
@@ -850,72 +628,165 @@ uint32 mipi_csi_check(uint32 csi_data_lane_num, uint32 csi_dev_id, _Sensor_Adpt_
     }
 }
 
-int mipi_csi_sensor_init(_Sensor_Adpt_ *p_sensor_cmd, uint8_t mipi_csi_iic)
+int mipi_csi_sensor_init(uint8_t *flash_init_table, uint8_t mipi_csi_iic, uint8_t cmd_len)
 {
-	uint32_t itk = 0;
-	uint32_t i = 0;
-	uint32_t k = 0;
-	uint8_t idbuf[8];
-	uint8_t tablebuf[16];
-	if(p_sensor_cmd->init!=NULL)
+	scatter_data init_table = {0};
+	uint32_t i 				= 0;
+	uint32_t table_size 	= 0;
+
+    if (!flash_init_table || cmd_len == 0) {
+        return -1;
+    }
+
+	for(i = 0 ; ; i+=cmd_len)
 	{
-		os_printf("SENSER....init\r\n");
-		for(i = 0 ; ; i+=u8Addrbytnum2+u8Databytnum2)
-		{
-			if((p_sensor_cmd->init[i]==0xFF)&&(p_sensor_cmd->init[i+1]==0xFF)){
-				os_printf("init table num:%d\r\n",i);
-				break;
-			}
+		if((flash_init_table[i]==0xFF)&&(flash_init_table[i+1]==0xFF)){
+			table_size = i;
+			break;
+		}
+		if(i > 0xffff) {
+			os_printf(KERN_ERR"sensor init table too large\r\n");
+			return -1;
+		}
+	}	
 
-			if((p_sensor_cmd->init[i]==0xFE)&&(p_sensor_cmd->init[i+1]==0xFE)){
-				if(p_sensor_cmd->init[i+2]==0x01){
-					os_sleep_ms(1);
-				}
-			}
-			else{
-				for(itk = 0;itk < u8Addrbytnum2+u8Databytnum2;itk++){
-					idbuf[itk] = p_sensor_cmd->init[i+itk];
-				}
+	init_table.size = table_size;
+    init_table.addr = os_malloc(table_size);
+    if (!init_table.addr) {
+        os_printf(KERN_ERR"%s: malloc fail\r\n",__func__);
+        return -1;
+    }
 
-				tablebuf[0] = u8Addrbytnum2;
-				tablebuf[1] = u8Databytnum2;
-				tablebuf[2] = u8SensorwriteID2>>1;				
-				for(k = 0;k < (tablebuf[0] + tablebuf[1]);k++){
-					tablebuf[3+k] = idbuf[k];
-				}
+    os_memcpy(init_table.addr, flash_init_table, table_size);
 
-				wake_up_iic_queue(mipi_csi_iic,tablebuf,0,1,(uint8_t*)NULL);
-				while(iic_devid_finish(mipi_csi_iic) != 1){
-					os_sleep_ms(1);
-				}
-				
-				if(i==0)
-				{
-					os_sleep_ms(1);
-				}
-			}
-		}		
+	wake_up_iic_queue(mipi_csi_iic,(uint8_t*)&init_table,cmd_len,2,(uint8_t*)NULL);
+	while(iic_devid_finish(mipi_csi_iic) != 1){
+		os_sleep_ms(1);
 	}
+	os_free(init_table.addr);
+
+	os_printf("Sensor initialization table write completed ,size:%d\r\n",table_size);
 	return 0;
 }
-/***************************************
- * mclk:设置mclk的频率,单位是MHz
- * 
- * 如果是用pwm去设置mclk,设置值如果不能
- * 整数分频,只会设置更小的值
-****************************************/
-int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_use, uint8_t dual_en, uint8_t dual_sensor_type,uint8_t mclk, struct mipi_csi_debug *p_debug) 
+
+void dual_mipi_csi_reset(enum fps_mode mode, float fps)
 {
-	
 	uint32_t cfg = 0;
-	_Sensor_Adpt_ *p_sensor_cmd = NULL;
+	uint32 period_sysclkpd_cnt = 0;
+	struct mipi_csi_device *mipi_csi_dev 	= (struct mipi_csi_device *)dev_get(HG_MIPI_CSI_DEVID);
+	struct mipi_csi_device *mipi1_csi_dev 	= (struct mipi_csi_device *)dev_get(HG_MIPI1_CSI_DEVID);
+	struct hgpwm_v0 	   *sensor_fsync	= (struct hgpwm_v0 *)dev_get(HG_PWM0_DEVID);
+	struct isp_device 	   *isp_dev 		= (struct isp_device  *)dev_get(HG_ISP_DEVID);
+
+	struct isp_sensor_opt sensor0_opt 		= {0};
+	struct isp_sensor_opt sensor1_opt 		= {0};
+
+	_Sensor_Adpt_  			*sensor0_adapt = NULL;
+	_Sensor_Adpt_  			*sensor1_adapt = NULL;
+
+	isp_get_sensor_opt(isp_dev, &sensor0_opt, SENSOR_TYPE_MASTER);
+	sensor0_adapt  = (_Sensor_Adpt_ *)sensor0_opt.sensor_cmd;  
+
+	isp_get_sensor_opt(isp_dev, &sensor1_opt, SENSOR_TYPE_SLAVE0);
+	sensor1_adapt  = (_Sensor_Adpt_ *)sensor1_opt.sensor_cmd;  
+
+	if(sensor0_adapt == NULL || sensor1_adapt == NULL) return;
+
+	sensor_info_add(SENSOR_TYPE_MASTER, ISP_INPUT_DAT_SRC_MIPI0, (uint32)sensor0_adapt, sensor0_opt.devid_id, (uint32)sensor0_ident);
+	sensor_info_add(SENSOR_TYPE_SLAVE0, ISP_INPUT_DAT_SRC_MIPI1, (uint32)sensor1_adapt, sensor1_opt.devid_id, (uint32)sensor1_ident);
+
+	// sensor_power_on(HG_MIPI_CSI_DEVID);
+	// sensor_power_on(HG_MIPI1_CSI_DEVID);
+
+	isp_dev_close();
+
+	if(mode == FPS_MODE_NIGHT_LOW){
+		period_sysclkpd_cnt = DEFAULT_SYS_CLK/fps;
+		pwm_ioctl((struct pwm_device *)sensor_fsync, PWM_CHANNEL_0, PWM_IOCTL_CMD_SET_PERIOD_DUTY_IMMEDIATELY, period_sysclkpd_cnt, period_sysclkpd_cnt*3/5);   
+	}else if(mode == FPS_MODE_DAY_NORMAL){
+		period_sysclkpd_cnt = DEFAULT_SYS_CLK/fps;
+		pwm_ioctl((struct pwm_device *)sensor_fsync, PWM_CHANNEL_0, PWM_IOCTL_CMD_SET_PERIOD_DUTY_IMMEDIATELY, period_sysclkpd_cnt, period_sysclkpd_cnt*3/5);   		
+	}
+
+	uint8 cmd0_len = sensor0_opt.addr_num + sensor0_opt.data_num;
+	uint8 cmd1_len = sensor1_opt.addr_num + sensor1_opt.data_num;
+
+	mipi_csi_sensor_init(sensor0_adapt->sensor_stop_stream,sensor0_opt.devid_id,cmd0_len);
+	mipi_csi_sensor_init(sensor1_adapt->sensor_stop_stream,sensor1_opt.devid_id,cmd1_len);
+
+	mipi_csi_close(mipi1_csi_dev);
+	mipi_csi_init(mipi1_csi_dev,1); 
+
+	mipi_csi_close(mipi_csi_dev);
+	mipi_csi_init(mipi_csi_dev,1); 
+
+	mipi_csi_set_lane_num(mipi_csi_dev, g_mipi_csi_priv.mipi_csi0_data_lane_num);
+	mipi_csi_open_virtual_channel(mipi_csi_dev,0);
+
+	cfg = io_mipi_csi0_remap_cfg(1);
+	mipi_csi_dphy_cfg(mipi_csi_dev,cfg,0x17709de7,0x10,0x3def,0,0,0,0);
+
+	mipi_csi_img_size(mipi_csi_dev,sensor0_adapt->pixelw, sensor0_adapt->pixelh);
+	//mipi_csi_crop_enable(mipi_csi_dev,0);
+	//mipi_csi_crop_img_start(mipi_csi_dev,0,0);
+	//mipi_csi_crop_img_end(mipi_csi_dev,1920,1080);
+	//mipi_csi_hsync_rec_time(mipi_csi_dev,5);
+	mipi_csi_hsync_rec_enable(mipi_csi_dev,1);	
+	mipi_csi_input_format(mipi_csi_dev,sensor0_adapt->sensor_isp->input_format); 
+	mipi_csi_request_irq(mipi_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
+	mipi_csi_request_irq(mipi_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
+	mipi_csi_open(mipi_csi_dev);
+	
+	mipi_csi_sensor_init(sensor0_adapt->init,sensor0_opt.devid_id,cmd0_len);
+	if(mode == FPS_MODE_NIGHT_LOW){
+		mipi_csi_sensor_init(sensor0_adapt->nigth_mode_init,sensor0_opt.devid_id,cmd0_len);
+	}else if(mode == FPS_MODE_DAY_NORMAL){
+		mipi_csi_sensor_init(sensor0_adapt->slave_init,sensor0_opt.devid_id,cmd0_len);
+	}
+	mipi_csi_hs_rx_zero_cnt_set(mipi_csi_dev, sys_cfgs.mipi_csi0_hs_zero_cnt);
+
+	mipi_csi_set_lane_num(mipi1_csi_dev,1);
+	mipi_csi_open_virtual_channel(mipi1_csi_dev,0);
+	cfg = io_mipi_csi1_remap_cfg();
+	mipi_csi_dphy_cfg(mipi1_csi_dev,cfg,0x17709de7,0x20,0x3def,0,0,0,0);
+
+	//os_printf("pixelw:%d pixelh:%d\n", sensor1_adapt->pixelw, sensor1_adapt->pixelh);
+	mipi_csi_img_size(mipi1_csi_dev,sensor1_adapt->pixelw, sensor1_adapt->pixelh);
+	mipi_csi_hsync_rec_enable(mipi1_csi_dev,1);	
+	mipi_csi_input_format(mipi1_csi_dev,sensor1_adapt->sensor_isp->input_format); 
+	mipi_csi_request_irq(mipi1_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
+	mipi_csi_request_irq(mipi1_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
+	mipi_csi_open(mipi1_csi_dev);
+
+	
+	mipi_csi_sensor_init(sensor1_adapt->init,sensor1_opt.devid_id,cmd1_len);
+	if(mode == FPS_MODE_NIGHT_LOW){
+		mipi_csi_sensor_init(sensor1_adapt->nigth_mode_init,sensor1_opt.devid_id,cmd1_len);
+	}else if(mode == FPS_MODE_DAY_NORMAL){
+		mipi_csi_sensor_init(sensor1_adapt->slave_init,sensor1_opt.devid_id,cmd1_len);
+	}
+	mipi_csi_hs_rx_zero_cnt_set(mipi1_csi_dev, sys_cfgs.mipi_csi1_hs_zero_cnt);
+
+}
+
+
+int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t camera_mode, uint8_t slave_en, uint8_t sensor_type,uint8_t mclk, struct mipi_csi_debug *p_debug) 
+{
+	uint32_t cfg = 0;
 	uint8_t csi_data_lane_num = 0;
+	uint8_t sensor_src		  = 0;
+	uint8_t cmd_len			  = 0;
+	_Sensor_Adpt_ 	*p_sensor_cmd  	= NULL;
+	_Sensor_Ident_ 	*sensor_ident 	= NULL;
+	SensorTable 	*sensor_entry 	= NULL;
 	//struct i2c_setting i2c_setting;
+	struct hgpwm_v0 *global_hgpwm = (struct hgpwm_v0 *)dev_get(HG_PWM0_DEVID);
+    struct capture_device *p_capture = (struct capture_device*)dev_get(HG_CAPTURE0_DEVID);
 	struct i2c_device *iic_dev = (struct i2c_device *)dev_get(HG_I2C1_DEVID);
 	struct mipi_csi_device *mipi_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI_CSI_DEVID);
 	struct mipi_csi_device *mipi1_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI1_CSI_DEVID);
 
-	if(dual_en)
+	if(camera_mode == CAM_DUAL_MASTER_SLAVE_MODE)
 	{
 		gpio_set_mode(MACRO_PIN(PIN_MIPI_FSYNC), GPIO_PULL_DOWN, GPIO_PULL_LEVEL_100K);
 		gpio_iomap_output(MACRO_PIN(PIN_MIPI_FSYNC),GPIO_IOMAP_OUT_DUAL_ORG_FSYNC);
@@ -925,24 +796,46 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 		return 0;
 	}
 
-	if(!g_mipi_csi_priv.mipi_mclk_init) {
-		struct hgpwm_v0 *global_hgpwm = (struct hgpwm_v0 *)dev_get(HG_PWM0_DEVID);
+	if(!g_mipi_csi_priv.mipi_fsync_init && camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE){
+		uint32_t period_sysclkpd_cnt = DEFAULT_SYS_CLK/15;
 		gpio_driver_strength(MACRO_PIN(PIN_PWM_CHANNEL_0), GPIO_DS_G1);
+		pwm_init((struct pwm_device *)global_hgpwm, PWM_CHANNEL_0, period_sysclkpd_cnt-1, period_sysclkpd_cnt*3/5);
+		pwm_start((struct pwm_device *)global_hgpwm, PWM_CHANNEL_0);
+		
+		gpio_ioctl(MACRO_PIN(PIN_CAPTURE_CHANNEL_2),GPIO_CMD_SET_IEEN,1,0);//同时支持输入和输出
+    	capture_init(p_capture, CAPTURE_CHANNEL_2, CAPTURE_MODE_ALL);
+    	capture_request_irq(p_capture, CAPTURE_CHANNEL_2, CAPTURE_IRQ_FLAG_CAPTURE, (capture_irq_hdl)fsync_capture_irq_hdl, 0);
+    	gpio_ioctl(MACRO_PIN(PIN_PWM_CHANNEL_0),GPIO_CMD_SET_ONLY_MODE_BIT,0x01,0);//设为输出
+    	capture_start(p_capture, CAPTURE_CHANNEL_2);
+	
+		os_event_init((void *)&set_fps_event);
+		os_msgq_init((void *)&set_fps_msg, 1);
+		set_fps_task_hdl = os_task_create("set_fps_task", (void *)set_fps_task, NULL, OS_TASK_PRIORITY_HIGH+1, 0, NULL, 1024);
+
+		g_mipi_csi_priv.mipi_fsync_init = 1;
+	}
+
+	if(!g_mipi_csi_priv.mipi_mclk_init) {
+		gpio_driver_strength(MACRO_PIN(PIN_PWM_CHANNEL_1), GPIO_DS_G1);
 		uint32_t mclk_div = (DEFAULT_SYS_CLK/1000000)/mclk;
 		//设置分频比,mclk_div-1,然后设置占空比:50%
-		pwm_init((struct pwm_device *)global_hgpwm, PWM_CHANNEL_0, mclk_div-1, (mclk_div+1)>>1);
-		pwm_start((struct pwm_device *)global_hgpwm, PWM_CHANNEL_0);
+		pwm_init((struct pwm_device *)global_hgpwm, PWM_CHANNEL_1, mclk_div-1, (mclk_div+1)>>1);
+		pwm_start((struct pwm_device *)global_hgpwm, PWM_CHANNEL_1);
 		os_sleep_ms(1);
 		g_mipi_csi_priv.mipi_mclk_init = 1;
 	}
 
+
 	if(csi_dev_id == HG_MIPI_CSI_DEVID && !g_mipi_csi_priv.mipi_csi0_en) {
 		uint8_t mipi_csi0_iic = register_iic_queue(iic_dev,MACRO_PIN(PIN_MIPI0_IIC_CLK),MACRO_PIN(PIN_MIPI0_IIC_SDA),0);
-		os_printf("set mipi sensor finish ,Auto Check sensor id\r\n");
-		p_sensor_cmd = sensorAutoCheck(mipi_csi0_iic,NULL);
-		if(p_sensor_cmd == NULL){
+		os_printf("set mipi0 sensor finish ,Auto Check sensor id\r\n");
+
+		sensor_entry = sensorAutoCheck(csi_dev_id,mipi_csi0_iic);
+		if(sensor_entry == NULL){
 			return FALSE;
 		}
+		p_sensor_cmd = (_Sensor_Adpt_ *)sensor_entry->adpt;
+		sensor_ident = (_Sensor_Ident_ *)sensor_entry->ident;
 		csi_data_lane_num = p_sensor_cmd->mipi_lane_num;
 		os_printf("Auto Check sensor id finish,mipi_csi0 lane num:%d\r\n",p_sensor_cmd->mipi_lane_num);
 		mipi_csi_close(mipi_csi_dev);
@@ -952,8 +845,10 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 			mipi_csi_close(mipi1_csi_dev);
 			mipi_csi_init(mipi1_csi_dev,1); 
 		}
-		
-		sensor_info_add(dual_sensor_type, (dual_en) ? (ISP_INPUT_DAT_SRC_ORG_DMA) : (ISP_INPUT_DAT_SRC_MIPI0), (uint32)p_sensor_cmd->sensor_isp, mipi_csi0_iic, u8SensorwriteID2);
+
+		sensor_src = (camera_mode == CAM_DUAL_MASTER_SLAVE_MODE) ? ISP_INPUT_DAT_SRC_ORG_DMA : ISP_INPUT_DAT_SRC_MIPI0;
+		sensor_info_add(sensor_type, sensor_src, (uint32)p_sensor_cmd, mipi_csi0_iic, (uint32)sensor_ident);
+		sensor0_ident = (uint32)sensor_ident;
 		//	mipi_csi_set_baudrate(mipi_csi_dev,p_sensor_cmd->mclk);
 
 		g_mipi_csi_priv.mipi_csi0_data_lane_num = csi_data_lane_num;
@@ -975,14 +870,18 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 		//mipi_csi_crop_img_end(mipi_csi_dev,1920,1080);
 		//mipi_csi_hsync_rec_time(mipi_csi_dev,5);
 		mipi_csi_hsync_rec_enable(mipi_csi_dev,1);	
-		mipi_csi_input_format(mipi_csi_dev,INPUT_MODE); 
+		mipi_csi_input_format(mipi_csi_dev,p_sensor_cmd->sensor_isp->input_format); 
 		mipi_csi_request_irq(mipi_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
 		mipi_csi_request_irq(mipi_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
 		mipi_csi_open(mipi_csi_dev);
 
-		os_printf("mclk:%dMHz\r\n",p_sensor_cmd->mclk);	
 		os_printf("init:%x u8Addrbytnum2:%d,u8Databytnum2:%d\r\n",(uint32)p_sensor_cmd->init,u8Addrbytnum2,u8Databytnum2);
-		mipi_csi_sensor_init(p_sensor_cmd, mipi_csi0_iic);
+		cmd_len = sensor_ident->addr_num + sensor_ident->data_num;
+		mipi_csi_sensor_init(p_sensor_cmd->init, mipi_csi0_iic,cmd_len);
+		if(slave_en){
+			mipi_csi_sensor_init(p_sensor_cmd->slave_init, mipi_csi0_iic,cmd_len);
+		}
+
 	}
 
 	if(csi_dev_id == HG_MIPI1_CSI_DEVID && !g_mipi_csi_priv.mipi_csi1_en) {
@@ -990,16 +889,22 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 			os_printf("mipi csi1 unsupport\n");
 			return FALSE;
 		}
-		csi_data_lane_num = g_mipi_csi_priv.mipi_csi0_data_lane_num;
+		csi_data_lane_num = 1;
+        mipi_csi_close(mipi1_csi_dev);
+        mipi_csi_init(mipi1_csi_dev, csi_data_lane_num); 
 		uint8_t mipi_csi1_iic = register_iic_queue(iic_dev,MACRO_PIN(PIN_MIPI1_IIC_CLK),MACRO_PIN(PIN_MIPI1_IIC_SDA),0);	
-		os_printf("set mipi sensor finish ,Auto Check sensor id\r\n");
-		p_sensor_cmd =  sensor2AutoCheck(mipi_csi1_iic,NULL);
-		if(p_sensor_cmd == NULL){
+		os_printf("set mipi1 sensor finish ,Auto Check sensor id\r\n");
+		sensor_entry = sensorAutoCheck(csi_dev_id,mipi_csi1_iic);
+		if(sensor_entry == NULL){
 			return FALSE;
 		}
+		p_sensor_cmd = (_Sensor_Adpt_ *)sensor_entry->adpt;
+		sensor_ident = (_Sensor_Ident_ *)sensor_entry->ident;
 		os_printf("Auto Check sensor id finish,mipi_csi1 lane num:%d\r\n",p_sensor_cmd->mipi_lane_num);
 
-		sensor_info_add(dual_sensor_type, (dual_en) ? (ISP_INPUT_DAT_SRC_ORG_DMA) : (ISP_INPUT_DAT_SRC_MIPI1), (uint32)p_sensor_cmd->sensor_isp, mipi_csi1_iic, u8SensorwriteID2);
+		sensor_src = (camera_mode == CAM_DUAL_MASTER_SLAVE_MODE) ? ISP_INPUT_DAT_SRC_ORG_DMA : ISP_INPUT_DAT_SRC_MIPI1;
+		sensor_info_add(sensor_type, sensor_src, (uint32)p_sensor_cmd, mipi_csi1_iic, (uint32)sensor_ident);
+		sensor1_ident = (uint32)sensor_ident;
 		//	mipi_csi_set_baudrate(mipi1_csi_dev,p_sensor_cmd->mclk);
 		mipi_csi_set_lane_num(mipi1_csi_dev,1);
 		mipi_csi_open_virtual_channel(mipi1_csi_dev,0);
@@ -1008,31 +913,35 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 		os_printf("p_sensor_cmd->pixelw:%d p_sensor_cmd->pixelh:%d\n", p_sensor_cmd->pixelw, p_sensor_cmd->pixelh);
 		mipi_csi_img_size(mipi1_csi_dev,p_sensor_cmd->pixelw,p_sensor_cmd->pixelh);
 		mipi_csi_hsync_rec_enable(mipi1_csi_dev,1);	
-		mipi_csi_input_format(mipi1_csi_dev,INPUT_MODE);	
+		mipi_csi_input_format(mipi1_csi_dev,p_sensor_cmd->sensor_isp->input_format); 
 		mipi_csi_request_irq(mipi1_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
 		mipi_csi_request_irq(mipi1_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
 		mipi_csi_open(mipi1_csi_dev);
 
-		os_printf("mclk:%dMHz\r\n",p_sensor_cmd->mclk); 
 		os_printf("init:%x u8Addrbytnum2:%d,u8Databytnum2:%d\r\n",(uint32)p_sensor_cmd->init,u8Addrbytnum2,u8Databytnum2);
-		mipi_csi_sensor_init(p_sensor_cmd, mipi_csi1_iic);
+		cmd_len = sensor_ident->addr_num + sensor_ident->data_num;
+		mipi_csi_sensor_init(p_sensor_cmd->init, mipi_csi1_iic,cmd_len);
+		if(slave_en){
+			mipi_csi_sensor_init(p_sensor_cmd->slave_init, mipi_csi1_iic,cmd_len);
+		}
 	}
 
 
 	
+	if(csi_dev_id == HG_MIPI_CSI_DEVID){
+		mipi_csi_debug_config(p_debug, csi_dev_id);
+	}
+
     if (mipi_csi_check(csi_data_lane_num, csi_dev_id, p_sensor_cmd) != TRUE)
     {
-        mipi_csi_debug_config(p_debug, csi_dev_id);
 		return FALSE;
     } else {
+
         if (csi_dev_id == HG_MIPI_CSI_DEVID)
         {
             g_mipi_csi_priv.mipi_csi0_en = 1;
-
 			video_msg.csi0_iw = p_sensor_cmd->pixelw;
 			video_msg.csi0_ih = p_sensor_cmd->pixelh;
-//			video_msg.csi0_ow = p_sensor_cmd->pixelw;
-//			video_msg.csi0_oh = p_sensor_cmd->pixelh;
 			video_msg.csi0_type = 1;
 			video_msg.video_type_cur  = ISP_VIDEO_0;
 			video_msg.video_type_last = ISP_VIDEO_0;
@@ -1042,16 +951,16 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
         if (csi_dev_id == HG_MIPI1_CSI_DEVID)
         {
             g_mipi_csi_priv.mipi_csi1_en = 1;
-
 			video_msg.csi1_iw = p_sensor_cmd->pixelw;
 			video_msg.csi1_ih = p_sensor_cmd->pixelh;
-//			video_msg.csi1_ow = p_sensor_cmd->pixelw;
-//			video_msg.csi1_oh = p_sensor_cmd->pixelh;
 			video_msg.csi1_type = 1;
 			video_msg.video_type_cur  = ISP_VIDEO_0;
 			video_msg.video_type_last = ISP_VIDEO_0;
 			video_msg.video_num++;			
         }
+		if(video_msg.video_num == 2){
+			video_msg.camera_mode = camera_mode;
+		}
     }
 
 	return TRUE;

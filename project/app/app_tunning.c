@@ -42,6 +42,9 @@
 //#include "video_app/video_msi.h"
 #include "lib/lvgl_rotate_rpc/lvgl_rotate_msi.h"
 #include "fpv_mem.h"
+#include "takephoto_module/takephoto.h"
+#include "scale_msi/scale3_normal_msi.h"
+#include "mp4_encode_msi2.h"
 
 int32 atcmd_recv(uint8 *data, int32 len);
 void user_workqueue_init(uint16 pri,void *stack,uint16 stack_size);
@@ -88,32 +91,16 @@ __weak void user_hardware_config()
 
 static uint8_t vcam_en(void)
 {
-    uint8_t ret = TRUE;
 #if VCAM_EN
-    pmu_vcam_dis();
-    os_sleep_ms(1);
-    pmu_set_vcam_vol(VCAM_VOL_2V80);
-    pmu_vcam_oc_set(VCAM_OC_200MA);
-    pmu_vcam_lc_en();
-    pmu_vcam_oc_int_dis();
-    pmu_vcam_discharge_dis();
-    pmu_vcam_pg_dis();
+
 #ifdef VCAM_33
-    pmu_set_vcam_vol(VCAM_VOL_3V25);
-    pmu_vcam_en();
-    os_sleep_ms(1);
-    pmu_vcam_pg_en();
+    pmu_vcam_ldo_en(1, VCAM_VOL_3V30);
 #else
-    pmu_vcam_en();
-    os_sleep_ms(1);
+    pmu_vcam_ldo_en(1, VCAM_VOL_2V80);
 #endif
 
-    pmu_vcam_oc_pending_clr();
-
-    pmu_vcam_oc_int_dis();
-    pmu_lvd_oe_en();
 #endif
-    return ret;
+    return TRUE;
 }
 
 extern void scale2_mutex_init();
@@ -172,14 +159,16 @@ static void hardware_init(uint8_t vcam)
     mipi_debug.debug_type3  = 9;
     mipi_debug.debug_type4  = 10;
     mipi_debug.debug_type5  = 11;
-    int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_data_lane_num, uint8_t dual_en, uint8_t dual_sensor_type, uint8_t mclk,struct mipi_csi_debug *p_debug);
 #if DVP_EN
 	int ret;
-    ret = mipi_csi_hardware_config(HG_MIPI_CSI_DEVID,  1, 1, DUAL_EN, SENSOR_TYPE_SLAVE0,24, &mipi_debug);
-    mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, 1, DUAL_EN, ret?SENSOR_TYPE_SLAVE1:SENSOR_TYPE_SLAVE0,24, &mipi_debug);
+    ret = mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, CAM_DUAL_MASTER_SLAVE_MODE, 1, SENSOR_TYPE_SLAVE0, 24, &mipi_debug);
+    mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, CAM_DUAL_MASTER_SLAVE_MODE, 1, ret?SENSOR_TYPE_SLAVE1:SENSOR_TYPE_SLAVE0, 24, &mipi_debug);
 #else
-	mipi_csi_hardware_config(HG_MIPI_CSI_DEVID,  1, 1, DUAL_EN, SENSOR_TYPE_MASTER, 24, &mipi_debug);
-	// mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, 1, DUAL_EN, SENSOR_TYPE_MASTER, 24,&mipi_debug);
+    
+    // mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, CAM_DUAL_SPLICE_SLAVE_MODE, 1, SENSOR_TYPE_MASTER, 24, &mipi_debug);
+	// mipi_csi_hardware_config(HG_MIPI1_CSI_DEVID, 1, CAM_DUAL_SPLICE_SLAVE_MODE, 1, SENSOR_TYPE_SLAVE0, 24, &mipi_debug);
+
+	mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, CAM_DUAL_MASTER_SLAVE_MODE, 0, SENSOR_TYPE_MASTER, 24, &mipi_debug);
 #endif
 #endif
 
@@ -188,8 +177,8 @@ static void hardware_init(uint8_t vcam)
 #endif
 
 #if ISP_EN
-    //  debug_config();
     isp_cfg_dev();
+    ircut_init();
 #endif
 #if VPP_EN
 {

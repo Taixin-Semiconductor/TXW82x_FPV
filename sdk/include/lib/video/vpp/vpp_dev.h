@@ -28,10 +28,15 @@ enum
 
 typedef enum {
 	SCALER3_DONE = 0,
+	SCALE3_KICK,
 	JPG0_DONE,
 	JPG1_DONE,
 	SCALE1_JPG_ENCODE,
 	VPP_IFP_EN_CTRL,
+	VPP_H264_START,
+	VPP_H264_ISR_START,
+	VPP_JPEG0_START,
+	VPP_JPEG1_START,
 	VPP_FUNC_DONE_NUM,
 }VPP_FUNC_DONE;
 
@@ -42,6 +47,7 @@ typedef int32_t (*scale3_kick_fn)();
 typedef int32_t (*func_done_fn)(uint32 irq_data);
 
 struct  video_cfg_t {
+	uint8_t camera_mode;
 	uint8_t video_num;
 	uint8_t video_type_cur;     //cur frame is ISP_VIDEO_0/1/2
 	uint8_t video_type_last;    //last frame is ISP_VIDEO_0/1/2

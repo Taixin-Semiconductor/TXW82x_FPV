@@ -234,3 +234,11 @@ int32 jpg_release_irq(struct jpg_device *p_jpg, uint32 irq_flags)
     return RET_ERR;
 }
 
+int32 jpg_set_autoscale(struct jpg_device *p_jpg, uint32 autoflag)
+{
+    if (p_jpg && ((const struct jpeg_hal_ops *)p_jpg->dev.ops)->ioctl) {
+        return ((const struct jpeg_hal_ops *)p_jpg->dev.ops)->ioctl(p_jpg, JPG_IOCTL_CMD_SET_AUTOSCALE1,autoflag,0);
+    }
+    return RET_ERR;
+}
+

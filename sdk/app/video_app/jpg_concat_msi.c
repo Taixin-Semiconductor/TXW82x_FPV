@@ -271,11 +271,11 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
                     }
                 }
             }
-
-            if (ret == RET_OK)
-            {
-                os_run_work(&jpg_concat_msg->work);
-            }
+        }
+        break;
+        case MSI_CMD_TRANS_FB_END:
+        {
+            os_run_work(&jpg_concat_msg->work);
         }
         break;
         case MSI_CMD_FREE_FB:
@@ -387,7 +387,7 @@ static int32 jpg_concat_msi_work(struct os_work *work)
                     // 申请不到内存,则不发送?正常不应该申请不到空间
                     else
                     {
-                        os_printf("%s:%d malloc jpg_node_s fail\n", __FUNCTION__, __LINE__);
+                        os_printf(KERN_DEBUG"%s:%d malloc jpg_node_s fail\n", __FUNCTION__, __LINE__);
                         msi_delete_fb(jpg_concat_msg->msi, send_fb);
                     }
                 }
@@ -395,7 +395,7 @@ static int32 jpg_concat_msi_work(struct os_work *work)
         }
         else
         {
-            os_printf("%s:%d find jpg msg fail\n", __FUNCTION__, __LINE__);
+            os_printf(KERN_DEBUG"%s:%d find jpg msg fail\n", __FUNCTION__, __LINE__);
         }
 
         // 将数据拷贝,然后发送出去

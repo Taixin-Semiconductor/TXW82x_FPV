@@ -62,8 +62,6 @@ lv_obj_t *main_pocket_camera_ui(lv_obj_t *base_ui,lv_group_t *group)
     return base_ui;
 }
 
-extern void common_takephoto_normal_init(const char *thumb_msi_name);
-extern void common_takephoto_over_dpi_init(uint8_t jpg_num);
 extern struct msi *scale3_normal_msi2(const char *name, uint8_t force_stype, uint16_t ow, uint16_t oh);
 lv_obj_t *main_ui(lv_obj_t *base_ui)
 {
@@ -88,8 +86,6 @@ lv_obj_t *main_ui(lv_obj_t *base_ui)
         case POCKET_CAMERA_UI:
             //支持大分辨拍照或者缩略图
             scale3_normal_msi2(S_PREVIEW_SCALE3, FSTYPE_YUV_P0, 168, 128);
-            common_takephoto_normal_init(R_THUMB);
-            common_takephoto_over_dpi_init(JPGID0);
             main_pocket_camera_ui(ui,group);
         break;
         case LLM_VISION_UI:

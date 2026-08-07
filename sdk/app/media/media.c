@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include "diskio.h"
-#include "integer.h"
 #include "ff.h"
 #include "osal_file.h"
 #include "osal/string.h"

@@ -10,7 +10,6 @@
 #include "rtsp_common.h"
 #include "osal/string.h"
 #include "stream_define.h"
-#include "video_app/video_app.h"
 #include "video_app/video_app_h264_msi.h"
 #include "stream_frame.h"
 #include "log.h"
@@ -37,7 +36,7 @@ static void self_creat(struct rtsp_source *source, void *priv)
     uint8_t          *path = (uint8_t *) priv;
     const char       *match_path = (const char *) priv;
     uint8_t default_value = 0;
-    AUENC_INIT auenc_init;
+    
     os_printf("path:%s\n", path);
 
     while((*match_path) && (*match_path != '?'))
@@ -84,6 +83,7 @@ static void self_creat(struct rtsp_source *source, void *priv)
         else
         {
 #if AUDIO_EN == 1
+            AUENC_INIT auenc_init;
             r->a_msi = rtsp_audio_msi_init(R_RTP_AUDIO);
             auenc_init.destroy_self = 0;
             auenc_init.src_msi = get_auadc_msi(AUSYS_AUAD);

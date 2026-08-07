@@ -14,10 +14,10 @@
 #include "stream_define.h"
 #include "mp4_encode.h"
 
-// 结构体申请空间函数
-#define STREAM_MALLOC os_malloc_psram
-#define STREAM_FREE   os_free_psram
-#define STREAM_ZALLOC os_zalloc_psram
+// data 申请空间函数
+#define STREAM_MALLOC av_psram_malloc
+#define STREAM_FREE   av_psram_free
+#define STREAM_ZALLOC av_psram_zalloc
 
 // 结构体申请空间函数
 #define STREAM_LIBC_MALLOC os_malloc
@@ -27,9 +27,144 @@
 #define MP4_FUNC_MACRO(x) mp4_##x##_write
 #define MP4_S_MACRO(x)    mp4_##x
 
+// mp4 裁剪为实际文件大小
+#define MP4_TRUNCATE_REAL_EN    0
+
+#if FF_USE_FASTSEEK
+#define MP4_FAST_SEEK_CLMT_ITEMS_MIN 64U
+
+static uint32_t *mp4_fast_seek_create(F_FILE *fp)
+{
+    uint32_t *cltbl;
+    uint32_t  table_items = MP4_FAST_SEEK_CLMT_ITEMS_MIN;
+    FRESULT   res;
+
+    if (!fp)
+    {
+        return NULL;
+    }
+
+    while (1)
+    {
+        cltbl = (uint32_t *) STREAM_MALLOC(table_items * sizeof(uint32_t));
+        if (!cltbl)
+        {
+            fp->cltbl = NULL;
+            os_printf(KERN_WARNING "mp4 fast seek alloc failed, items:%d\n", table_items);
+            return NULL;
+        }
+
+        cltbl[0]  = table_items;
+        fp->cltbl = (DWORD *) cltbl;
+        res       = f_lseek(fp, CREATE_LINKMAP);
+        if (res == FR_OK)
+        {
+            os_printf(KERN_INFO "mp4 fast seek enabled, items:%d\n", cltbl[0]);
+            return cltbl;
+        }
+
+        if (res == FR_NOT_ENOUGH_CORE && cltbl[0] > table_items)
+        {
+            table_items = cltbl[0];
+            fp->cltbl   = NULL;
+            STREAM_FREE(cltbl);
+            continue;
+        }
+
+        os_printf(KERN_WARNING "mp4 fast seek disabled, res:%d, items:%d\n", res, cltbl[0]);
+        fp->cltbl = NULL;
+        STREAM_FREE(cltbl);
+        return NULL;
+    }
+}
+
+static void mp4_fast_seek_destroy(F_FILE *fp, uint32_t **cltbl)
+{
+    if (!cltbl || !*cltbl)
+    {
+        return;
+    }
+
+    if (fp)
+    {
+        fp->cltbl = NULL;
+    }
+    STREAM_FREE(*cltbl);
+    *cltbl = NULL;
+}
+#else
+static uint32_t *mp4_fast_seek_create(F_FILE *fp)
+{
+    (void) fp;
+    return NULL;
+}
+
+static void mp4_fast_seek_destroy(F_FILE *fp, uint32_t **cltbl)
+{
+    (void) fp;
+    (void) cltbl;
+}
+#endif
+
+static int mp4_default_ops_write(void *file, const void *buf, uint32_t len);
+static int mp4_default_ops_skip(void *file, uint32_t len);
+static uint32_t mp4_default_ops_tell(void *file);
+static int mp4_default_ops_write_at(void *file, uint32_t offset, const void *buf, uint32_t len);
+static int mp4_default_ops_flush(void *file);
+static int mp4_default_ops_finish(void *file);
+static int mp4_default_ops_tail(void *file, const void *tail, uint32_t tail_len,
+                                uint32_t logical_end, uint32_t reserved_end);
+static void mp4_default_ops_init(F_FILE *fp, file_ops_t *ops);
+static mp4_key_msg *mp4_active_msg;
+
+static uint32_t mp4_set_io_offset(mp4_key_msg *msg, uint32_t offset)
+{
+    if (!msg || !msg->ops_init)
+    {
+        return offset;
+    }
+
+    if (msg->ops.tell && msg->ops.skip)
+    {
+        uint32_t file_offset = msg->ops.tell(msg->ops.file);
+        if (offset > file_offset)
+        {
+            msg->ops.skip(msg->ops.file, offset - file_offset);
+        }
+    }
+    msg->io_offset = offset;
+    if (msg->msg_end < offset)
+    {
+        msg->msg_end = offset;
+    }
+    return offset;
+}
+
 uint32_t mp4_tell(F_FILE *fp)
 {
+    if (mp4_active_msg && mp4_active_msg->ops_init)
+    {
+        return mp4_active_msg->io_offset;
+    }
+
     return osal_ftell(fp);
+}
+
+static uint32_t mp4_written_duration_ms(mp4_key_msg *msg)
+{
+    uint32_t max_duration = 0;
+
+    if (!msg)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < msg->trak_count; i++)
+    {
+        max_duration = max_duration > msg->trak[i].duration ? max_duration : msg->trak[i].duration;
+    }
+
+    return max_duration;
 }
 
 static void pre_mp4_seek(F_FILE *fp, uint32_t offset)
@@ -47,6 +182,23 @@ uint32_t mp4_seek(F_FILE *fp, int32_t offset, int seek_mode)
 {
     uint32_t fp_offset = 0;
     uint32_t filesize  = osal_fsize(fp);
+    if (mp4_active_msg && mp4_active_msg->ops_init)
+    {
+        if (seek_mode == SEEK_SET)
+        {
+            mp4_set_io_offset(mp4_active_msg, offset);
+        }
+        else if (seek_mode == SEEK_CUR)
+        {
+            mp4_set_io_offset(mp4_active_msg, mp4_active_msg->io_offset + offset);
+        }
+        else if (seek_mode == SEEK_END)
+        {
+            mp4_set_io_offset(mp4_active_msg, osal_fsize(fp) + offset);
+        }
+        return offset;
+    }
+
     if (seek_mode == SEEK_SET)
     {
         fp_offset = offset;
@@ -72,8 +224,99 @@ uint32_t mp4_write(void *buf, uint32_t size, uint32_t n, F_FILE *fp)
     // 返回值0是代表异常
     uint32_t ret              = 1;
     uint32_t write_size_total = size * n;
+    if (mp4_active_msg && mp4_active_msg->ops_init)
+    {
+        mp4_key_msg *msg = mp4_active_msg;
+
+        if (!buf && write_size_total)
+        {
+            return 1;
+        }
+
+        if (msg->ops.tell && msg->ops.write && msg->ops.tell(msg->ops.file) == msg->io_offset)
+        {
+            ret = msg->ops.write(msg->ops.file, buf, write_size_total) ? 1 : 0;
+        }
+        else if (msg->ops.write_at)
+        {
+            if (msg->ops.tell && msg->ops.skip)
+            {
+                uint32_t file_offset = msg->ops.tell(msg->ops.file);
+                uint32_t write_end = msg->io_offset + write_size_total;
+                if (write_end > file_offset)
+                {
+                    if (msg->ops.skip(msg->ops.file, write_end - file_offset))
+                    {
+                        return 1;
+                    }
+                }
+            }
+            ret = msg->ops.write_at(msg->ops.file, msg->io_offset, buf, write_size_total) ? 1 : 0;
+        }
+        else
+        {
+            return 1;
+        }
+
+        if (!ret)
+        {
+            msg->io_offset += write_size_total;
+            if (msg->msg_end < msg->io_offset)
+            {
+                msg->msg_end = msg->io_offset;
+            }
+        }
+        return ret;
+    }
+
     ret                       = osal_fwrite(buf, 1, write_size_total, fp);
-    return !ret;
+    return ret != write_size_total;
+}
+
+static uint32_t mp4_mdat_write_data(mp4_key_msg *msg, const void *buf, uint32_t len)
+{
+    if (!msg || !msg->mdat_writer_init || !msg->ops_init || !msg->ops.write)
+    {
+        os_printf("%s %d, msg->mdat_writer_init: %d, msg->ops_init: %d\n", __FUNCTION__, __LINE__, msg ? msg->mdat_writer_init : -1, msg ? msg->ops_init : -1);
+        return 1;
+    }
+
+    if (msg->ops.write(msg->ops.file, buf, len))
+    {
+        os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
+        return 1;
+    }
+
+    msg->io_offset += len;
+    if (msg->msg_end < msg->io_offset)
+    {
+        msg->msg_end = msg->io_offset;
+    }
+
+    return 0;
+}
+
+static void mp4_reset_init_state(mp4_key_msg *msg)
+{
+    if (!msg)
+    {
+        return;
+    }
+
+    mp4_fast_seek_destroy(msg->fp, &msg->fast_seek_tbl);
+
+    msg->init                 = 0;
+    msg->msg_end              = 0;
+    msg->syn_time             = 0;
+    msg->trak_count           = 0;
+    msg->mdat_size            = 0;
+    msg->mdat_size_offset     = 0;
+    msg->mdat_offset          = 0;
+    msg->mdat_nowoffset       = 0;
+    msg->mvhd_duration_offset = 0;
+    msg->mdat_writer_init     = 0;
+    msg->io_offset            = (msg->ops_init && msg->ops.tell) ? msg->ops.tell(msg->ops.file) : 0;
+    memset(msg->trak, 0, sizeof(msg->trak));
 }
 
 F_FILE *mp4_open(const char *filename, char *mode)
@@ -88,14 +331,127 @@ void mp4_close(F_FILE *fp)
 
 void mp4_truncate(F_FILE *fp, uint32_t offset)
 {
+    if (mp4_active_msg && mp4_active_msg->ops_init)
+    {
+        mp4_set_io_offset(mp4_active_msg, mp4_active_msg->io_offset + offset);
+        return;
+    }
     mp4_seek(fp, offset, SEEK_CUR); // 预留的的空间
     // osal_ftruncate(fp);
 }
 
 void mp4_file_syn(F_FILE *fp)
 {
+    if (mp4_active_msg && mp4_active_msg->ops_init && mp4_active_msg->ops.flush)
+    {
+        mp4_active_msg->ops.flush(mp4_active_msg->ops.file);
+        return;
+    }
+
     osal_fsync(fp);
 }
+
+static int mp4_default_ops_write(void *file, const void *buf, uint32_t len)
+{
+    F_FILE *fp = (F_FILE *) file;
+    uint32_t written;
+
+    if (!fp || (!buf && len))
+    {
+        return -1;
+    }
+
+    written = osal_fwrite((void *) buf, 1, len, fp);
+    return written == len ? 0 : -1;
+}
+
+static int mp4_default_ops_skip(void *file, uint32_t len)
+{
+    F_FILE *fp = (F_FILE *) file;
+    uint32_t offset;
+
+    if (!fp)
+    {
+        return -1;
+    }
+
+    offset = osal_ftell(fp) + len;
+    osal_fseek(fp, offset);
+    if (osal_fsize(fp) < offset)
+    {
+        osal_ftruncate(fp);
+    }
+    return 0;
+}
+
+static uint32_t mp4_default_ops_tell(void *file)
+{
+    F_FILE *fp = (F_FILE *) file;
+    return fp ? osal_ftell(fp) : 0;
+}
+
+static int mp4_default_ops_write_at(void *file, uint32_t offset, const void *buf, uint32_t len)
+{
+    F_FILE *fp = (F_FILE *) file;
+    uint32_t restore_offset;
+
+    if (!fp || (!buf && len))
+    {
+        return -1;
+    }
+
+    restore_offset = osal_ftell(fp);
+    osal_fseek(fp, offset);
+    if (mp4_default_ops_write(file, buf, len))
+    {
+        return -1;
+    }
+    osal_fseek(fp, restore_offset);
+    return 0;
+}
+
+static int mp4_default_ops_flush(void *file)
+{
+    F_FILE *fp = (F_FILE *) file;
+
+    if (!fp)
+    {
+        return -1;
+    }
+
+    return osal_fsync(fp) == 0 ? 0 : -1;
+}
+
+static int mp4_default_ops_finish(void *file)
+{
+    return mp4_default_ops_flush(file);
+}
+
+static int mp4_default_ops_tail(void *file, const void *tail, uint32_t tail_len,
+                                uint32_t logical_end, uint32_t reserved_end)
+{
+    (void) file;
+    (void) tail;
+    (void) tail_len;
+    (void) logical_end;
+    (void) reserved_end;
+    return 0;
+}
+
+static void mp4_default_ops_init(F_FILE *fp, file_ops_t *ops)
+{
+    memset(ops, 0, sizeof(*ops));
+    ops->file     = fp;
+    ops->write    = mp4_default_ops_write;
+    ops->skip     = mp4_default_ops_skip;
+    ops->tell     = mp4_default_ops_tell;
+    ops->write_at = mp4_default_ops_write_at;
+    ops->flush    = mp4_default_ops_flush;
+    ops->finish   = mp4_default_ops_finish;
+    ops->tail     = mp4_default_ops_tail;
+}
+
+
 
 #define ATOM(x)                                                                                                                                                                                        \
     {                                                                                                                                                                                                  \
@@ -129,9 +485,6 @@ void mp4_file_syn(F_FILE *fp)
 #define STSZ_COUNT (0x20000)
 #define STCO_COUNT (0x20000)
 #define STSS_COUNT (0x10000)
-#define MDAT_SIZE  (8 * 1024 * 1024)
-// #define MAX_MDAT_SIZE (10*1024*1024)
-
 static const char          language[4] = "und";
 static const unsigned char box_ftyp[]  = {
 #if 1
@@ -154,7 +507,7 @@ static const unsigned char box_ftyp[]  = {
 
 uint32_t        mp4_audio_cfg_init(mp4_key_msg *msg, uint8_t *asps_data, uint8_t len);
 static uint32_t _MP4_init(F_FILE *fp, mp4_key_msg *msg);
-uint32_t        write_h264_nal(F_FILE *fp, mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint32_t duration, int keyflag);
+static uint32_t write_h264_nal(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint32_t duration, int keyflag);
 
 uint32_t write_h264_pps_sps(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size);
 
@@ -214,13 +567,11 @@ static uint8_t *get_sps_pps_nal_size(uint8_t *buf, uint32_t size, uint32_t *nal_
     return ret_buf;
 }
 
-extern uint32_t mp4_syn(mp4_key_msg *msg);
-
 uint32_t mp4_ftyp_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 {
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write((void *) box_ftyp, 1, sizeof(box_ftyp), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -233,17 +584,7 @@ uint32_t mp4_moov_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     moov.size = BIG4_ENDIAN(now_offset - offset);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&moov, 1, sizeof(moov), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
-#if 0
-    tell = mp4_tell(fp);
-    //偏移整个moov,为moov中间全部写入0数据
-    uint32_t offset = size - sizeof(mp4_common_box_s);
-    mp4_seek(fp,offset-1,SEEK_CUR);
-    mp4_write("\0",1,1,fp);
-
-    //还原到原来的位置
-    mp4_seek(fp,tell,SEEK_SET);
-#endif
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -281,7 +622,7 @@ uint32_t mp4_mvhd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     msg->mvhd_duration_offset = mp4_tell(fp) + ((uint32_t) &(mvhd.duration) - (uint32_t) &mvhd);
     mp4_write(&mvhd, 1, sizeof(mvhd), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -293,7 +634,7 @@ uint32_t mp4_trak_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     memcpy(trak.boxname, "trak", 4);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&trak, 1, sizeof(trak), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -339,7 +680,7 @@ uint32_t mp4_tkhd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 
     msg->trak[msg->trak_count - 1].tkhd_duration_offset = mp4_tell(fp) + ((uint32_t) &(tkhd.duration) - (uint32_t) &tkhd);
     mp4_write(&tkhd, 1, sizeof(tkhd), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -351,7 +692,7 @@ uint32_t mp4_mdia_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     memcpy(mdia.boxname, "mdia", 4);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&mdia, 1, sizeof(mdia), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -374,7 +715,7 @@ uint32_t mp4_mdhd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     msg->trak[msg->trak_count - 1].mdhd_duration_offset = mp4_tell(fp) + ((uint32_t) &(mdhd.duration) - (uint32_t) &mdhd);
     mp4_write(&mdhd, 1, sizeof(mdhd), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     // 需要记录当前的offset,后续结束的时候,需要修改这里的时间
     return 0;
 }
@@ -403,7 +744,7 @@ uint32_t mp4_hdlr_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     {
         mp4_write(SOUND_NAME, 1, strlen(SOUND_NAME) + 1, fp);
     }
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -416,7 +757,7 @@ uint32_t mp4_minf_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     memcpy(minf.boxname, "minf", 4);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&minf, 1, sizeof(minf), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -429,7 +770,7 @@ uint32_t mp4_vmhd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     vmhd.flags = BIG3_ENDIAN(1);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&vmhd, 1, sizeof(vmhd), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -442,7 +783,7 @@ uint32_t mp4_dinf_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     memcpy(dinf.boxname, "dinf", 4);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&dinf, 1, sizeof(dinf), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -456,7 +797,7 @@ uint32_t mp4_dref_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     dref.entry_count = BIG4_ENDIAN(1);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&dref, 1, sizeof(dref), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -469,7 +810,7 @@ uint32_t mp4_url_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     url.flags = BIG3_ENDIAN(1);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&url, 1, sizeof(url), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -482,7 +823,7 @@ uint32_t mp4_stbl_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     memcpy(stbl.boxname, "stbl", 4);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&stbl, 1, sizeof(stbl), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -496,7 +837,7 @@ uint32_t mp4_stsd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     stsd.entry_count = BIG4_ENDIAN(1);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&stsd, 1, sizeof(stsd), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -521,7 +862,7 @@ uint32_t mp4_avc1_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&avc1, 1, sizeof(avc1), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -558,7 +899,7 @@ uint32_t mp4_avcC_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&avcc, 1, sizeof(avcc), fp);
     mp4_write(sps_pps, 1, len, fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     if (sps_pps)
     {
         STREAM_LIBC_FREE(sps_pps);
@@ -581,7 +922,7 @@ uint32_t mp4_colr_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     colr.matrix_coefficients      = BIG2_ENDIAN(1);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&colr, 1, sizeof(colr), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -595,10 +936,10 @@ uint32_t mp4_stts_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     msg->trak[msg->trak_count - 1].stts_write_offset = msg->trak[msg->trak_count - 1].stts_offset = mp4_tell(fp) + ((uint32_t) &(stts.end) - (uint32_t) &stts);
     mp4_write(&stts, 1, (uint32_t) &stts.end - (uint32_t) &stts, fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     // fseek预留足够空间,这里尽量往512对齐或者4K对齐
     mp4_truncate(fp, STTS_COUNT * sizeof(stts.end));
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -618,15 +959,8 @@ uint32_t mp4_stsc_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     entries.first_chunk = BIG4_ENDIAN(1);
     entries.per_chunk   = BIG4_ENDIAN(1);
     entries.index       = BIG4_ENDIAN(1);
-#if 0
-    //fseek预留足够空间
-    mp4_seek(fp,STSC_COUNT*sizeof(stsc.end)-1,SEEK_CUR);
-    
-    mp4_write(&zero_data,1,1,fp);
-#else
     mp4_write(&entries, 1, sizeof(entries), fp);
-#endif
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -641,10 +975,10 @@ uint32_t mp4_stsz_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     msg->trak[msg->trak_count - 1].stsz_write_offset = msg->trak[msg->trak_count - 1].stsz_offset = mp4_tell(fp) + ((uint32_t) &(stsz.end) - (uint32_t) &stsz);
     mp4_write(&stsz, 1, (uint32_t) &stsz.end - (uint32_t) &stsz, fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
 
     mp4_truncate(fp, STSZ_COUNT * sizeof(stsz.end));
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -658,11 +992,11 @@ uint32_t mp4_stco_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     msg->trak[msg->trak_count - 1].stco_write_offset = msg->trak[msg->trak_count - 1].stco_offset = mp4_tell(fp) + ((uint32_t) &(stco.end) - (uint32_t) &stco);
     mp4_write(&stco, 1, (uint32_t) &stco.end - (uint32_t) &stco, fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
 
     // fseek预留足够空间
     mp4_truncate(fp, STCO_COUNT * sizeof(stco.end));
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -676,10 +1010,10 @@ uint32_t mp4_stss_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4_seek(fp, offset, SEEK_SET);
     msg->trak[msg->trak_count - 1].stss_write_offset = msg->trak[msg->trak_count - 1].stss_offset = mp4_tell(fp) + ((uint32_t) &(stss.end) - (uint32_t) &stss);
     mp4_write(&stss, 1, (uint32_t) &stss.end - (uint32_t) &stss, fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     // fseek预留足够空间
     mp4_truncate(fp, STSS_COUNT * sizeof(stss.end));
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -693,7 +1027,7 @@ uint32_t mp4_smhd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     smhd.reserved = BIG2_ENDIAN(0);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&smhd, 1, sizeof(smhd), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -710,7 +1044,7 @@ uint32_t mp4_mp4a_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mp4a.time_scale         = BIG2_ENDIAN(90000 & 0xffff);
     mp4_seek(fp, offset, SEEK_SET);
     mp4_write(&mp4a, 1, sizeof(mp4a), fp);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -787,7 +1121,7 @@ uint32_t mp4_esds_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
         mp4_seek(fp, offset, SEEK_SET);
         mp4_write(&esds, 1, sizeof(esds), fp);
     }
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
 
     return 0;
 }
@@ -795,21 +1129,45 @@ uint32_t mp4_esds_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 uint32_t mp4_mdat_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 {
     mp4_mdat mdat;
-    uint32_t max_mdata_size = msg->file_max_size ? msg->file_max_size : MDAT_SIZE;
-    // mdat.size = BIG4_ENDIAN(MDAT_SIZE + sizeof(mdat));
+    uint32_t max_mdata_size = msg->file_max_size;
+    uint32_t mdat_data_offset;
     memcpy(mdat.boxname, "mdat", 4);
     mp4_seek(fp, offset, SEEK_SET);
-    msg->msg_end     = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    msg->msg_end     = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     msg->mdat_offset = mp4_tell(fp);
+    mdat_data_offset = muxer_file_align_up(msg->mdat_offset + sizeof(mdat));
+    if (max_mdata_size && max_mdata_size <= mdat_data_offset)
+    {
+        return 1;
+    }
 
-    mdat.size = BIG4_ENDIAN(max_mdata_size - msg->mdat_offset);
+    mdat.size = BIG4_ENDIAN(max_mdata_size ? (max_mdata_size - msg->mdat_offset) : sizeof(mdat));
     // 记录mdat_size
-    mp4_write(&mdat, 1, sizeof(mdat), fp);
-    // 512对齐
-    msg->mdat_nowoffset = (mp4_tell(fp) + 0x1ff) & (~0x1ff);
-    msg->mdat_size      = max_mdata_size - msg->mdat_offset;
-    mp4_truncate(fp, msg->mdat_size - 8);
-    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    if (mp4_write(&mdat, 1, sizeof(mdat), fp))
+    {
+        return 1;
+    }
+    msg->mdat_nowoffset = mdat_data_offset;
+    msg->mdat_size      = max_mdata_size ? (max_mdata_size - msg->mdat_offset) : sizeof(mdat);
+    if (!msg->ops_init || !msg->ops.skip || msg->ops.skip(msg->ops.file, mdat_data_offset - msg->io_offset))
+    {
+        return 1;
+    }
+    msg->io_offset = mdat_data_offset;
+    if (msg->msg_end < msg->io_offset)
+    {
+        msg->msg_end = msg->io_offset;
+    }
+    msg->mdat_writer_init = 1;
+    if (max_mdata_size)
+    {
+        msg->io_offset = mdat_data_offset;
+    }
+    else
+    {
+        mp4_seek(fp, mdat_data_offset, SEEK_SET);
+    }
+    msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     return 0;
 }
 
@@ -825,21 +1183,33 @@ uint32_t mp4_free_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     {
         _free.size = BIG4_ENDIAN(align_size);
         mp4_write(&_free, 1, sizeof(_free), fp);
-        msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+        msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
         mp4_truncate(fp, align_size - sizeof(_free));
-        msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+        msg->msg_end = msg->msg_end > mp4_tell(fp) ? msg->msg_end : mp4_tell(fp);
     }
     return 0;
 }
 
-uint32_t mp4_syn(mp4_key_msg *msg)
+uint32_t mp4_sync(mp4_key_msg *msg)
 {
-    F_FILE       *fp           = msg->fp;
+    F_FILE       *fp;
+    mp4_key_msg  *old_active;
     uint32_t      ret          = 0;
     uint32_t      max_duration = 0;
-    uint32_t      nowoffset    = mp4_tell(fp);
+    uint32_t      sync_duration;
+    uint32_t      nowoffset;
     // 先尝试同步视频
     trak_key_msg *vtrak;
+
+    if (!msg || !msg->fp || !msg->init)
+    {
+        return 0;
+    }
+
+    fp        = msg->fp;
+    old_active = mp4_active_msg;
+    mp4_active_msg = msg;
+    nowoffset = mp4_tell(fp);
     for (int i = 0; i < msg->trak_count; i++)
     {
         vtrak = &msg->trak[i];
@@ -874,7 +1244,6 @@ uint32_t mp4_syn(mp4_key_msg *msg)
         }
         if (vtrak->stsc_need_write_len)
         {
-
             if (vtrak->stsc_count >= STSC_COUNT)
             {
                 ret++;
@@ -892,7 +1261,6 @@ uint32_t mp4_syn(mp4_key_msg *msg)
 
         if (vtrak->stsz_need_write_len)
         {
-
             if (vtrak->stsz_count >= STSZ_COUNT)
             {
                 ret++;
@@ -927,7 +1295,6 @@ uint32_t mp4_syn(mp4_key_msg *msg)
 
         if (vtrak->stss_need_write_len)
         {
-
             if (vtrak->stss_count >= STSS_COUNT)
             {
                 ret++;
@@ -955,6 +1322,7 @@ uint32_t mp4_syn(mp4_key_msg *msg)
     }
 
     os_printf(KERN_INFO "max_duration:%d\n", max_duration);
+    sync_duration = max_duration;
     mp4_seek(fp, msg->mvhd_duration_offset, SEEK_SET);
     max_duration = BIG4_ENDIAN(max_duration);
     ret |= mp4_write(&max_duration, 1, sizeof(max_duration), fp);
@@ -962,7 +1330,6 @@ uint32_t mp4_syn(mp4_key_msg *msg)
     // 检查一下文件长度是否要更新
     if (msg->mdat_nowoffset - msg->mdat_offset > msg->mdat_size)
     {
-
         msg->mdat_size     = msg->mdat_nowoffset - msg->mdat_offset;
         uint32_t mdat_size = BIG4_ENDIAN(msg->mdat_size);
         mp4_seek(fp, msg->mdat_offset, SEEK_SET);
@@ -970,19 +1337,47 @@ uint32_t mp4_syn(mp4_key_msg *msg)
     }
 
     mp4_file_syn(fp);
+    if (!ret)
+    {
+        msg->syn_time = sync_duration;
+    }
     mp4_seek(fp, nowoffset, SEEK_SET);
+    mp4_active_msg = old_active;
     return ret;
 }
 
-uint32_t update_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, uint32_t duration, int keyflag)
+uint32_t mp4_sync_time(mp4_key_msg *msg, uint32_t time_ms)
 {
-    // 更新stts
-    uint32_t      ret   = 0;
-    uint8_t       flag  = 0;
-    trak_key_msg *vtrak = &msg->trak[0];
+    uint32_t written_duration;
 
+    if (!msg || !msg->fp)
+    {
+        return 0;
+    }
+
+    if (time_ms == 0)
+    {
+        return mp4_sync(msg);
+    }
+
+    written_duration = mp4_written_duration_ms(msg);
+    if (written_duration < msg->syn_time ||
+        written_duration - msg->syn_time >= time_ms)
+    {
+        return mp4_sync(msg);
+    }
+
+    return 0;
+}
+
+static uint8_t mp4_update_sample_tables(trak_key_msg *vtrak, uint32_t sample_size, uint32_t sample_offset, uint32_t duration)
+{
+    uint8_t  flag   = 0;
+    uint32_t delta  = duration * 90;
+
+    vtrak->count++;
     vtrak->duration += duration;
-    uint32_t delta = duration * 90;
+
     if (vtrak->last_entries.delta != 0 && vtrak->last_entries.delta != delta)
     {
         stts_entries *entries = (stts_entries *) (vtrak->stts_tmp_buf + vtrak->stts_need_write_len);
@@ -995,50 +1390,46 @@ uint32_t update_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, uint32_
     }
     vtrak->last_entries.delta = delta;
     vtrak->last_entries.sample_count++;
-    // 如果大于512,则写入到sd卡
-    // 如果索引超过某个长度,就要开始停止录像,预留索引不足
     if (vtrak->stts_need_write_len >= 512 || vtrak->stts_count >= STTS_COUNT)
     {
-        // mp4_syn(msg);
         flag = 1;
     }
 
-    // 更新stsc,正常不需要更新,应该默认写好
-
-    // 更新stsz
     uint32_t *stsz_sample_size = (uint32_t *) (vtrak->stsz_tmp_buf + vtrak->stsz_need_write_len);
-
-    *stsz_sample_size = BIG4_ENDIAN(size);
-
+    *stsz_sample_size          = BIG4_ENDIAN(sample_size);
     vtrak->stsz_need_write_len += sizeof(*stsz_sample_size);
     vtrak->stsz_count++;
-    // 如果大于512,则写入到sd卡
     if (vtrak->stsz_need_write_len >= 512 || vtrak->stsz_count >= STSZ_COUNT)
     {
-
-        // mp4_syn(msg);
         flag = 1;
     }
 
-    // 更新stco
     uint32_t *stco_offset = (uint32_t *) (vtrak->stco_tmp_buf + vtrak->stco_need_write_len);
-    *stco_offset          = BIG4_ENDIAN(msg->mdat_nowoffset);
+    *stco_offset          = BIG4_ENDIAN(sample_offset);
     vtrak->stco_need_write_len += sizeof(*stco_offset);
-    msg->mdat_nowoffset += size;
-    // 对齐操作
-    msg->mdat_nowoffset = (msg->mdat_nowoffset + 0x1ff) & (~0x1ff);
     vtrak->stco_count++;
-    // 如果大于512,则写入到sd卡
     if (vtrak->stco_need_write_len >= 512 || vtrak->stco_count >= STCO_COUNT)
     {
-        // mp4_syn(msg);
         flag = 1;
     }
+
+    return flag;
+}
+
+static uint32_t mp4_update_video_sample(mp4_key_msg *msg, uint32_t size, uint32_t duration, int keyflag)
+{
+    // 更新stts
+    uint32_t      ret   = 0;
+    uint8_t       flag  = 0;
+    trak_key_msg *vtrak = &msg->trak[0];
+
+    flag = mp4_update_sample_tables(vtrak, size, msg->mdat_nowoffset, duration);
+    msg->mdat_nowoffset += size;
 
     // 如果是关键帧则更新stss
     if (keyflag)
     {
-        // 更新stco
+        // 更新stss
         uint32_t *stss_count = (uint32_t *) (vtrak->stss_tmp_buf + vtrak->stss_need_write_len);
         *stss_count          = BIG4_ENDIAN(vtrak->count);
         vtrak->stss_need_write_len += sizeof(*stss_count);
@@ -1046,114 +1437,51 @@ uint32_t update_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, uint32_
         // 如果大于512,则写入到sd卡
         if (vtrak->stss_need_write_len >= 512 || vtrak->stss_count >= STSS_COUNT)
         {
-            // mp4_syn(msg);
             flag = 1;
         }
     }
 
     if (flag)
     {
-        ret |= mp4_syn(msg);
+        ret |= mp4_sync(msg);
     }
     return ret;
 }
 
-uint32_t update_audio_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, uint32_t duration)
+static uint32_t mp4_update_audio_sample(mp4_key_msg *msg, uint32_t size, uint32_t duration)
 {
     uint32_t      ret   = 0;
     uint8_t       flag  = 0;
-    // 更新stts
     trak_key_msg *vtrak = &msg->trak[1];
-    vtrak->duration += duration;
-    uint32_t delta = duration * 90;
-    if (vtrak->last_entries.delta != 0 && vtrak->last_entries.delta != delta)
-    {
-        stts_entries *entries = (stts_entries *) (vtrak->stts_tmp_buf + vtrak->stts_need_write_len);
-        entries->sample_count = BIG4_ENDIAN(vtrak->last_entries.sample_count);
-        entries->delta        = BIG4_ENDIAN(vtrak->last_entries.delta);
-
-        vtrak->stts_need_write_len += sizeof(vtrak->last_entries);
-        vtrak->last_entries.sample_count = 0;
-        vtrak->stts_count++;
-    }
-    vtrak->last_entries.delta = delta;
-    vtrak->last_entries.sample_count++;
-    // 如果大于512,则写入到sd卡
-    // 如果索引超过某个长度,就要开始停止录像,预留索引不足
-    if (vtrak->stts_need_write_len >= 512 || vtrak->stts_count >= STTS_COUNT)
-    {
-        flag = 1;
-    }
-
-    // 更新stsc,正常不需要更新,应该默认写好
-
-    // 更新stsz
-    uint32_t *stsz_sample_size = (uint32_t *) (vtrak->stsz_tmp_buf + vtrak->stsz_need_write_len);
-    *stsz_sample_size          = BIG4_ENDIAN(size);
-    vtrak->stsz_need_write_len += sizeof(*stsz_sample_size);
-    vtrak->stsz_count++;
-    // 如果大于512,则写入到sd卡
-    if (vtrak->stsz_need_write_len >= 512 || vtrak->stsz_count >= STSZ_COUNT)
-    {
-        flag = 1;
-    }
-
-    // 更新stco
-    uint32_t *stco_offset = (uint32_t *) (vtrak->stco_tmp_buf + vtrak->stco_need_write_len);
-    *stco_offset          = BIG4_ENDIAN(msg->mdat_nowoffset);
-    vtrak->stco_need_write_len += sizeof(*stco_offset);
+    flag = mp4_update_sample_tables(vtrak, size, msg->mdat_nowoffset, duration);
     msg->mdat_nowoffset += (size);
-    // 对齐操作
-    msg->mdat_nowoffset = (msg->mdat_nowoffset + 0x1ff) & (~0x1ff);
-    vtrak->stco_count++;
-    // 如果大于512,则写入到sd卡
-    if (vtrak->stco_need_write_len >= 512 || vtrak->stco_count >= STCO_COUNT)
-    {
-        flag = 1;
-    }
 
     if (flag)
     {
-        ret |= mp4_syn(msg);
+        ret |= mp4_sync(msg);
     }
     return ret;
 }
 
-uint32_t write_h264_nal(F_FILE *fp, mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint32_t duration, int keyflag)
+static uint32_t write_h264_nal(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint32_t duration, int keyflag)
 {
     uint32_t ret = 0;
-    // os_printf("%s size:%d\n",__FUNCTION__,size);
-    // 已经超过对应用量
-    if (msg->file_max_size > 0 && (msg->mdat_nowoffset - msg->mdat_offset + size > msg->mdat_size))
+    uint32_t sample_size = size + 4;
+
+    if (msg->file_max_size > 0 && (msg->mdat_nowoffset - msg->mdat_offset + sample_size > msg->mdat_size))
     {
         ret |= (MP4_FULL_ERR << 16);
         goto write_h264_nal_end;
     }
-    trak_key_msg *vtrak = &msg->trak[0];
-    vtrak->count++;
-    //+4是数据长度的4byte
-
-    mp4_seek(fp, msg->mdat_nowoffset, SEEK_SET);
     uint32_t big_size = BIG4_ENDIAN(size);
-    uint32_t buf_size = size;
-    // 直接拷贝数据直接写入
-    if (buf_size <= 512 - 4)
+    ret |= mp4_mdat_write_data(msg, &big_size, sizeof(big_size));
+    ret |= mp4_mdat_write_data(msg, nal_buf, size);
+    if (ret)
     {
-        hw_memcpy(msg->cache + 4, nal_buf, buf_size - 4);
-        memcpy(msg->cache, &big_size, 4);
-        ret |= mp4_write(msg->cache, 1, 512, fp);
+        ret |= (MP4_WRITE_ERR << 16);
+        goto write_h264_nal_end;
     }
-    // 分段写入
-    else
-    {
-        hw_memcpy(msg->cache + 4, nal_buf, 512 - 4);
-        memcpy(msg->cache, &big_size, 4);
-        ret |= mp4_write(msg->cache, 1, 512, fp);
-
-        buf_size -= (512 - 4);
-        ret |= mp4_write(nal_buf + 512 - 4, 1, ((buf_size + 0x1ff) & (~0x1ff)), fp);
-    }
-    ret |= update_stbl_subbox(fp, msg, size + 4, duration, keyflag);
+    ret |= mp4_update_video_sample(msg, sample_size, duration, keyflag);
     if (ret)
     {
         ret |= (MP4_WRITE_ERR << 16);
@@ -1177,16 +1505,14 @@ uint32_t write_aac_data(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t size, uint3
             ret |= (MP4_FULL_ERR << 16);
             goto write_aac_data_end;
         }
-        F_FILE       *fp    = msg->fp;
-        trak_key_msg *vtrak = &msg->trak[1];
-        vtrak->count++;
-        //+4是数据长度的4byte
-        // update_stbl_subbox(fp,msg,size+4,duration,keyflag);
-        mp4_seek(fp, msg->mdat_nowoffset, SEEK_SET);
-        ret |= mp4_write(aac_buf, 1, (size + 0x1ff) & (~0x1ff), fp);
+        ret |= mp4_mdat_write_data(msg, aac_buf, size);
+        if (ret)
+        {
+            ret |= (MP4_WRITE_ERR << 16);
+            goto write_aac_data_end;
+        }
         // 更新box
-        ret |= update_audio_stbl_subbox(fp, msg, size, duration);
-        // msg->mdat_nowoffset += (size);
+        ret |= mp4_update_audio_sample(msg, size, duration);
         if (ret)
         {
             ret |= (MP4_WRITE_ERR << 16);
@@ -1195,8 +1521,6 @@ uint32_t write_aac_data(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t size, uint3
 
 write_aac_data_end:
     return ret;
-
-    // 添加对应的stts stsc  stsz stco stss
 }
 
 // 写入sps和pps,写完后,就可以将index预分配好
@@ -1206,6 +1530,68 @@ write_aac_data_end:
  * nal_head_size: 就是nal头部的长度 00 00 00 01就是4,00 00 01就是3
  * nal_size: nal的长度,包含nal_head_size
  *******************************************************************/
+uint32_t write_aac_data_batch(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t total_size,
+                              uint32_t *sizes, uint32_t *durations, uint32_t frame_count)
+{
+    uint32_t ret               = 0;
+    uint32_t base_offset       = 0;
+    uint32_t cumulative_offset = 0;
+    uint8_t  flag              = 0;
+
+    if (frame_count == 0)
+    {
+        goto write_aac_data_batch_end;
+    }
+
+    if (msg->trak_count < 2 || !msg->audio_enable)
+    {
+        ret |= (MP4_AUDIO_ERR << 16);
+        goto write_aac_data_batch_end;
+    }
+
+    if (msg->file_max_size > 0 && (msg->mdat_nowoffset - msg->mdat_offset + total_size > msg->mdat_size))
+    {
+        ret |= (MP4_FULL_ERR << 16);
+        goto write_aac_data_batch_end;
+    }
+
+    trak_key_msg *vtrak = &msg->trak[1];
+
+    if (vtrak->stts_need_write_len + frame_count * sizeof(stts_entries) > sizeof(vtrak->stts_tmp_buf) ||
+        vtrak->stsz_need_write_len + frame_count * sizeof(uint32_t) > sizeof(vtrak->stsz_tmp_buf) ||
+        vtrak->stco_need_write_len + frame_count * sizeof(uint32_t) > sizeof(vtrak->stco_tmp_buf))
+    {
+        ret |= mp4_sync(msg);
+        if (ret)
+        {
+            goto write_aac_data_batch_end;
+        }
+    }
+
+    ret |= mp4_mdat_write_data(msg, aac_buf, total_size);
+    if (ret)
+    {
+        ret |= (MP4_WRITE_ERR << 16);
+        goto write_aac_data_batch_end;
+    }
+
+    base_offset = msg->mdat_nowoffset;
+    for (uint32_t i = 0; i < frame_count; i++)
+    {
+        flag |= mp4_update_sample_tables(vtrak, sizes[i], base_offset + cumulative_offset, durations[i]);
+        cumulative_offset += sizes[i];
+    }
+
+    msg->mdat_nowoffset += total_size;
+    if (flag)
+    {
+        ret |= mp4_sync(msg);
+    }
+
+write_aac_data_batch_end:
+    return ret;
+}
+
 uint32_t write_h264_pps_sps(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size)
 {
     F_FILE  *fp            = msg->fp;
@@ -1247,13 +1633,25 @@ uint32_t write_h264_pps_sps(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size)
         // 符合要求
         if (pps_buf && sps_buf)
         {
-            msg->init     = 1;
             // 初始化index
             msg->pps_data = pps_buf;
             msg->sps_data = sps_buf;
             msg->pps_len  = pps_len;
             msg->sps_len  = sps_len;
             ret           = _MP4_init(fp, msg);
+            if (!ret)
+            {
+                msg->init     = 1;
+                msg->syn_time = mp4_written_duration_ms(msg);
+            }
+            else
+            {
+                mp4_reset_init_state(msg);
+                if (msg->ops_init && msg->ops.tell)
+                {
+                    msg->io_offset = msg->ops.tell(msg->ops.file);
+                }
+            }
         }
         uint32_t head_end_time = os_jiffies();
         os_printf(KERN_INFO "pps sps spend time:%d\ttell:%X\n", head_end_time - head_start_time, osal_ftell(fp));
@@ -1269,12 +1667,11 @@ uint32_t write_h264_pps_sps(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size)
 // 默认给的数据就是h264的数据,不再进行搜索
 uint32_t write_h264_data(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint32_t duration)
 {
-    F_FILE  *fp         = msg->fp;
     uint32_t ret        = MP4_OK;
     uint32_t start_time = os_jiffies();
     if (nal_buf[4] == 0x61)
     {
-        ret |= write_h264_nal(fp, msg, (uint8_t *) &nal_buf[4], size - 4, duration, 0);
+        ret |= write_h264_nal(msg, (uint8_t *) &nal_buf[4], size - 4, duration, 0);
         if (ret)
         {
             ret |= (MP4_P_ERR << 16);
@@ -1282,7 +1679,7 @@ uint32_t write_h264_data(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint
     }
     else if (nal_buf[4] == 0x65)
     {
-        ret |= write_h264_nal(fp, msg, (uint8_t *) &nal_buf[4], size - 4, duration, 1);
+        ret |= write_h264_nal(msg, (uint8_t *) &nal_buf[4], size - 4, duration, 1);
         if (ret)
         {
             ret |= (MP4_I_ERR << 16);
@@ -1302,10 +1699,44 @@ uint32_t write_h264_data(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint
 
 uint32_t mp4_deinit(mp4_key_msg *msg)
 {
-    mp4_syn(msg);
-    mp4_seek(msg->fp, 0, SEEK_END);
+    uint32_t ret = 0;
+    mp4_key_msg *old_active;
+
+    if (!msg)
+    {
+        return 0;
+    }
+
+    old_active = mp4_active_msg;
+    mp4_active_msg = msg;
+
+    if (msg->init)
+    {
+        if (msg->mdat_writer_init)
+        {
+            msg->mdat_nowoffset = msg->io_offset;
+            ret |= msg->ops.finish ? msg->ops.finish(msg->ops.file) : 1;
+        }
+        ret |= mp4_sync(msg);
+    }
+
+    if (msg->init && (!msg->file_max_size || MP4_TRUNCATE_REAL_EN))
+    {
+        msg->mdat_size = msg->mdat_nowoffset - msg->mdat_offset;
+        uint32_t mdat_size = BIG4_ENDIAN(msg->mdat_size);
+        mp4_seek(msg->fp, msg->mdat_offset, SEEK_SET);
+        mp4_write(&mdat_size, 1, sizeof(mdat_size), msg->fp);
+        mp4_file_syn(msg->fp);
+#if MP4_TRUNCATE_REAL_EN
+        mp4_seek(msg->fp, msg->mdat_nowoffset, SEEK_SET);
+        osal_ftruncate(msg->fp);                    // 裁掉后面没用空间
+#endif
+    }
+
+    mp4_fast_seek_destroy(msg->fp, &msg->fast_seek_tbl);
+    mp4_active_msg = old_active;
     STREAM_FREE(msg);
-    return 0;
+    return ret;
 }
 
 uint32_t mp4_audio_cfg_init(mp4_key_msg *msg, uint8_t *asps_data, uint8_t len)
@@ -1317,7 +1748,12 @@ uint32_t mp4_audio_cfg_init(mp4_key_msg *msg, uint8_t *asps_data, uint8_t len)
 
 uint32_t mp4_set_max_size(mp4_key_msg *msg, uint32_t max_size)
 {
-    msg->file_max_size = max_size;
+    if (!msg)
+    {
+        return 1;
+    }
+
+    msg->file_max_size = max_size ? muxer_file_align_up(max_size) : 0;
     return 0;
 }
 
@@ -1333,7 +1769,22 @@ uint32_t mp4_video_cfg_init(mp4_key_msg *msg, uint16_t w, uint16_t h)
 
 // mp4初始化,没什么用,应该是预分配一下内存空间
 // 因为其他数据实际的index需要获取到第一帧I帧才能知道分辨率,pps和sps
-void *MP4_open_init(F_FILE *fp, uint8_t audio_en)
+uint32_t mp4_set_file(mp4_key_msg *msg, const file_ops_t *ops)
+{
+    if (!msg || !ops)
+    {
+        return 1;
+    }
+
+    os_memcpy(&msg->ops, ops, sizeof(msg->ops));
+    msg->ops_init = (msg->ops.file && msg->ops.write && msg->ops.skip &&
+                     msg->ops.tell && msg->ops.write_at && msg->ops.flush &&
+                     msg->ops.finish) ? 1 : 0;
+    msg->io_offset = msg->ops_init && msg->ops.tell ? msg->ops.tell(msg->ops.file) : 0;
+    return msg->ops_init ? 0 : 1;
+}
+
+void *MP4_open_init_with_file(F_FILE *fp, const file_ops_t *ops, uint8_t audio_en)
 {
     mp4_key_msg *msg = STREAM_MALLOC(sizeof(mp4_key_msg));
     if (msg)
@@ -1341,16 +1792,47 @@ void *MP4_open_init(F_FILE *fp, uint8_t audio_en)
         memset(msg, 0, sizeof(mp4_key_msg));
         msg->fp           = fp;
         msg->audio_enable = audio_en;
+        if (ops)
+        {
+            if (mp4_set_file(msg, ops))
+            {
+                STREAM_FREE(msg);
+                return NULL;
+            }
+        }
+        else
+        {
+            file_ops_t default_ops;
+            mp4_default_ops_init(fp, &default_ops);
+            if (mp4_set_file(msg, &default_ops))
+            {
+                STREAM_FREE(msg);
+                return NULL;
+            }
+        }
     }
     return (void *) msg;
+}
+
+void *MP4_open_init(F_FILE *fp, uint8_t audio_en)
+{
+    return MP4_open_init_with_file(fp, NULL, audio_en);
 }
 
 // clang-format off
 static uint32_t _MP4_init(F_FILE *fp,mp4_key_msg *msg)
 {
+    mp4_key_msg *old_active = mp4_active_msg;
+    mp4_reset_init_state(msg);
+    if (msg->ops_init && msg->ops.tell)
+    {
+        msg->io_offset = msg->ops.tell(msg->ops.file);
+    }
+    mp4_active_msg = msg;
     if(msg->file_max_size)
     {
         pre_mp4_seek(fp, msg->file_max_size);
+        msg->fast_seek_tbl = mp4_fast_seek_create(fp);
     }
     mp4_seek(fp,0,SEEK_SET);
     mp4_func_stack offset_stack[20];
@@ -1457,6 +1939,7 @@ static uint32_t _MP4_init(F_FILE *fp,mp4_key_msg *msg)
     END_ATOM
     ATOM(mdat)
     END_ATOM
-    return 0;
+    mp4_active_msg = old_active;
+    return msg->mdat_writer_init ? 0 : 1;
 }
 // clang-format on
