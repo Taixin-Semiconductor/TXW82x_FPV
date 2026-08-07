@@ -9,9 +9,12 @@ enum UI_MODE
     BBM_UI,
     CHILDREN_UI,
     POCKET_CAMERA_UI,   //拇指相机ui的demo
+    LLM_VISION_UI,
 };
 
+#ifndef DEFINE_UI
 #define DEFINE_UI    POCKET_CAMERA_UI
+#endif
 
 lv_indev_t * indev_keypad;
 extern lv_style_t g_style;
@@ -45,7 +48,6 @@ lv_obj_t *main_Mini_DV_ui(lv_obj_t *base_ui,lv_group_t *group)
     // btn = player2_ui(group,base_ui);
     return base_ui;
 }
-
 
 lv_obj_t *main_pocket_camera_ui(lv_obj_t *base_ui,lv_group_t *group)
 {
@@ -88,6 +90,9 @@ lv_obj_t *main_ui(lv_obj_t *base_ui)
             common_takephoto_normal_init(R_THUMB);
             common_takephoto_over_dpi_init(JPGID0);
             main_pocket_camera_ui(ui,group);
+        break;
+        case LLM_VISION_UI:
+            main_LLM_vision_ui(ui,group);
         break;
     }
     return ui;

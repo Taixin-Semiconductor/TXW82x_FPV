@@ -540,14 +540,14 @@ static _Sensor_Adpt_ * sensorAutoCheck(uint8_t devid,uint8 *init_buf)
 * Output         : None
 * Return         : u32i2cReadResult:the result from sensor register
 *******************************************************************************/
-#if DOUBLE_LANE == 0
+
 static _Sensor_Adpt_ * sensor2AutoCheck(uint8_t devid,uint8 *init_buf)
 {
 	uint8 i = 0;
 	_Sensor_Adpt_ * devSensor_Struct=NULL;
 	//for(i=0;devSensorInitTable[i] != NULL;i++)
 	{		
-		#if DEV_SENSOR_GC1084 == 1
+		#if 0
 		//mipi2_sensor_reset();
 		if(sensor2CheckId(devid,&gc1084_init2,&gc1084_cmd2)>=0)
 		{
@@ -570,7 +570,6 @@ static _Sensor_Adpt_ * sensor2AutoCheck(uint8_t devid,uint8 *init_buf)
 	}
 	return devSensor_Struct;
 }
-#endif
 
 void mipi_csi_fovie_isr(uint32 irq,uint32 dev,uint32 param){
 	//dvp_vpp_reset();
@@ -702,10 +701,10 @@ uint32_t io_mipi_csi0_remap_cfg(uint8_t lane_num){
 struct mipi_csi_priv {
 	uint8_t mipi_csi0_en 			: 1,
 			mipi_csi1_en 			: 1,
-			mipi_csi_init   		: 1,
-			mipi_csi0_data_lane_num : 2,
-			mipi_csi1_data_lane_num : 2,
-			reserve					: 1;
+			mipi_csi0_init   		: 1,
+			mipi_csi1_init   		: 1,
+			mipi_mclk_init          : 1,	
+			mipi_csi0_data_lane_num : 2;
 };
 static struct mipi_csi_priv g_mipi_csi_priv = {0};
 
@@ -903,11 +902,12 @@ int mipi_csi_sensor_init(_Sensor_Adpt_ *p_sensor_cmd, uint8_t mipi_csi_iic)
  * 如果是用pwm去设置mclk,设置值如果不能
  * 整数分频,只会设置更小的值
 ****************************************/
-int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_data_lane_num, uint8_t dual_en, uint8_t dual_sensor_type,uint8_t mclk, struct mipi_csi_debug *p_debug) 
+int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_use, uint8_t dual_en, uint8_t dual_sensor_type,uint8_t mclk, struct mipi_csi_debug *p_debug) 
 {
 	
 	uint32_t cfg = 0;
 	_Sensor_Adpt_ *p_sensor_cmd = NULL;
+	uint8_t csi_data_lane_num = 0;
 	//struct i2c_setting i2c_setting;
 	struct i2c_device *iic_dev = (struct i2c_device *)dev_get(HG_I2C1_DEVID);
 	struct mipi_csi_device *mipi_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI_CSI_DEVID);
@@ -924,41 +924,34 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_d
 		return 0;
 	}
 
-	if(!g_mipi_csi_priv.mipi_csi_init) {
-		os_printf("%s %d\n",__FUNCTION__,__LINE__);
-		mipi_csi_close(mipi_csi_dev);
-		mipi_csi_init(mipi_csi_dev,((DOUBLE_LANE) ? (2) : (csi_data_lane_num)));
-		mipi_csi_close(mipi1_csi_dev);
-		mipi_csi_init(mipi1_csi_dev,1); 
-		#if 1
+	if(!g_mipi_csi_priv.mipi_mclk_init) {
 		struct hgpwm_v0 *global_hgpwm = (struct hgpwm_v0 *)dev_get(HG_PWM0_DEVID);
 		gpio_driver_strength(MACRO_PIN(PIN_PWM_CHANNEL_0), GPIO_DS_G1);
 		uint32_t mclk_div = (DEFAULT_SYS_CLK/1000000)/mclk;
 		//设置分频比,mclk_div-1,然后设置占空比:50%
 		pwm_init((struct pwm_device *)global_hgpwm, PWM_CHANNEL_0, mclk_div-1, (mclk_div+1)>>1);
 		pwm_start((struct pwm_device *)global_hgpwm, PWM_CHANNEL_0);
-		#else
-		gpio_iomap_output(PE_0, GPIO_IOMAP_OUT_DVP_MCLK_OUT);
-		gpio_driver_strength(PE_0,	GPIO_DS_G1);
-		mipi_csi_set_baudrate(mipi_csi_dev,6000000);
-		#endif
 		os_sleep_ms(1);
-
-		g_mipi_csi_priv.mipi_csi_init = 1;
+		g_mipi_csi_priv.mipi_mclk_init = 1;
 	}
 
-	if(csi_dev_id == HG_MIPI_CSI_DEVID) {
-		
-		csi_data_lane_num = (DOUBLE_LANE) ? (2) : (csi_data_lane_num);
-
+	if(csi_dev_id == HG_MIPI_CSI_DEVID && !g_mipi_csi_priv.mipi_csi0_en) {
 		uint8_t mipi_csi0_iic = register_iic_queue(iic_dev,MACRO_PIN(PIN_MIPI0_IIC_CLK),MACRO_PIN(PIN_MIPI0_IIC_SDA),0);
 		os_printf("set mipi sensor finish ,Auto Check sensor id\r\n");
 		p_sensor_cmd = sensorAutoCheck(mipi_csi0_iic,NULL);
 		if(p_sensor_cmd == NULL){
 			return FALSE;
 		}
-		os_printf("Auto Check sensor id finish\r\n");
-
+		csi_data_lane_num = p_sensor_cmd->mipi_lane_num;
+		os_printf("Auto Check sensor id finish,mipi_csi0 lane num:%d\r\n",p_sensor_cmd->mipi_lane_num);
+		mipi_csi_close(mipi_csi_dev);
+		mipi_csi_init(mipi_csi_dev, csi_data_lane_num);
+		if (csi_data_lane_num > 1)
+		{
+			mipi_csi_close(mipi1_csi_dev);
+			mipi_csi_init(mipi1_csi_dev,1); 
+		}
+		
 		sensor_info_add(dual_sensor_type, (dual_en) ? (ISP_INPUT_DAT_SRC_ORG_DMA) : (ISP_INPUT_DAT_SRC_MIPI0), (uint32)p_sensor_cmd->sensor_isp, mipi_csi0_iic, u8SensorwriteID2);
 		//	mipi_csi_set_baudrate(mipi_csi_dev,p_sensor_cmd->mclk);
 
@@ -991,9 +984,7 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_d
 		mipi_csi_sensor_init(p_sensor_cmd, mipi_csi0_iic);
 	}
 
-	if(csi_dev_id == HG_MIPI1_CSI_DEVID) {
-#if DOUBLE_CSI
-#if DOUBLE_LANE == 0
+	if(csi_dev_id == HG_MIPI1_CSI_DEVID && !g_mipi_csi_priv.mipi_csi1_en) {
 		if(g_mipi_csi_priv.mipi_csi0_data_lane_num == 2) {
 			os_printf("mipi csi1 unsupport\n");
 			return FALSE;
@@ -1002,16 +993,14 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_d
 		uint8_t mipi_csi1_iic = register_iic_queue(iic_dev,MACRO_PIN(PIN_MIPI1_IIC_CLK),MACRO_PIN(PIN_MIPI1_IIC_SDA),0);	
 		os_printf("set mipi sensor finish ,Auto Check sensor id\r\n");
 		p_sensor_cmd =  sensor2AutoCheck(mipi_csi1_iic,NULL);
-		os_printf("Auto Check sensor id finish\r\n");
-
 		if(p_sensor_cmd == NULL){
 			return FALSE;
 		}
+		os_printf("Auto Check sensor id finish,mipi_csi1 lane num:%d\r\n",p_sensor_cmd->mipi_lane_num);
 
 		sensor_info_add(dual_sensor_type, (dual_en) ? (ISP_INPUT_DAT_SRC_ORG_DMA) : (ISP_INPUT_DAT_SRC_MIPI1), (uint32)p_sensor_cmd->sensor_isp, mipi_csi1_iic, u8SensorwriteID2);
 		//	mipi_csi_set_baudrate(mipi1_csi_dev,p_sensor_cmd->mclk);
-		g_mipi_csi_priv.mipi_csi1_data_lane_num = csi_data_lane_num;
-		mipi_csi_set_lane_num(mipi1_csi_dev,csi_data_lane_num);
+		mipi_csi_set_lane_num(mipi1_csi_dev,1);
 		mipi_csi_open_virtual_channel(mipi1_csi_dev,0);
 		cfg = io_mipi_csi1_remap_cfg();
 		mipi_csi_dphy_cfg(mipi1_csi_dev,cfg,0x17709de7,0x20,0x3def,0,0,0,0);
@@ -1026,8 +1015,6 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_d
 		os_printf("mclk:%dMHz\r\n",p_sensor_cmd->mclk); 
 		os_printf("init:%x u8Addrbytnum2:%d,u8Databytnum2:%d\r\n",(uint32)p_sensor_cmd->init,u8Addrbytnum2,u8Databytnum2);
 		mipi_csi_sensor_init(p_sensor_cmd, mipi_csi1_iic);
-#endif
-#endif
 	}
 
     if (mipi_csi_check(csi_data_lane_num, csi_dev_id, p_sensor_cmd) != TRUE)

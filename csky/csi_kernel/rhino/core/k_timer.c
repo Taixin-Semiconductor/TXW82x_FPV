@@ -272,6 +272,9 @@ static void timer_cb_proc(void)
     }
 }
 
+#pragma GCC push_options
+#pragma GCC optimize ("O3","-fno-jump-tables")
+//__at_section(".ram.text")
 static void cmd_proc(k_timer_queue_cb *cb, uint8_t cmd)
 {
     ktimer_t *timer;
@@ -375,6 +378,7 @@ static void cmd_proc(k_timer_queue_cb *cb, uint8_t cmd)
     }   
 
 }
+#pragma GCC pop_options
 
 static void timer_cmd_proc(k_timer_queue_cb *cb)
 {

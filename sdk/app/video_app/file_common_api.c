@@ -220,3 +220,159 @@ uint8_t gen_file_path(const char *filename, char *path, uint32_t pathsize, uint8
     os_printf("%s path: %s\n", __FUNCTION__, path);
     return 0;
 }
+
+
+/***************************************************************
+ *                   获取文件列表接口                           *
+ *                                                             *
+****************************************************************/
+
+struct file_info
+{
+    char *file_name;
+    uint32_t file_size;
+    uint32_t file_date;
+    uint32_t file_time;
+    uint32_t file_count;
+};
+
+typedef void (* conver_send_fn)(int fd, struct file_info *file_info);
+
+static void send_chunk(int fd, const char* data, uint16_t data_len) 
+{
+    char chunk_buffer[256]; // 或者使用动态分配
+	int chunk_len = os_snprintf(chunk_buffer, sizeof(chunk_buffer), "%x\r\n%s\r\n", data_len, data);
+	send(fd, chunk_buffer, chunk_len, 0);
+}
+
+static void conver_send(int fd, struct file_info *file_info)
+{
+    char send_buffer[256];
+    char timestr[15];
+
+    os_snprintf(timestr, sizeof(timestr), "%04d%02d%02d%02d%02d%02d",
+                ((file_info->file_date & 0xFE00)>>9)+1980,
+                (file_info->file_date & 0x1E0)>>5,
+                (file_info->file_date & 0x1F),
+                (file_info->file_time & 0xF800)>>11,
+                (file_info->file_time & 0x7E0)>>5,
+                (file_info->file_time & 0x1F)*2);
+
+    os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s\",\"size\":%d,\"createtimestr\":\"%s\"}",
+               (file_info->file_count++ > 0) ? "," : "",
+                file_info->file_name,
+                file_info->file_size / 1024,
+                timestr);
+
+    // 发送数据
+    send_chunk(fd, send_buffer, strlen(send_buffer));
+}
+
+static int get_fileinfo_send(int fd, const char *search_dir, const char *ext_name, conver_send_fn cs_fn)
+{
+    struct file_info file_info;
+    FILINFO *fil = NULL;
+    char path[256];
+
+    void *dir = osal_opendir(search_dir);
+    if (dir)
+    {
+        do
+        {
+            fil = osal_readdir(dir);
+            if(!fil) break;
+            if(fil->fname[0] == 0) break;
+            if (fil->fname[0] == '.') continue;
+
+            if(!osal_dirent_isdir(fil))
+            {
+                char    *filename     = osal_dirent_name(fil);
+                uint32_t filesize     = osal_dirent_size(fil);
+                uint32_t filedate     = osal_dirent_date(fil);
+                uint32_t filetime     = osal_dirent_time(fil);
+                uint8_t  filename_len = os_strlen(filename);
+
+                // 检查后缀名是否匹配
+                if(ext_name)
+                {
+                    uint8_t ext_filename[16];
+                    uint8_t extname_len = os_strlen(ext_name);
+                    // 进行全部转换成大写
+                    if (filename_len - extname_len > 0)
+                    {
+                        for (uint8_t i = 0; i < os_strlen(ext_name); i++)
+                        {
+                            ext_filename[i] = toupper(filename[filename_len - extname_len + i]);
+                        }
+                        // 后缀名匹配
+                        if (memcmp(ext_name, ext_filename, extname_len) != 0)
+                        {
+                            continue;
+                        }
+                    }
+                }
+                file_info.file_name = filename;
+                file_info.file_size = filesize;
+                file_info.file_count++;
+                cs_fn(fd, &file_info);
+            }
+        } while (fil);
+        osal_closedir(dir);
+    }
+    return file_info.file_count;
+}
+
+// 发送demo，采用分块发送的方式 
+void send_stream_filelist(int fd)
+{
+    int     video_count = 0;
+    int     photo_count = 0;
+    int     sos_count = 0;
+    int     park_count = 0;
+    int     last_count = 0;
+    char    send_buffer[256];
+
+    // 创建HTTP响应头
+    snprintf(send_buffer, sizeof(send_buffer), 
+        "HTTP/1.0 200 OK\r\n"
+        "Connection: close\r\n"
+        "Content-Type: application/json\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n");
+    send(fd, send_buffer, strlen(send_buffer), 0);
+    
+    // 获取视频
+    os_snprintf(send_buffer, sizeof(send_buffer), "{\"result\":0,\"info\":[{\"folder\":\"%s\",\"files\":[", LOOP_PREFIX);
+    send_chunk(fd, send_buffer, strlen(send_buffer));
+
+    void *dir = osal_opendir(REC_PATH);
+    FILINFO *fil = NULL;
+    char path[64];
+    if(dir)
+    {
+        do
+        {
+            fil = osal_readdir(dir);
+            if(!fil) break;
+            if(fil->fname[0] == 0) break;
+            if (fil->fname[0] == '.') continue;
+            if(osal_dirent_isdir(fil))
+            {
+                os_snprintf(path, sizeof(path), "%s/%s", REC_PATH, fil->fname);
+                video_count += get_fileinfo_send(fd, path, MP4_EXTENSION_NAME, conver_send);
+                send_chunk(fd, ",", strlen(","));
+            }
+        } while(fil);
+    }
+
+    // 获取照片
+    os_snprintf(send_buffer, sizeof(send_buffer), "],\"count\":%d},{\"folder\":\"%s\",\"files\":[", video_count, EVENT_PREFIX);
+    send_chunk(fd, send_buffer, strlen(send_buffer));
+    photo_count = get_fileinfo_send(fd, IMG_PATH, JPG_EXTENSION_NAME, conver_send);
+
+    os_snprintf(send_buffer, sizeof(send_buffer), "],\"count\":%d}]}", photo_count);
+    send_chunk(fd, send_buffer, strlen(send_buffer));
+    
+    // 发送分块结束标记
+    send_chunk(fd, "", 0);  // 0长度块表示结束
+}

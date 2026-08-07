@@ -6,9 +6,9 @@ This repository contains the software development kit for the Taixin Semiconduct
 
 ## Release information
 
-- Version: `v2.7.0.7-41157`
-- Source: SVN release `v2.7.0.7-41157`
-- Add local MP4 playback and GSR2701 FEM support; fix known issues.
+- Version: `v2.7.0.7-41243`
+- Source: SVN release `v2.7.0.7-41243`
+- Fix known issues.
 
 ## Development environment
 

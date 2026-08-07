@@ -16,6 +16,7 @@ lv_obj_t *avi_playback_ui(lv_group_t *group, lv_obj_t *base_ui);
 lv_obj_t *mp4_player_ui(lv_group_t *group, lv_obj_t *base_ui, uint16_t w, uint16_t h);
 lv_obj_t *mp4_record_ui(lv_group_t *group, lv_obj_t *base_ui, uint16_t w, uint16_t h);
 lv_obj_t *takephoto_ui(lv_group_t *group, lv_obj_t *base_ui, uint16_t w, uint16_t h);
+lv_obj_t *main_LLM_vision_ui(lv_obj_t *base_ui, lv_group_t *group);
 #include "basic_include.h"
 #include "lib/multimedia/msi.h"
 #include "scale_msi.h"

@@ -9556,6 +9556,7 @@ Board: txw82x
         <File Name="../sdk/app/ui/takephoto_ui.c">
           <FileOption/>
         </File>
+        <File Name="../sdk/app/ui/llm_jpg_decode_ui.c"/>
       </VirtualDirectory>
       <VirtualDirectory Name="intercom">
         <File Name="../sdk/app/intercom/intercom.c">
@@ -10159,7 +10160,7 @@ Board: txw82x
     <QuickWatchDisplayFormat>1</QuickWatchDisplayFormat>
   </DebugSessions>
   <DebugSessions>
-    <watchExpressions>*(TYPE_SPI_BOOT*)&amp;__fw_info_start:1;__fw_info_start:1;__fw_info_end:1;*(TYPE_SPI_BOOT*)0x2003eb68:1;isp_module:1;isp_param:1;g_active_task:1;(kevent_t*)0x20010580:1;g_MSI:1;(FATFS*)0x2000c134:1;g_aucode_manage:1;jpg_mutex_table:1;global_osd_en:1</watchExpressions>
+    <watchExpressions>*(TYPE_SPI_BOOT*)&amp;__fw_info_start:1;__fw_info_start:1;__fw_info_end:1;*(TYPE_SPI_BOOT*)0x2003eb68:1;isp_module:1;isp_param:1;g_active_task:1;(kevent_t*)0x20010580:1;g_MSI:1;(FATFS*)0x2000c134:1;g_aucode_manage:1;jpg_mutex_table:1;global_osd_en:1;sram_heap:1;av_heap:1;av_psram_heap:1;g_active_task:1;h264_room_psram:1</watchExpressions>
     <memoryExpressions>0x28033880;0x287B6700;0x20004b75;0x400201b0</memoryExpressions>
     <statistics>;;MHZ;;MHZ;;up</statistics>
     <peripheralTabs/>
