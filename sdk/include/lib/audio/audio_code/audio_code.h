@@ -10,7 +10,7 @@
 #define AUCODER_RUN_IN_CPU1            2
 
 #ifndef AAC_ENC_CTRL
-#define AAC_ENC_CTRL                   AUCODER_RUN_IN_CPU0
+#define AAC_ENC_CTRL                   AUCODER_NO_RUN
 #endif
 #ifndef AAC_DEC_CTRL
 #define AAC_DEC_CTRL                   AUCODER_NO_RUN
@@ -52,7 +52,15 @@
 #define AUCODE_OK                      0
 #define AUCODE_ERR                     -1
 
-#define MAX_AUCODER_NUM                10  
+#define MAX_AUCODER_NUM                10
+
+#if OPUS_ENC_CTRL
+#define AUCODE_STACK_SIZE              10240
+#elif OPUS_DEC_CTRL
+#define AUCODE_STACK_SIZE              4096
+#else
+#define AUCODE_STACK_SIZE              0
+#endif   
 
 enum {
     AAC_ENC = 1,
@@ -118,9 +126,13 @@ typedef struct {
 
 typedef struct {
     void *task_hdl;
+    int8_t *stack_priv;
+    uint32_t used_size;
+    uint32_t total_size;
     uint32_t state;
     uint32_t coder_num;
     uint32_t rpc_coder_num;
+    uint32_t stack_used_num;
     RPC_AUCODE_STRUCT *rpc_aucode_s[MAX_AUCODER_NUM];
 } AUCODE_MANAGE;
 
@@ -149,7 +161,7 @@ extern void audio_coder_close(AUCODE_HDL *aucode_hdl);
 extern void *aac_encoder_open(uint32_t samplerate, uint32_t channel);
 extern void *aac_decoder_open(void);
 extern void *amrnb_decoder_open(void);
-extern void *amrwb_decoder_open(void);
+extern void *amrnb_decoder_open(void);
 extern void *mp3_decoder_open(void);
 extern void *alaw_encoder_open(void);
 extern void *alaw_decoder_open(void);
@@ -175,10 +187,6 @@ extern int32_t aac_decoder_close(void *coder);
 extern int32_t amrnb_decoder_close(void *coder);
 extern int32_t amrwb_decoder_close(void *coder);
 extern int32_t mp3_decoder_close(void *coder);
-extern int32_t alaw_encoder_close(void *coder);
-extern int32_t alaw_decoder_close(void *coder);
-extern int32_t ulaw_encoder_close(void *coder);
-extern int32_t ulaw_decoder_close(void *coder);
 extern int32_t opus_encoder_close(void *coder);
 extern int32_t opus_decoder_close(void *coder);
 

@@ -4,6 +4,15 @@
 #include "hal/isp.h"
 #include "osal/work.h"
 
+#define IR_ABS(x) ((x) < 0 ? -(x) : (x))
+
+typedef struct {
+    float curr_bv;
+    uint16_t r_mean, g_mean, b_mean;
+    uint16_t r_gain, b_gain;
+    uint16_t saturation; 
+} ISP_IRCUT_STAT;
+
 typedef struct ircut_info{
     uint8 ircut_opt_status;
     uint8 whiteled_status;      // whiteled status flag( on : open whiteled)
@@ -11,6 +20,7 @@ typedef struct ircut_info{
     uint8 ircut_status;         // ircut status flag( on : open ircut)
     uint8 irdet_status;         // ircut status flag( on : open ircut)
     uint8 irled_detect_mode;    // irled detece select
+    uint8 sw_state;
     uint8 isp_mode;
     uint8 frame_cnt;
     uint8 frame_to_switch;
@@ -19,7 +29,9 @@ typedef struct ircut_info{
     uint8 action_type;
     uint8 ircut_gpio_en, irled_gpio_en, irdet_gpio_en, whiteled_gpio_en;
     uint8 switch_cnt, switch_max;
-    float to_day_bv, to_night_bv, curr_bv;
+    uint16 last_r_gain,last_b_gain;
+    uint16 to_day_sat,to_day_diff_rb_gain,to_day_diff_b_gain;
+    float to_day_bv,to_day_bv_max, to_night_bv;
     struct os_work ircut_action_work;
     struct isp_device *dev;
 }IRCUT_INFO;
@@ -69,5 +81,12 @@ enum {
     ISP_MODE_NIGHT_MONO  = 2,
 };
 
+enum {
+    IRCUT_STAT_DAY_TO_NIGHT,    
+    IRCUT_STAT_WB_REC,          
+    IRCUT_STAT_NIGHT_TO_DAY,    
+};
+
 void ircut_init();
+
 #endif

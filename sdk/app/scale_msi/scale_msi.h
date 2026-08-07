@@ -23,6 +23,7 @@ struct  scale2_msg_t {
 	uint16_t ow,oh;
 	uint16_t x,y;
 	uint8_t video_only; //多屏显示层专用，用于只显示当前层画面
+    uint8_t larger;
 };
 
 struct scale3_msi_s
@@ -57,8 +58,11 @@ struct scale2_msi_s
     struct msi    *msi;
     uint16_t iw,ih,ow,oh;
 	
-	uint16_t stw,sth,x,y;
+	uint16_t stw,sth,x,y;                           //step w和h，显示的video层位置
+	uint16_t sx,sy;									//模块scaler的图像操作启始位置，
     struct framebuff *now_fb;
+    struct framebuff *now_fb_msg[MAX_SCALE2_TX];    //预分配的槽位数组，用于存放now_fb的指针（放入msgq的是槽的地址），以便循环复用
+    uint8_t now_fb_msg_idx;
     uint8_t *scaler2buf;  //scale的buf
     struct os_msgqueue msgq;
 	uint8_t larger;
@@ -68,6 +72,7 @@ struct scale2_msi_s
     //RBUFFER_DEF(tx_data, struct framebuff *, MAX_SCALE3_TX);
     struct fbpool tx_pool;
     int mutex_count;
+    uint32_t filter_type;
 };
 
 
@@ -87,6 +92,7 @@ typedef int32_t (*scale3_done_fn)(uint32 irq_data);
 
 struct msi *scale2_msi(const char *name, uint16_t iw, uint16_t ih, uint16_t ow, uint16_t oh, uint16_t type,uint8_t larger);
 void scale2_output_size_local_change(uint8_t id,uint8_t show_only,uint16 x,uint16 y,uint16 w,uint16 h);
+void scale2_output_larger_local_change(uint8_t id, uint8_t larger);
 struct msi *scale3_msi(const char *name);
 struct msi *scale3_msi_const_buf(const char *name, uint8_t *buf,uint16_t iw, uint16_t ih, uint16_t ow, uint16_t oh);
 void scale3_output_size_local_change(uint8_t id,uint8_t show_only,uint16 x,uint16 y,uint16 w,uint16 h);

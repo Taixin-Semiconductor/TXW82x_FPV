@@ -492,6 +492,20 @@ static int32_t thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param
             os_run_work(&thumb_msi->work);
         }
         break;
+        case MSI_CMD_JPG_THUMB:
+        {
+            uint32_t cmd_self = (uint32_t) param1;
+            uint32_t arg      = param2;
+            switch (cmd_self)
+            {
+                case MSI_JPG_THUMB_TAKEPHOTO_SETPATH:
+                {
+                    thumb_msi->normal_base_dir = (char *) arg;
+                }
+                break;
+            }
+        }
+        break;
     }
     return ret;
 }

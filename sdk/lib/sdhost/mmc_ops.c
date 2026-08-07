@@ -72,16 +72,16 @@ int mmc_get_ext_csd(struct sdh_device *host, uint8_t *ext_csd)
     host->data.timeout_ns = 300000000;
     host->data.timeout_clks = 0;
 
-    ret = host->cmd(host, &cmd);
+    ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
     if(ret) {
         EMMC_PRINTF("%s cmd error\r\n", __FUNCTION__);
         return 1;
     }
 	
-    ret = host->read(host, ext_csd);
+    ret = ((const struct sdhc_hal_ops *)host->dev.ops)->read(host, ext_csd);
 
-    if (host->complete)
-        ret |= host->complete(host);
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->complete)
+        ret |= ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
 
     if(ret) {
         return RET_ERR;
@@ -176,7 +176,7 @@ int mmc_switch(struct sdh_device *host, uint8_t set, uint8_t index, uint8_t valu
               (index << 16) | (value << 8) | set;
     cmd.flags = RESP_R1B | CMD_AC;
 
-    err = host->cmd(host, &cmd);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
     if (err)
         return err;
 
@@ -286,7 +286,7 @@ int mmc_set_card_addr(struct sdh_device *host, uint32_t rca)
   cmd.arg = rca << 16;
   cmd.flags = RESP_R1 | CMD_AC;
   
-  err = host->cmd(host, &cmd);
+  err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
   if (err)
     return err;
   
@@ -301,7 +301,7 @@ int __send_status(struct sdh_device *host, uint32_t *status, unsigned retries)
     cmd.cmd_code = SEND_STATUS;
     cmd.arg = host->rca << 16;
     cmd.flags = RESP_R1 | CMD_AC;
-    err = host->cmd(host, &cmd);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
 
     if (err)
         return err;
@@ -402,23 +402,23 @@ int mmcsd_req_blk1(struct sdh_device *host,
     host->data.buf = buf;
     host->data.blks = blks;
 
-    err = host->cmd(host, &cmd);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
     if(err) {
         EMMC_PRINTF("%s start err", __FUNCTION__);
     }
 
     if(!dir) {
-        host->read(host, buf);
+        ((const struct sdhc_hal_ops *)host->dev.ops)->read(host, buf);
     } else {
-        host->write(host, buf);
+        ((const struct sdhc_hal_ops *)host->dev.ops)->write(host, buf);
     }
 
-    if(host->complete) {
-        host->complete(host);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->complete) {
+        ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
     }
 
     os_sleep_ms(1);
-    err = host->cmd(host, &stop);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &stop);
     if(err) {
         EMMC_PRINTF("%s stop err", __FUNCTION__);
     }
@@ -472,9 +472,9 @@ int mmcsd_req_blk(struct sdh_device *host,
     cmd2.arg = blks;
     cmd2.flags = RESP_SPI_R1 | RESP_R1 | CMD_AC;
 
-	if(host->cmd) {
-		err |= host->cmd(host, &cmd2);
-		err |= host->cmd(host, &cmd1);
+	if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd) {
+		err |= ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd2);
+		err |= ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd1);
 	}
 
 	
@@ -487,13 +487,13 @@ int mmcsd_req_blk(struct sdh_device *host,
     host->data.blks = blks;
 
     if(!dir) {
-        host->read(host, buf);
+        ((const struct sdhc_hal_ops *)host->dev.ops)->read(host, buf);
     } else {
-        host->write(host, buf);
+        ((const struct sdhc_hal_ops *)host->dev.ops)->write(host, buf);
     }
 
-    if(host->complete) {
-        host->complete(host);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->complete) {
+        ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
     }
 
     return RET_OK;

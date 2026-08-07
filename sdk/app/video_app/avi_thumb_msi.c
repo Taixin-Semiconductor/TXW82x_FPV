@@ -87,7 +87,7 @@ struct msi *avi_thumb_msi_init(const char *filename, uint8_t srcID, uint8_t filt
         avi_thumb->srcID       = srcID;
         msi->action            = avi_thumb_msi_action;
         // 给到解码然后生成缩略图
-        msi_add_output(msi, NULL, R_THUMB);
+        msi_add_output(msi, NULL, R_THUMB_USB);
         msi->enable = 1;
         msi_add_output(NULL, ROUTE_USB, R_AVI_THUMB); // avi缩略图?
     }

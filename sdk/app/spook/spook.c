@@ -89,7 +89,7 @@ const rtp_name live_dvp = {
 
 const rtp_name live_h264 = {
 	.video_encode_name     = H264_ENCODER_NAME,
-	.audio_encode_name      = AUDIO_AAC_ENCODER_NAME,
+	.audio_encode_name      = AUDIO_AAC_ENCODER_NAME2,
 	.path            = "/h264",
 	
 };
@@ -127,6 +127,7 @@ static void spook_thread(void *d)
 	jpeg_encode_init(JPG_ENCODER_NAME);
 	h264_encode_init(H264_ENCODER_NAME);
 	rtsp_audio_encode_init(AUDIO_AAC_ENCODER_NAME);
+	rtsp_audio_encode_init(AUDIO_AAC_ENCODER_NAME2);
 
 	rtsp_mjpeg_live_init(&live_dvp);
 	rtsp_h264_live_init(&live_h264);

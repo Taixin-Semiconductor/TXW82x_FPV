@@ -58,7 +58,7 @@ struct thumb_msi_s
     RBUFFER_DEF(rb, struct thumb_queue_fb, MAX_THUMB_MSI);
 };
 
-static void thumb_msi_thread(void *d)
+static void usb_thumb_msi_thread(void *d)
 {
     struct thumb_msi_s   *thumb_msi = (struct thumb_msi_s *) d;
     struct msi           *msi       = thumb_msi->msi;
@@ -79,12 +79,12 @@ static void thumb_msi_thread(void *d)
             break;
         }
 
-    thumb_msi_thread_get_fb_again:
+    usb_thumb_msi_thread_get_fb_again:
         fb = msi_get_fb(msi, 0);
         // 获取到图片,判断stype与rb中的stype是否匹配
         if (fb)
         {
-        thumb_msi_thread_again:
+        usb_thumb_msi_thread_again:
             ret = RB_INT_GET(&thumb_msi->rb, t_fb);
             if (ret)
             {
@@ -117,27 +117,27 @@ static void thumb_msi_thread(void *d)
                     // 如果fb->stype > t_fb.stype?代表可能已经有漏数据,则忽略,继续寻找洗一张图
                     if (fb->datatag > t_fb.datatag)
                     {
-                        goto thumb_msi_thread_again;
+                        goto usb_thumb_msi_thread_again;
                     }
                     else
                     {
-                        os_printf("thumb_msi_thread: no match fb->datatag:%X\tt_fb.datatag:%X\n", fb->datatag, t_fb.datatag);
+                        os_printf("usb_thumb_msi_thread: no match fb->datatag:%X\tt_fb.datatag:%X\n", fb->datatag, t_fb.datatag);
                     }
                 }
             }
             else
             {
-                os_printf("thumb_msi_thread: no match fb,datatag:%X\tfb:%X\tret:%d\n", fb->datatag, fb, ret);
+                os_printf("usb_thumb_msi_thread: no match fb,datatag:%X\tfb:%X\tret:%d\n", fb->datatag, fb, ret);
             }
             msi_delete_fb(NULL, fb);
             // 去缓冲区继续查找是否有图片需要保存
-            goto thumb_msi_thread_get_fb_again;
+            goto usb_thumb_msi_thread_get_fb_again;
         }
     }
     msi_put(msi);
 }
 
-static int32_t thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
+static int32_t usb_thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
 {
     int32_t             ret       = RET_OK;
     struct thumb_msi_s *thumb_msi = (struct thumb_msi_s *) msi->priv;
@@ -255,7 +255,7 @@ static int32_t thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param
     return ret;
 }
 
-struct msi *thumb_over_dpi_msi_init(const char *msi_name, uint8_t jpg_type, uint8_t stype, uint32_t magic)
+struct msi *usb_thumb_over_dpi_msi_init(const char *msi_name, uint8_t jpg_type, uint8_t stype, uint32_t magic)
 {
     uint8_t             is_new;
     struct msi         *msi       = msi_new(msi_name, MAX_RECV_MAX, &is_new);
@@ -270,10 +270,10 @@ struct msi *thumb_over_dpi_msi_init(const char *msi_name, uint8_t jpg_type, uint
         thumb_msi->stype           = stype;
         thumb_msi->normal_base_dir = IMG_PATH;
         RB_INIT(&thumb_msi->rb, MAX_THUMB_MSI);
-        msi->action = thumb_msi_action;
+        msi->action = usb_thumb_msi_action;
         os_event_init(&thumb_msi->evt);
         msi->enable = 1;
-        OS_TASK_INIT("thumb_msi_over_dpi", &thumb_msi->task, thumb_msi_thread, thumb_msi, OS_TASK_PRIORITY_NORMAL, NULL, 1500);
+        OS_TASK_INIT("thumb_msi_over_dpi", &thumb_msi->task, usb_thumb_msi_thread, thumb_msi, OS_TASK_PRIORITY_NORMAL, NULL, 1500);
     }
 
     return msi;
@@ -297,7 +297,7 @@ static int32_t usb_thumb_msi_work(struct os_work *work)
     struct framebuff     *fb;
     struct thumb_queue_fb t_fb;
     uint8_t               ret;
-    char               path[80];
+    char                  path[80];
     int32_t               res;
     uint32_t              rflags;
 
@@ -309,12 +309,12 @@ static int32_t usb_thumb_msi_work(struct os_work *work)
         goto thumb_msi_exit;
     }
 
-thumb_msi_thread_get_fb_again:
+usb_thumb_msi_thread_get_fb_again:
     fb = msi_get_fb(msi, 0);
     // 获取到图片，判断stype与rb中的stype是否匹配
     if (fb)
     {
-    thumb_msi_thread_again:
+    usb_thumb_msi_thread_again:
         ret = RB_INT_GET(&thumb_msi->rb, t_fb);
         if (ret)
         {
@@ -337,21 +337,21 @@ thumb_msi_thread_get_fb_again:
                 // 如果fb->stype > t_fb.stype?代表可能已经有漏数据，则忽略，继续寻找新的一张图
                 if (fb->datatag > t_fb.datatag)
                 {
-                    goto thumb_msi_thread_again;
+                    goto usb_thumb_msi_thread_again;
                 }
                 else
                 {
-                    os_printf("thumb_msi_thread: no match fb->datatag:%X\tt_fb.datatag:%X\n", fb->datatag, t_fb.datatag);
+                    os_printf("usb_thumb_msi_thread: no match fb->datatag:%X\tt_fb.datatag:%X\n", fb->datatag, t_fb.datatag);
                 }
             }
         }
         else
         {
-            os_printf("thumb_msi_thread: no match fb,datatag:%X\tfb:%X\tret:%d\n", fb->datatag, fb, ret);
+            os_printf("usb_thumb_msi_thread: no match fb,datatag:%X\tfb:%X\tret:%d\n", fb->datatag, fb, ret);
         }
         msi_delete_fb(NULL, fb);
         // 去缓冲区继续查找是否有图片需要保存
-        goto thumb_msi_thread_get_fb_again;
+        goto usb_thumb_msi_thread_get_fb_again;
     }
 
 thumb_msi_exit:

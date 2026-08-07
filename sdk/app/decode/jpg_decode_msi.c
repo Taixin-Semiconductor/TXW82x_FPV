@@ -544,6 +544,7 @@ static int decode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint
                     decode->hardware_ready   = 0;
                     decode->last_decode_time = os_jiffies();
                     // scale_open(decode->scale_dev);
+                    sys_dcache_clean_range((uint32_t*)dst,rfb->len);
                     jpg_decode_photo(decode->jpg_dev, dst, rfb->len);
                 }
                 break;

@@ -64,7 +64,9 @@ __weak void user_protocol()
 
 __init static void app_tunning_init(void)
 {
+#if JPG_EN == 1 
     uint8_t takephoto_from = 0;
+#endif
 #if H264_EN == 1
     auto_h264_msi_init(AUTO_H264,VPP_DATA0,0,0,~0,0,0);
 #endif

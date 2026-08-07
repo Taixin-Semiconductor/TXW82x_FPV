@@ -24,7 +24,7 @@ void *auproc_stack_alloc(uint32_t size)
 	if((size%32)!=0) {
 		size = (size+32)/32*32;
 	}
-	// _os_printf("%s %d %d\n",__FUNCTION__,g_auproc_stack->used_size,size);
+	// _os_printf("%s %d %d %p\n",__FUNCTION__,g_auproc_stack->used_size,size,RETURN_ADDR());
     if((g_auproc_stack->used_size+sizeof(uint32_t)+size)>g_auproc_stack->total_size) {
         while(1) {
             _os_printf("auproc_stack_alloc fail\n");
@@ -33,7 +33,7 @@ void *auproc_stack_alloc(uint32_t size)
     }
     *((uint32_t*)(g_auproc_stack->stack_priv+g_auproc_stack->used_size+size)) = size;
     return_addr = g_auproc_stack->stack_priv+g_auproc_stack->used_size;
-    // _os_printf("%s %p %p\n",__FUNCTION__,return_addr,(g_auproc_stack->stack_priv+g_auproc_stack->used_size+size));
+    // _os_printf("%s %p %p %p\n",__FUNCTION__,return_addr,(g_auproc_stack->stack_priv+g_auproc_stack->used_size+size),RETURN_ADDR());
     g_auproc_stack->used_size += (sizeof(uint32_t)+size);
     return return_addr;
 }
@@ -41,7 +41,7 @@ void *auproc_stack_alloc(uint32_t size)
 void auproc_stack_free(void *ptr)
 {
     uint32_t last_size = *((uint32_t*)(g_auproc_stack->stack_priv+g_auproc_stack->used_size-4));
-    // _os_printf("%s %p %p %d\n",__FUNCTION__,ptr,(g_auproc_stack->stack_priv+g_auproc_stack->used_size-4),last_size);
+    // _os_printf("%s %p %p %d %p\n",__FUNCTION__,ptr,(g_auproc_stack->stack_priv+g_auproc_stack->used_size-4),last_size,RETURN_ADDR());
     if(ptr != (g_auproc_stack->stack_priv+g_auproc_stack->used_size-last_size-4)) {
         while(1) {
             _os_printf("auproc_stack_free fail\n");

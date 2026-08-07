@@ -9,23 +9,14 @@ lv_obj_t *main_LLM_vision_ui(lv_obj_t *base_ui, lv_group_t *group)
     lv_obj_add_style(ui, &g_style, 0);
     lv_obj_set_size(ui, LV_PCT(100), LV_PCT(100));
 
-    static const uint16_t filter[] = { FSTYPE_JPG_FILE, FSTYPE_JPG_CAMERA0, FSTYPE_NONE };
-    struct msi *sim_video = sim_video_more_msi(R_SIM_VIDEO, 800, 480, (uint16_t *)filter);
-    if (sim_video)
-    {
-        msi_add_output(sim_video, NULL, R_VIDEO_P0);
-        msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 1);
-    } 
-    else
-    {
-        os_printf("sim video new msi failed\n");
-    }
+    //static const uint16_t filter[] = { FSTYPE_JPG_FILE, FSTYPE_JPG_CAMERA0, FSTYPE_NONE };
 
     struct msi *decode_s = jpg_decode_msi(S_JPG_DECODE);
     //将解码的数据推送到Video P0和Video P1显示
     if (decode_s)
     {
-        msi_add_output(decode_s, NULL, R_SIM_VIDEO);
+        msi_add_output(decode_s, NULL, R_VIDEO_P0);
+        msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 1);
     }
     else
     {
@@ -37,6 +28,7 @@ lv_obj_t *main_LLM_vision_ui(lv_obj_t *base_ui, lv_group_t *group)
     if (jpg_decode_msg_s)
     {
         // 配置解码的坐标值
+        msi_do_cmd(jpg_decode_msg_s, MSI_CMD_DECODE_JPEG_MSG, MSI_JPEG_DECODE_FORCE_TYPE, FSTYPE_YUV_P0);
         msi_do_cmd(jpg_decode_msg_s, MSI_CMD_DECODE_JPEG_MSG, MSI_JPEG_DECODE_X_Y, 0 << 16 | 0);
         msi_add_output(jpg_decode_msg_s, NULL, S_JPG_DECODE);
     }

@@ -11,10 +11,14 @@ struct  h264_cfg_t {
 	uint16_t   wrap_width;
 	uint16_t   wrap_height;
 	uint16_t   enc_bps       ; //Kbit pre second
+	uint16_t   still_enc_bps ;
+	uint16_t   move_enc_bps  ;
+	uint16_t   stilltomove   ; //enc frame mb precent
 	uint16_t   frm_rate      ; //fps
 	uint16_t   frm_gop       ; //IPPPP frame number of a gop
 	uint8_t    rc_en         ; //enc rate control enable
 	uint8_t    rc_grp        ; //mb line number when RC change qp
+	uint8_t    cc_corect     ; //0:off; 1:on
 	uint8_t    rc_effort     ; //0:low; 1: high; 2:relax;
 	uint8_t    frm_ip_rate   ; //initial (Intra MB line)/(Inter MB line) target bit rate times; not critical parameter.
 	uint8_t    frm_ip_rate_max;
@@ -36,6 +40,9 @@ struct  h264_cfg_t {
 	uint8_t    md_3dnr_timer;
 	uint8_t    md_set_3dnr;
 	uint8_t    enc_runing;
+	uint8_t    move_keep_gop;   //still to move,keep x gop for mov_enc_bps
+	uint8_t    move_remain_gop;   
+	volatile uint8_t    timeLapse_en:1,timeLapse_ready_kick:1,rev:6;	//分别是缩时录影的使能和是否可以kick(不能随便使用,除非知道流程)
 
 };
 
@@ -178,7 +185,7 @@ struct list_head* get_h264_frame();
 uint32 get_h264_timestamp(void *d);
 int h264_mem_init(uint8_t init,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_w,uint32_t drv2_h);
 uint32 get_h264_which(void *d);
-void h264_recfg_bsp(uint8_t dev_num,uint16_t bps);
+void h264_recfg_bsp(uint8_t dev_num,uint16_t mbps,uint16_t sbps);
 void h264_recfg_rate(uint8_t dev_num,uint16_t rate);
 void h264_recfg_frm_gop(uint8_t dev_num,uint16_t gop);
 void h264_recfg_ini_qp(uint8_t dev_num,uint8_t qp);
@@ -199,4 +206,5 @@ void h264_decode_I_P_setting(struct str_info *str, struct h264_header *head, uin
 void h264_dec_a_frame(struct h264_device *p_h264,uint32_t nal_length, struct h264_ctl_t *dec_ctl, struct h264_header *head, struct str_info *str,uint32 dataroom) ;
 void  h264_dec_flag_chk(uint32_t flags); 
 void h264_dec_src_room_set(struct h264_device *p_h264,uint32_t       buf_base, struct h264_cfg_t *dec_cfg,struct h264_ctl_t *dec_ctl);
+int h264_enc_with_timeLapse(uint32_t drv1_from,uint32_t drv1_w,uint32_t drv1_h,uint32_t timer);
 #endif

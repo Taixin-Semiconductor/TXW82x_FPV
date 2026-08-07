@@ -121,7 +121,8 @@ void system_event_usbh_video_hdl(uint32 event_id, uint32 data, uint32 priv)
                       video_data->uvc_format,
                       video_data->width,
                       video_data->height);
-
+            extern void usb_event_connect_hdl(void);
+            usb_event_connect_hdl();
         }
             break;
 
@@ -130,8 +131,8 @@ void system_event_usbh_video_hdl(uint32 event_id, uint32 data, uint32 priv)
             struct sysevt_usbh_video_priv_data *video_data = (struct sysevt_usbh_video_priv_data *)data;
             os_printf("----- SYSEVT_USB_DEVICE_DISCONNECT: dev_name=%s ----- \n",
                       video_data->video_dev_name);
-            extern void close_record(void);
-            close_record();
+            extern void usb_event_disconnect_hdl(void);
+            usb_event_disconnect_hdl();
         }
             break;
 

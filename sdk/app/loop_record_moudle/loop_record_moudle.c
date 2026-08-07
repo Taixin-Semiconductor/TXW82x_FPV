@@ -191,6 +191,15 @@ void err_dir_add_list(void *loop_f, const char *dir_path)
 
     if(value > 0)
     {
+        Node *cur = list->head;
+        while (cur) {
+            if (cur->value == value) {
+                _os_printf("dir %s is exist\r\n");
+                return;
+            }
+            cur = cur->next;
+        }
+
         push_back(list, value);
         _os_printf("add %s to err dir list\r\n", dir_path);
     }
@@ -276,6 +285,7 @@ static void get_file(void *loop_f, const char *path, const char *extension_name)
     void      *dir;
     FILINFO   *fil;
     FRESULT   res = 0;
+    uint8_t extension_name_len = strlen(extension_name);
 
     dir = osal_opendir(path);
     if (!dir)
@@ -293,18 +303,23 @@ static void get_file(void *loop_f, const char *path, const char *extension_name)
             {
                 continue;
             }
+
+            if (fil->fattrib & AM_RDO) {
+                os_printf("File is read-only\n");
+                continue; 
+            }
+
             // 检查后缀名是否匹配
             uint8_t extension_filename[16]; // 文件后缀名转换,统一大写
-            uint8_t extension_name_len = strlen(extension_name);
 
             char    *fname        = osal_dirent_name(fil);
             uint8_t  filename_len = strlen(fname);
             uint32_t filesize     = osal_dirent_size(fil);
-            // 进行全部转换成大写
 
             if (filename_len - extension_name_len > 0)
             {
-                for (uint8_t i = 0; i < strlen(extension_name); i++)
+                // 转换成大写
+                for (uint8_t i = 0; i < extension_name_len; i++)
                 {
                     extension_filename[i] = toupper(fname[filename_len - extension_name_len + i]);
                 }

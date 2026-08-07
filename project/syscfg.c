@@ -49,6 +49,8 @@ struct sys_config sys_cfgs = {
     .mipi_csi1_hs_zero_cnt  = 0,
 };
 
+extern void sys_dhcpd_start(void);
+
 static void wificfg_custom_ap_wmm_param(uint8 ifidx)
 {
 #ifdef SYS_CUSTOM_APWMM
@@ -122,15 +124,15 @@ void netcfg_flush(void)
     ipaddr.addr  = sys_cfgs.ipaddr;
     netmask.addr = sys_cfgs.netmask;
     gw.addr      = sys_cfgs.gw_ip;
+
+    lwip_netif_set_dhcp2("w0", sys_cfgs.dhcpc_en);
     lwip_netif_set_ip2("w0", &ipaddr, &netmask, &gw);
 
     if (sys_cfgs.dhcpd_en) {
-        dhcpd_start("w0", NULL);
+        sys_dhcpd_start();
     } else {
         dhcpd_stop();
     }
-
-    lwip_netif_set_dhcp2("w0", sys_cfgs.dhcpc_en);
 }
 
 void syscfg_flush(int32 reset)
@@ -176,7 +178,7 @@ void syscfg_default()
     }
     os_snprintf((char *)sys_cfgs.ssid, SSID_MAX_LEN, WIFI_SSID_PREFIX"%02X%02X%02X", sys_cfgs.mac[3], sys_cfgs.mac[4], sys_cfgs.mac[5]);
     os_strcpy(sys_cfgs.passwd, WIFI_PASSWD_DEFAULT);
-    wpa_passphrase(sys_cfgs.ssid, (char*)sys_cfgs.passwd, sys_cfgs.psk);
+    wpa_passphrase(sys_cfgs.ssid, (char*)sys_cfgs.passwd, sys_cfgs.psk);    
 }
 
 void syscfg_dump()

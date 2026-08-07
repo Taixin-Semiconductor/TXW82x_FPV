@@ -43,10 +43,16 @@ typedef struct {
     uint32_t near_discard_ms;
     uint32_t far_discard_ms;
 
+    uint32_t rand_seed;
+
+    float cosTable[256];
+    float sinTable[256];
+
     float *time_inputbuf;
-    float *freq_buf;
-    float *time_outputbuf;
+    float *last_freq_buf;
     int16_t *overlap_buf;
+    float *last_magn;
+    float *filter_w;
     struct domainTrans_struct *domainTrans_s;
 
     void *anf;

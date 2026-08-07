@@ -154,8 +154,10 @@ __weak void user_protocol()
 // 应用程序初始化
 __init static void fpv_app_init(void)
 {
-    int8_t takephoto_from = 0;
-	int8_t takephoto1_from = -1;
+#if TAKEPHOTO_EN || JPG_EN
+    int8_t takephoto_from  = 0;
+    int8_t takephoto1_from = -1;
+#endif
 #ifdef PSRAM_HEAP
     cJSON_Hooks hook;
     hook.malloc_fn = _os_malloc_psram;

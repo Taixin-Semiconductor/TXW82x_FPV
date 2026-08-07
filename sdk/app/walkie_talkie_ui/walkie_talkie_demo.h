@@ -2,8 +2,12 @@
 #define _WALKIE_TALKIE_DEMO_H_
 
 #define BABY_UI_MAGICSOUND
-#define DISPLAY_DEBUGINFO_ENABLE
+// #define DISPLAY_DEBUGINFO_ENABLE
 //#define AUTO_POWER_OFF_ENABLE
+
+#ifndef SCREEN_ON_TIME_DEFAULT
+#define SCREEN_ON_TIME_DEFAULT   -1
+#endif
 
 typedef enum _PAGE_NUM_
 {
@@ -29,6 +33,12 @@ typedef struct
     uint8_t volume_anim_times;
     uint8_t pair_out_times;
     uint8_t pair_success;
+    uint8_t calling_connect;
+    uint8_t calling_status;
+    uint8_t key_operate;
+    uint8_t screen_on;
+    int32_t key_operate_timeout;
+    int32_t screen_on_time;
 } camera_global_t;
 extern camera_global_t camera_gvar;
 

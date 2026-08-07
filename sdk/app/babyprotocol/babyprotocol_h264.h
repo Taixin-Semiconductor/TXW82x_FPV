@@ -4,6 +4,7 @@
 #include "osal/string.h"
 #include "lib/net/eloop/eloop.h"
 
+//#define OPEN_DBG 1
 #if OPEN_DBG
 #define BABY_DBG(fmt, ...)   _os_printf(fmt, ##__VA_ARGS__)
 #else
@@ -72,15 +73,41 @@ typedef struct
 	uint32_t dev_id;
 	uint32_t frame_rate;
 	uint8_t *psram_photo;
+	uint8_t  larger;
 	uint16_t w;
 	uint16_t h;	
 }dev_map;
+
+
+typedef struct
+{
+	uint8_t  speed;
+	uint8_t  frame_tx_lost;
+	uint8_t  frame_tx_success;
+	uint8_t  frame_rx_lost;
+	uint8_t  frame_rx_success;	
+}babymonitor_msg;
 
 typedef struct
 {
 	uint32_t target_width;
 	uint32_t target_high;
 }target_resolution;
+
+
+#define MAIN_SENSOR_STILL_MIN    300
+#define MAIN_SENSOR_STILL_MAX    600
+#define MAIN_SENSOR_MOVE_MIN     800
+#define MAIN_SENSOR_MOVE_MAX     1500
+
+#define SEC_SENSOR_STILL_MIN     200
+#define SEC_SENSOR_STILL_MAX     400
+#define SEC_SENSOR_MOVE_MIN      400
+#define SEC_SENSOR_MOVE_MAX      1000
+
+
+#define BPS_STEP                 50
+#define UP_BPS_FRM_NUM           25
 
 #ifdef SYS_APP_BBM_LCD
 extern void protocol_server_change_resolution(uint8_t id,uint32_t width, uint32_t high);

@@ -10,7 +10,7 @@
 
 #define BUFF_SIZE   2048
 #define MAX_MP3_DECODE_RXBUF    4
-#define MAX_MP3_DECODE_TXBUF    4
+#define MAX_MP3_DECODE_TXBUF    8
 
 struct mp3_decode_struct {
     AUDIO_TRACK audio_track;
@@ -37,6 +37,7 @@ struct mp3_decode_struct {
     uint32_t file_size;
     uint32_t buf_offset;
     uint32_t buf_size;
+    CUR_MP3_INFO *cur_mp3_info;
 };
 
 static int32_t mp3_file_read(struct mp3_decode_struct *mp3_decode_s, uint8_t *buf, uint32_t size)
@@ -134,6 +135,7 @@ static void mp3_file_decode(struct mp3_decode_struct *s)
             }
         }
         if(s->next_status == AUCODEC_EXIT) {
+			s->current_status = AUCODEC_EXIT;
             goto mp3_decode_end;
         }
         s->current_status = AUCODEC_RUN;
@@ -262,7 +264,7 @@ get_recv_frame_buf_again:
         recv_frame_buf = msi_get_fb(s->msi, 0);
         if(recv_frame_buf) {
             data_len = recv_frame_buf->len;
-            recv_data = recv_frame_buf->data;
+            recv_data = recv_frame_buf->data; 
             recv_data_offset = 0;
             if(data_len <= 0)
                 endOfRead = 1;
@@ -327,6 +329,7 @@ get_recv_frame_buf_again:
         }
 mp3_get_first_frame:
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             goto mp3_decode_end;
         }
         if(s->next_status == AUCODEC_PAUSE) {
@@ -449,11 +452,11 @@ static void mp3_decode_thread(void *d)
     struct mp3_decode_struct *s = (struct mp3_decode_struct *)d;
 
 	if(s->mp3_fp) {
-		curmp3_info_init(s->mp3_filename);
+		curmp3_info_init(&s->cur_mp3_info, s->mp3_filename);
 		s->file_size = osal_fsize(s->mp3_fp);
-		get_curmp3_size(s->file_size);	
-		find_first_frame(s->mp3_fp);
-		if(cur_mp3_info && cur_mp3_info->normal_frame_offset)
+		get_curmp3_size(s->cur_mp3_info, s->file_size);	
+		find_first_frame(s->cur_mp3_info, s->mp3_fp);
+		if(s->cur_mp3_info->normal_frame_offset)
 			s->get_first_frame = 1;		
 	}
 
@@ -466,11 +469,14 @@ static void mp3_decode_thread(void *d)
     s->msi->enable = 1;
     if(s->mp3_fp) {
         do {
-            if(cur_mp3_info)
-                osal_fseek(s->mp3_fp, cur_mp3_info->first_frame_offset);
+            if(s->cur_mp3_info)
+                osal_fseek(s->mp3_fp, s->cur_mp3_info->first_frame_offset);
             else
                 osal_fseek(s->mp3_fp, 0);
             mp3_file_decode(s);
+            if(s->current_status == AUCODEC_EXIT) {
+                break;
+            }
         }while(s->loop_mode);
     }
     else
@@ -487,8 +493,8 @@ static void mp3_decode_thread(void *d)
         s->current_status = AUCODEC_END;
         os_sleep_ms(5);
     } 
-    if(cur_mp3_info)
-        clear_curmp3_info();
+    if(s->cur_mp3_info)
+        clear_curmp3_info(s->cur_mp3_info);
 
     if(s->src_msi) {
         msi_del_output(s->src_msi, NULL, s->msi->name);
@@ -576,6 +582,32 @@ static int32_t mp3_decode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
                         ret = msi_add_output((struct msi*)param2, NULL, msi->name);
                         if(ret == RET_OK) {
                             mp3_decode_s->src_msi = (struct msi*)param2;
+                        }
+                        break;
+                    }
+                    case MSI_AUCODER_DIRECT_TO_DAC:
+                    {
+                        uint32_t direct_to_dac = param2;
+                        if(direct_to_dac && mp3_decode_s->direct_to_dac == 0) {
+                            mp3_decode_s->direct_to_dac = 1;
+                            if(mp3_decode_s->use_tpc == 0) {
+                                msi_add_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(mp3_decode_s->autpc_msi) {
+                                msi_add_output(mp3_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(mp3_decode_s->audio_track)));
+                        }
+                        else if(mp3_decode_s->direct_to_dac == 1) {
+                            mp3_decode_s->direct_to_dac = 0;
+                            if(mp3_decode_s->use_tpc == 0) {
+                                msi_del_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(mp3_decode_s->autpc_msi) {
+                                msi_del_output(mp3_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            mp3_decode_s->audio_track.priority &= 0x3F;
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(mp3_decode_s->audio_track)));
                         }
                         break;
                     }

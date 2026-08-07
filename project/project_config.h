@@ -48,12 +48,15 @@
 #define RT_USBH                     //RTT USB HOST 使能
 
 //  #define RT_USBH_CDC
- #define RT_USBH_UVC
+#define RT_USBH_UVC
 // #define RT_USBH_UAC
 // #define RT_USBH_WIRELESS
+// #define RT_USBH_WIRELESS_RNDIS
 // #define RT_USBH_VENDOR_QUECTEL
 // #define RT_USBH_VENDOR_CHINAMOBILE
-//  #define RT_USBH_MSTORAGE
+// #define RT_USBH_VENDOR_YUGE
+// #define RT_USBH_VENDOR_ZXINFO
+// #define RT_USBH_MSTORAGE
 
 /*           USB DEVICE           */
 
@@ -76,10 +79,11 @@
 #define BLE_PROV_MODE                   2   // 1：广播配网（微信小程序），2： BLE 配网（需支持共存）
 #define WIRELESS_PAIR_CODE              0
 
+#define GMAC_EN                         0 // 有线网卡需要使能GMAC
 
 #define PRC_EN                          1
 #define OF_EN                           0
-#define PARA_IN_EN						0
+#define PARA_IN_EN                      0
 #define DVP_EN                          1
 #define MIPI_CSI_EN                     1
 #define DUAL_EN                         1
@@ -520,6 +524,7 @@ INPUT_MODE:
  *音频及功放使能io配置
  * ********************************************************/
 #define AUDIO_EN                        1
+#define AAC_ENC_CTRL 					1
 
 /***********************************************************
  *默认mjpeg的节点数量,要根据mjpeg启动的分辨率去考虑
@@ -752,6 +757,7 @@ INPUT_MODE:
  *音频及功放使能io配置
  * ********************************************************/
 #define AUDIO_EN                        1
+#define AAC_ENC_CTRL 					1
 
 /***********************************************************
  *默认mjpeg的节点数量,要根据mjpeg启动的分辨率去考虑
@@ -986,6 +992,7 @@ INPUT_MODE:
  *音频及功放使能io配置
  * ********************************************************/
 #define AUDIO_EN                        1
+#define AAC_ENC_CTRL 					1
 
 /***********************************************************
  *默认mjpeg的节点数量,要根据mjpeg启动的分辨率去考虑
@@ -1223,13 +1230,12 @@ UVC的配置
 #elif (CUSTOMER_ID == 7)
 
 #define SYS_APP_WALKIE_TALKIE
-#define OS_TIMER_MSG_NUM				30
 #define DEFAULT_SYS_CLK                 (240*1000000) 
 #define PSRAM_HEAP          //如果需要psram当作heap,需要打开这个宏
 #define AV_PSRAM_HEAP    
 #define AV_HEAP
 #define CONFIG_PSRAM_AVHEAP_SIZE        (3*1024*1024+600*1024)
-#define CONFIG_AVHEAP_SIZE              (110*1024)
+#define CONFIG_AVHEAP_SIZE              (145*1024)
 //#define MEM_TRACE
 #define PIN_FROM_PARAM
 
@@ -1252,6 +1258,8 @@ UVC的配置
 
 #define AUDIO_EN                        1
 #define LOW_BITRATE_MODE        		1
+#define INTERCOM_HALF_DUPLEX            0
+#define MAGIC_VOICE_EN          		1
 /* AUDIO CODE */
 /* 0: AUCODER_NO_RUN  1: AUCODER_RUN_IN_CPU0  2: AUCODER_RUN_IN_CPU1*/
 #define MP3_DEC_CTRL					1
@@ -1295,7 +1303,7 @@ UVC的配置
 #define WIFI_SSID_FILTER_EN             0           //是否使能SSID过滤功能。使能后，只有隐藏SSID和指定SSID的beacon才会上传
 #define WIFI_PREVENT_PS_MODE_EN         1           //是否尽可能的阻止sta进入休眠
 #define WIFI_PS_NO_FRM_LOSS_EN          1           //tx缓存的休眠帧是否不允许丢弃
-#define WIFI_TX_AGG_EN                  1           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
+#define WIFI_TX_AGG_EN                  0           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
 #define NET_IP_ADDR_DEFAULT             0x01A9A8C0  //192.168.169.1
 #define NET_MASK_DEFAULT                0x00FFFFFF  //255.255.255.0
 #define NET_GW_IP_DEFAULT               0x01A9A8C0  //192.168.169.1
@@ -1309,10 +1317,12 @@ UVC的配置
 
 ///////////////LCD/////////////
 #define LCD_ST7789V_MCU_EN              1
+// #define LCD_ST7701S_MIPI_EN 			1
 
 ///////////////DVP//////////////
 #define DEV_SENSOR_GC0308               1
-#define DEV_SENSOR_BF3A03			          1
+#define DEV_SENSOR_BF3A03			    1
+#define DEV_SENSOR_GC1084               1
 
 #if DUAL_EN
     #define ISP_SENOR_NUM               2   
@@ -1338,13 +1348,19 @@ UVC的配置
 #define VPP_BUF1_EN                     1
 #define PSRAM_FRAME_SAVE                1
 
-#define VIDEO_YUV_RANGE_TYPE            (1)
+#define VIDEO_YUV_RANGE_TYPE            (0)
+
+#define SCREEN_ON_TIME_DEFAULT    -1
+#define USE_CALLING_DEMO          1
+#define CALLING_DEMO_DEBUG        0
 
 #define WIFI_MODE_DEFAULT               WIFI_MODE_STA
+#define WIFI_BSSBW_DEFAULT              10
+#define BSS_MAX_IDLE_DEFAULT            10
 
 //是能5m/20m共存和自动带宽切换，
-//#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
-//#define LMAC_BGN_PCF
+#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
+#define LMAC_BGN_PCF
 
 #elif (CUSTOMER_ID == 8)
 
@@ -1567,7 +1583,7 @@ INPUT_MODE:
 #define AV_PSRAM_HEAP    
 #define AV_HEAP
 #define CONFIG_PSRAM_AVHEAP_SIZE        (7*1024*1024)
-#define CONFIG_AVHEAP_SIZE              (100*1024)
+#define CONFIG_AVHEAP_SIZE              (170*1024)
 //#define MEM_TRACE
 #define PIN_FROM_PARAM
 
@@ -1633,7 +1649,7 @@ INPUT_MODE:
 #define WIFI_SSID_FILTER_EN             0           //是否使能SSID过滤功能。使能后，只有隐藏SSID和指定SSID的beacon才会上传
 #define WIFI_PREVENT_PS_MODE_EN         1           //是否尽可能的阻止sta进入休眠
 #define WIFI_PS_NO_FRM_LOSS_EN          1           //tx缓存的休眠帧是否不允许丢弃
-#define WIFI_TX_AGG_EN                  1           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
+#define WIFI_TX_AGG_EN                  0           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
 #define NET_IP_ADDR_DEFAULT             0x01A9A8C0  //192.168.169.1
 #define NET_MASK_DEFAULT                0x00FFFFFF  //255.255.255.0
 #define NET_GW_IP_DEFAULT               0x01A9A8C0  //192.168.169.1
@@ -1661,9 +1677,11 @@ INPUT_MODE:
 
 //是能5m/20m共存和自动带宽切换，
 //#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
-//#define LMAC_BGN_PCF
+#define LMAC_BGN_PCF
 
 #define WIFI_MODE_DEFAULT               WIFI_MODE_AP
+
+#define DEFINE_UI    					BBM_UI
 
 #elif (CUSTOMER_ID == 10)
 
@@ -1672,7 +1690,7 @@ INPUT_MODE:
 #define PSRAM_HEAP          //如果需要psram当作heap,需要打开这个宏
 #define AV_PSRAM_HEAP    
 #define AV_HEAP
-#define CONFIG_PSRAM_AVHEAP_SIZE        (5*1024*1024+600*1024)
+#define CONFIG_PSRAM_AVHEAP_SIZE        (3*1024*1024+600*1024)
 #define CONFIG_AVHEAP_SIZE              (150*1024)
 //#define MEM_TRACE
 #define PIN_FROM_PARAM
@@ -1744,7 +1762,7 @@ INPUT_MODE:
 #define WIFI_SSID_FILTER_EN             0           //是否使能SSID过滤功能。使能后，只有隐藏SSID和指定SSID的beacon才会上传
 #define WIFI_PREVENT_PS_MODE_EN         1           //是否尽可能的阻止sta进入休眠
 #define WIFI_PS_NO_FRM_LOSS_EN          1           //tx缓存的休眠帧是否不允许丢弃
-#define WIFI_TX_AGG_EN                  1           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
+#define WIFI_TX_AGG_EN                  0           //没时延要求可以开聚合。一般来说连路由就设1，连手机就设0
 #define NET_IP_ADDR_DEFAULT             0x01A9A8C0  //192.168.169.1
 #define NET_MASK_DEFAULT                0x00FFFFFF  //255.255.255.0
 #define NET_GW_IP_DEFAULT               0x01A9A8C0  //192.168.169.1
@@ -1786,7 +1804,7 @@ INPUT_MODE:
 
 //是能5m/20m共存和自动带宽切换，
 //#define WIFI_FEM_CHIP     LMAC_FEM_GSR2701_5V
-//#define LMAC_BGN_PCF
+#define LMAC_BGN_PCF
 
 #define WIFI_MODE_DEFAULT               WIFI_MODE_STA
 
@@ -2025,7 +2043,7 @@ INPUT_MODE:
 
 #define LCD_ST7701S_MIPI_EN 			1
 #define LCD_ST7735_EN                   0
-
 #endif
 
 #endif
+

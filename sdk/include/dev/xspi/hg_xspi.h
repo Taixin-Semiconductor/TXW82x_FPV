@@ -21,6 +21,7 @@ struct hg_xspi {
     uint32                  irq_data;
     uint32                  opened;
     uint32                  flags;
+    uint8_t                 rst_pin;
     void                    *priv;
 //#ifdef CONFIG_SLEEP
 #if 1

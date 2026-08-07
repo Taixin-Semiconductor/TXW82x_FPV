@@ -353,6 +353,24 @@ int32 isp_get_awb_rb_gain(struct isp_device *isp, uint32 *arr_gain, enum sensor_
     return RET_ERR;
 }
 
+int32 isp_get_awb_rgb(struct isp_device *isp, uint32 *arr_rgb, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AWB_RGB, type, (uint32)arr_rgb);
+    }
+    return RET_ERR;
+}
+
+int32 isp_get_isp_ircut_statistics(struct isp_device *isp, ISP_IRCUT_STAT *isp_stat, enum sensor_type type)
+{
+    
+    // uint32 param[] = {isp_stat,23};
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_ISP_IRCUT_STAT, type, (uint32)isp_stat);
+    }
+    return RET_ERR;
+}
+
 int32 isp_get_current_bv(struct isp_device *isp, uint32 *bv, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
@@ -470,9 +488,9 @@ int32 isp_ae_frame_max(struct isp_device *isp, uint32 frame_max, uint32 vb, enum
     return RET_ERR;
 }
 
-int32 isp_ae_lock_param(struct isp_device *isp, uint32 cnt, uint32 diff, enum sensor_type type)
+int32 isp_ae_lock_param(struct isp_device *isp, uint32 cnt, uint32 diff, uint32 alpha, enum sensor_type type)
 {
-    uint32 param[] = {cnt, diff};
+    uint32 param[] = {cnt, diff, alpha};
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_AE_LOCK_PARAM, type, (uint32)param);
     }
@@ -973,9 +991,18 @@ int32 isp_gamma_by_bv_param(struct isp_device *isp, uint32 data, enum sensor_typ
 
 int32 isp_sensor_fps_opt(struct isp_device *isp, float fps, enum sensor_type type)
 {
-    uint32 fps_val = (uint32)fps * 256;
+    uint32 fps_val = (uint32)(fps * 256);
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_FPS_OPT, type, fps_val);
+    }
+    return RET_ERR;
+}
+
+int32 isp_dyn_gamma_param(struct isp_device *isp, uint32 dyn_gamma_en, uint32 ygamma_opt, enum sensor_type type)
+{
+    uint32 param[] = {dyn_gamma_en, ygamma_opt};
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_DYN_YGAMMA_OPT, type, (uint32)param);
     }
     return RET_ERR;
 }

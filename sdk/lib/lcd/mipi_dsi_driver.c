@@ -415,7 +415,7 @@ void mipi_dsi_init(uint32 w,uint32 h,uint32 dclk,uint8 vsa,uint8 vbp,uint8 vfp,u
 		dpi2laneclkratio = 120*1000/(dclk/1000000);
 	}
 	//dpipixel_fifo_mipi = dpi_pixel_buf;//os_malloc(4*w);//
-	generic_fifo_mipi  = os_malloc(w);//
+	generic_fifo_mipi  = os_malloc(w*3);//
 
 	if(generic_fifo_mipi == NULL){
 		_os_printf("generic_fifo_mipi room error....\r\n");
@@ -502,7 +502,7 @@ void mipi_dsi_init(uint32 w,uint32 h,uint32 dclk,uint8 vsa,uint8 vbp,uint8 vfp,u
 #endif
 	//while(1)
 	mipi_dsi_select_mode(dsi_dev,0);
-
+	os_free(generic_fifo_mipi);
 
 }
 

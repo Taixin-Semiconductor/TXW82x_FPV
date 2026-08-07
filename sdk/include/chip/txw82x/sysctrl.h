@@ -45,7 +45,13 @@ extern "C" {
 #define CLK_RC8M               8000000
 #define CLK_LXOSC32K           32000
 
+#define SYS_CLK_64MHZ          64000000
+#define SYS_CLK_80MHZ          80000000
+#define SYS_CLK_120MHZ         120000000
+#define SYS_CLK_160MHZ         160000000
+#define SYS_CLK_192MHZ         192000000
 #define SYS_CLK_213MHZ         213333333
+#define SYS_CLK_240MHZ         240000000
 
 struct __clock_cfg {
     uint8  clk_source_sel;
@@ -652,6 +658,8 @@ enum audac_pll_sel{
 #define sysctrl_parallel_in_clk_close()            SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON7, BIT(13))
 #define sysctrl_gen420_clk_open()                  SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON7, BIT(12))
 #define sysctrl_gen420_clk_close()                 SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON7, BIT(12))
+#define sysctrl_image_isp_clk_ckg_open()           SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON7, BIT(3))
+#define sysctrl_image_isp_clk_ckg_close()          SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON7, BIT(3))
 #define sysctrl_image_isp_clk_sel(n)               SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON7,BIT(1)|BIT(2), n, 1)
 
  /* CLK_CON8 */
@@ -1296,6 +1304,8 @@ uint32 peripheral_clock_get(HG_Peripheral_Type peripheral);
 uint32 sysctrl_efuse_get_chip_uuid(uint8* pbuf, uint32 len);
 uint32 sysctrl_get_chip_uuid(uint8* pbuf, uint32 len);
 
+uint32 sysctrl_efuse_get_aes_key(void);
+
 uint32 sysctrl_efuse_validity_get(void);
 
 void sysctrl_efuse_validity_handle(void);
@@ -1330,9 +1340,17 @@ void system_clocks_show(void);
 int ll_qspi_clock_check();
 
 void system_goto_boot(void);
-void system_reboot_test_mode(void);
-void system_reboot_normal_mode(void);
 void system_mclr_soft_en(void);
+
+__INLINE void system_reboot_test_mode(void)
+{
+    PMU_REG_SET_BITS(PMU->PMUCON7, BIT(21));
+}
+
+__INLINE void system_reboot_normal_mode(void)
+{
+    PMU_REG_CLR_BITS(PMU->PMUCON7, BIT(21));
+}
 
 __STATIC_INLINE int32 system_is_wifi_test_mode(void)
 {

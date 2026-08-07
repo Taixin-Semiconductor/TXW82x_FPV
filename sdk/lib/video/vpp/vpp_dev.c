@@ -19,6 +19,9 @@
 #include "lib/heap/av_psram_heap.h"
 #include "hal/osd_enc.h"
 
+uint32 motion_det_pot_check(uint8_t *old_y, uint8_t *new_y, uint8_t *copy, uint16 w, uint16 h, uint8_t blk_thd, uint8_t md_blk_num);
+void md_set_pot_x_y(uint16 x, uint16 y);
+
 #define VPP_MALLOC av_malloc
 #define VPP_FREE   av_free
 #define VPP_ZALLOC av_zalloc
@@ -50,13 +53,29 @@ struct vpp_cfg_s
 {
     uint8_t  vpp_buf0_line_num;
     uint8_t  vpp_buf1_line_num;
-    uint8_t  vpp_buf0_mode : 1, vpp_buf1_mode : 1, scale1_from_vpp : 1, scale3_from_vpp : 1, shrink : 3, rev : 1;
+    uint8_t  vpp_buf0_mode : 1, vpp_buf1_mode : 1, scale1_from_vpp : 1, scale3_from_vpp : 1, shrink : 3, mdt : 1;
     uint8_t  double_psram_for_buf1;
     uint16_t vpp_w, vpp_h;
     uint16_t vpp_scale_w, vpp_scale_h;
 };
 
 // 默认值
+#ifdef SYS_APP_WALKIE_TALKIE
+struct vpp_cfg_s vpp_msg = {
+        .vpp_buf0_line_num     = VPP_BUF0_LINEBUF_NUM,
+        .vpp_buf1_line_num     = VPP_BUF1_LINEBUF_NUM,
+        .vpp_buf0_mode         = VPP_BUF0_MODE,
+        .vpp_buf1_mode         = VPP_BUF1_MODE,
+        .scale1_from_vpp       = SCALE1_FROM_VPPBF,
+        .scale3_from_vpp       = SCALE3_FROM_VPPBF,
+        .vpp_w                 = 640,
+        .vpp_h                 = 480,
+        .vpp_scale_w           = 0,
+        .vpp_scale_h           = 0,
+        .shrink                = SHRINK_1_2,
+        .double_psram_for_buf1 = 1,
+};
+#else
 struct vpp_cfg_s vpp_msg = {
         .vpp_buf0_line_num     = VPP_BUF0_LINEBUF_NUM,
         .vpp_buf1_line_num     = VPP_BUF1_LINEBUF_NUM,
@@ -70,18 +89,24 @@ struct vpp_cfg_s vpp_msg = {
         .vpp_scale_h           = 0,
         .shrink                = SHRINK_1_2,
         .double_psram_for_buf1 = 0,
+        .mdt                   = 0,
 };
+#endif
 
 // uint8 motion_detect_buf[9*1024/*((IMAGE_W+31)/32)  * ((IMAGE_H+31)/32) + 3 + 4*((IMAGE_W+31)/32)*/]__attribute__ ((aligned(4)));//加3是为了防止blk数不是word对齐
-uint8            *motion_detect_buf;
-uint8            *yuvbuf1;
-uint8_t          *vpp_data1_psram_buf = NULL;
-uint8_t          *vpp_data2_psram_buf = NULL;
-volatile uint8_t *psram_ptr;
-volatile uint8_t *psram_user_ptr;
+uint8            *motion_detect_buf          = NULL;
+uint8            *motion_detect_oldframe_buf = NULL;
+uint8            *mdet_result;
+uint16            motion_blk_threshold    = 0;
+uint16            motion_blknum_threshold = 0;
+uint8            *yuvbuf1                 = NULL;
+uint8_t          *vpp_data1_psram_buf     = NULL;
+uint8_t          *vpp_data2_psram_buf     = NULL;
+volatile uint8_t *psram_ptr               = NULL;
+volatile uint8_t *psram_user_ptr          = NULL;
 
-uint8             *yuvbuf;
-uint8             *vpp_encode_ipf;
+uint8             *yuvbuf         = NULL;
+uint8             *vpp_encode_ipf = NULL;
 struct video_cfg_t video_msg;
 func_done_fn       vpp_deal_dev_func_table[VPP_FUNC_DONE_NUM];
 volatile uint32    vpp_deal_dev_func_arg_table[VPP_FUNC_DONE_NUM];
@@ -899,18 +924,38 @@ void vpp_set_time(struct vpp_device *p_vpp, uint32_t time_val)
 
 void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
 {
-    uint8_t  itk = 0;
-    int32_t  ret = 0;
-    uint16_t w, h;
-    uint16_t buf1w = 0, buf1h = 0;
-    uint8_t *ptr_cache;
+    static uint32_t md_isr_cnt = 0;
+    //	static uint32_t  done_num=0;
+    //	static uint32_t  detnum=0;
+    uint8_t         itk        = 0;
+    int32_t         ret        = 0;
+    uint16_t        w, h;
+    uint16_t        detw, deth;
+    uint32_t        loc;
+    uint16_t        buf1w = 0, buf1h = 0;
+    uint8_t        *ptr_cache;
     _os_printf(KERN_DEBUG "F");
     static time_t      last_time_val = 0;
     struct vpp_device *p_vpp         = (struct vpp_device *) dev;
-
-    struct timeval ptimeval;
+    struct timeval     ptimeval;
     gettimeofday(&ptimeval, NULL);
     time_t time_val = (time_t) ptimeval.tv_sec;
+
+    if ((motion_detect_buf != NULL) && (motion_detect_oldframe_buf != NULL))
+    { // det enable
+        if (vpp_md_cnt != md_isr_cnt)
+        {
+            detw = (vpp_msg.vpp_w + 31) / 32;
+            deth = (vpp_msg.vpp_h + 31) / 32;
+            loc  = motion_det_pot_check(motion_detect_oldframe_buf, motion_detect_buf + 4 * ((vpp_msg.vpp_w + 31) / 32), mdet_result, detw, deth, 30, 20);
+            if (loc != 0xffffffff)
+            {
+                md_set_pot_x_y((loc % detw) * 32, (loc / detw) * 32);
+            }
+        }
+        memcpy(motion_detect_oldframe_buf, motion_detect_buf + 4 * ((vpp_msg.vpp_w + 31) / 32), ((vpp_msg.vpp_w + 31) / 32) * ((vpp_msg.vpp_h + 31) / 32));
+    }
+
     if (last_time_val != time_val)
     {
         vpp_set_time(p_vpp, time_val);
@@ -1028,6 +1073,8 @@ void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
         vpp_set_buf1_u_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h);
         vpp_set_buf1_v_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h + buf1w * buf1h / 4);
     }
+	
+	md_isr_cnt = vpp_md_cnt;
 }
 volatile uint8 itp_done = 0;
 void           vpp_itp_done(uint32 irq, uint32 dev, uint32 param)
@@ -1303,10 +1350,39 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 
 #if DET_EN
     motion_detect_buf = (uint8_t *) VPP_MALLOC(((w + 31) / 32) * ((h + 31) / 32) + 4 * ((w + 31) / 32));
+
+    if ((motion_detect_buf == NULL))
+    {
+        goto det_module_end;
+    }
+
     vpp_set_motion_calbuf(vpp_dev, (uint32_t) motion_detect_buf);
     vpp_set_motion_range(vpp_dev, 0, 0, w, h);   // 检测图像范围,blk大小为32*32个像素点
     vpp_set_motion_blk_threshold(vpp_dev, 10);   // 检测对应的blk移动的阀值
     vpp_set_motion_frame_threshold(vpp_dev, 10); // 检测多少个blk超过阀值，再触发移动检测中断
+
+    if (vpp_msg.mdt)
+    {
+        // 申请空间,支持返回移动的区域坐标
+        motion_detect_oldframe_buf = (uint8_t *) VPP_MALLOC(((w + 31) / 32) * ((h + 31) / 32));
+        mdet_result                = (uint8_t *) VPP_MALLOC(((w + 31) / 32) * ((h + 31) / 32));
+        if (mdet_result == NULL || motion_detect_oldframe_buf == NULL)
+        {
+            VPP_FREE(motion_detect_oldframe_buf);
+            VPP_FREE(mdet_result);
+            motion_detect_oldframe_buf = NULL;
+            mdet_result                = NULL;
+        }
+        else
+        {
+            motion_blk_threshold    = 10;
+            motion_blknum_threshold = 10;
+            memset(motion_detect_oldframe_buf, 0, ((w + 31) / 32) * ((h + 31) / 32));
+        }
+    }
+
+    vpp_set_motion_det_enable(vpp_dev, 1);
+det_module_end:
 #endif
     vpp_set_mode(vpp_dev, VPP_INPUT_FORMAT);
     vpp_set_input_interface(vpp_dev, input_from);
@@ -1317,9 +1393,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 #if IPF_EN
     vpp_set_ifp_en(vpp_dev, 1);
 #endif
-#if DET_EN
-    vpp_set_motion_det_enable(vpp_dev, 1);
-#endif
+
     vpp_msg.vpp_scale_w = VPP_SCALE_WIDTH;
     vpp_msg.vpp_scale_h = VPP_SCALE_HIGH;
 
@@ -1338,7 +1412,7 @@ void set_vpp_scale_w_h(uint8_t en, uint16_t w, uint16_t h)
         if (en)
         {
             scale_dev = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
-            scale_from_vpp(scale_dev, (uint32_t)vpp_buf, vpp_msg.vpp_w, vpp_msg.vpp_h, w, h);
+            scale_from_vpp(scale_dev, (uint32_t) vpp_buf, vpp_msg.vpp_w, vpp_msg.vpp_h, w, h);
         }
     }
 }
@@ -1360,10 +1434,28 @@ bool vpp_cfg_release()
     }
 #endif
 
+    if (vpp_encode_ipf)
+    {
+        VPP_FREE(vpp_encode_ipf);
+        vpp_encode_ipf = NULL;
+    }
+
+    if (motion_detect_buf)
+    {
+        VPP_FREE(motion_detect_buf);
+        motion_detect_buf = NULL;
+    }
+
     if (vpp_data1_psram_buf)
     {
         VPP_PSRAM_FREE(vpp_data1_psram_buf);
         vpp_data1_psram_buf = NULL;
+    }
+
+    if (vpp_data2_psram_buf)
+    {
+        VPP_PSRAM_FREE(vpp_data2_psram_buf);
+        vpp_data2_psram_buf = NULL;
     }
     return TRUE;
 }
@@ -1373,5 +1465,339 @@ int8_t vpp_dev_open()
     struct vpp_device *vpp_dev;
     vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
     vpp_open(vpp_dev);
+    return 0;
+}
+
+/**************************************************检测移动侦测接口***************************************************** */
+struct mdt_coord_msg mdet_msg[4];
+uint32               mdxy;
+
+uint32 motion_det_pot_check(uint8_t *old_y, uint8_t *new_y, uint8_t *copy, uint16 w, uint16 h, uint8_t blk_thd, uint8_t md_blk_num)
+{
+    uint16   i, j;
+    uint16   mw, mh;
+    //	uint16 mwc,mhc;
+    uint16   bx, by;
+    //	uint16 bmx,bmy;
+    //	uint16 bxc,byc;
+    uint32   local_base = 0;
+    //	uint32 check_local;
+    //	uint32 mov_cnt_max;
+    //	uint32 mov_cnt;
+    //	uint8_t turnaround;
+    uint16   i1, j1;
+    uint8_t  mloop;
+    //	uint8_t mxj;
+    uint8_t  potd;
+    uint8_t  mask;
+    uint16_t mx0, mx1;
+    uint16_t my0, my1;
+    uint16_t mapdt_loc[4][6];
+    uint16_t mapdt_num;
+    uint8_t  result_cnt[4];
+    uint32_t result_loc[4];
+    //	uint8_t xad,yad;
+    uint16   mvblk = 0;
+    uint8_t  x0m, x1m, y0m, y1m;
+
+    for (j = 0; j < h; j++)
+    {
+        for (i = 0; i < w; i++)
+        {
+            if (abs(old_y[i + j * w] - new_y[i + j * w]) >= blk_thd)
+            {
+                old_y[i + j * w] = 255;
+                mvblk++;
+            }
+            else
+            {
+                old_y[i + j * w] = 0;
+            }
+        }
+    }
+
+    if (mvblk < md_blk_num)
+    {
+        return 0xffffffff;
+    }
+    memcpy(copy, old_y, w * h);
+
+    memset(mapdt_loc, 0xff, 4 * 6 * 2);
+    memset(result_cnt, 0, 4);
+    memset(result_loc, 0, 4 * 4);
+    mapdt_num = 0;
+    for (j1 = 0; j1 < h - 1; j1++)
+    {
+        for (i1 = 0; i1 < w - 1; i1++)
+        {
+            potd = 0;
+            for (j = 0; j < 2; j++)
+            {
+                for (i = 0; i < 2; i++)
+                {
+
+                    if (old_y[i1 + j1 * w + i + j * w] == 255)
+                    {
+                        potd++;
+                        if (potd == 4)
+                        {
+                            mask = 1;
+                            for (mloop = 0; mloop < 4; mloop++)
+                            {
+                                if (mapdt_loc[mloop][0] != 0xffff)
+                                { // 有座标
+                                    mx0 = mapdt_loc[mloop][2];
+                                    mx1 = mapdt_loc[mloop][3];
+                                    my0 = mapdt_loc[mloop][4];
+                                    my1 = mapdt_loc[mloop][5];
+
+                                    if (mx0 > 3)
+                                    {
+                                        x0m = mx0 - 3;
+                                    }
+                                    else
+                                    {
+                                        x0m = 0;
+                                    }
+
+                                    if ((mx1 + 3) > w)
+                                    {
+                                        x1m = w - 1;
+                                    }
+                                    else
+                                    {
+                                        x1m = mx1 + 3;
+                                    }
+
+                                    if (my0 > 3)
+                                    {
+                                        y0m = my0 - 3;
+                                    }
+                                    else
+                                    {
+                                        y0m = 0;
+                                    }
+
+                                    if ((my1 + 3) > h)
+                                    {
+                                        y1m = h - 1;
+                                    }
+                                    else
+                                    {
+                                        y1m = my1 + 3;
+                                    }
+
+                                    if (((i1 + i) >= x0m) && ((i1 + i) <= x1m) && ((j1 + j) >= y0m) && ((j1 + j) <= y1m))
+                                    {
+                                        mask = 0;
+                                    }
+                                }
+                            }
+
+                            if (mask == 1)
+                            {
+                                for (mloop = 0; mloop < 4; mloop++)
+                                {
+                                    if (mapdt_loc[mloop][0] == 0xffff)
+                                    {
+                                        mapdt_loc[mloop][0] = i1 + i;
+                                        mapdt_loc[mloop][1] = j1 + j;
+
+                                        if (mapdt_loc[mloop][0] > 3)
+                                        {
+                                            mx0 = mapdt_loc[mloop][0] - 3;
+                                        }
+                                        else
+                                        {
+                                            mx0 = 0;
+                                        }
+
+                                        if ((mapdt_loc[mloop][0] + 3) > w)
+                                        {
+                                            mx1 = w - 1;
+                                        }
+                                        else
+                                        {
+                                            mx1 = mapdt_loc[mloop][0] + 3;
+                                        }
+
+                                        if (mapdt_loc[mloop][1] > 3)
+                                        {
+                                            my0 = mapdt_loc[mloop][1] - 3;
+                                        }
+                                        else
+                                        {
+                                            my0 = 0;
+                                        }
+
+                                        if ((mapdt_loc[mloop][1] + 3) > h)
+                                        {
+                                            my1 = h - 1;
+                                        }
+                                        else
+                                        {
+                                            my1 = mapdt_loc[mloop][1] + 3;
+                                        }
+
+                                        mapdt_loc[mloop][2] = mx0;
+                                        mapdt_loc[mloop][3] = mx1;
+                                        mapdt_loc[mloop][4] = my0;
+                                        mapdt_loc[mloop][5] = my1;
+
+                                        break;
+                                    }
+                                }
+                                if (mapdt_loc[3][0] != 0xffff)
+                                {
+                                    goto mdt_end;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+mdt_end:
+    for (mloop = 0; mloop < 4; mloop++)
+    {
+        if (mapdt_loc[mloop][0] != 0xffff)
+        {
+            bx   = mapdt_loc[mloop][2];
+            by   = mapdt_loc[mloop][4];
+            mw   = mapdt_loc[mloop][3] - mapdt_loc[mloop][2];
+            mh   = mapdt_loc[mloop][5] - mapdt_loc[mloop][4];
+            potd = 0;
+            for (j = 0; j < mh; j++)
+            {
+                for (i = 0; i < mw; i++)
+                {
+                    if (old_y[bx + by * w + i + j * w] == 0xff)
+                    {
+                        potd++;
+                    }
+                }
+            }
+            result_cnt[mloop] = potd;
+            // printf("(%d  %d===>%d  %d pot:%d)\r\n",bx,by,mw,mh,potd);
+            if (potd < 7)
+            {
+                result_loc[mloop] = (mapdt_loc[mloop][0] - 1) + (mapdt_loc[mloop][1] - 1) * w;
+            }
+            else
+            {
+                result_loc[mloop] = mapdt_loc[mloop][0] + mapdt_loc[mloop][1] * w;
+            }
+        }
+    }
+
+    for (i = 0; i < 4; i++)
+    {
+        if (mapdt_loc[i][0] != 0xffff)
+        {
+            mdet_msg[i].blkmv_cnt = result_cnt[i];
+            mdet_msg[i].x0        = mapdt_loc[i][2];
+            mdet_msg[i].x1        = mapdt_loc[i][3];
+            mdet_msg[i].y0        = mapdt_loc[i][4];
+            mdet_msg[i].y1        = mapdt_loc[i][5];
+            mdet_msg[i].x         = mapdt_loc[i][0];
+            mdet_msg[i].y         = mapdt_loc[i][1];
+        }
+        else
+        {
+            mdet_msg[i].blkmv_cnt = 0;
+        }
+    }
+
+    if (result_loc[0] != 0)
+    {
+        for (i = 0; i < 4; i++)
+        {
+            if (local_base < result_loc[i])
+            {
+                local_base = result_loc[i];
+                //				printf("local_base:%d\r\n",local_base);
+            }
+        }
+
+        return local_base;
+    }
+    else
+    {
+        return 0xffffffff;
+    }
+}
+
+void md_set_pot_x_y(uint16 x, uint16 y)
+{
+    mdxy = ((y & 0xffff) << 16 | (x & 0xffff));
+}
+
+// 获取绝对位置
+uint32 md_get_pot_x_y()
+{
+    return mdxy;
+}
+
+// 获取相对位置
+uint32 md_get_relative_pot_x_y(uint16_t r_w, uint16_t r_h, uint16_t *gx, uint16_t *gy)
+{
+    uint16_t x = (r_w * (mdxy & 0xffff) / vpp_msg.vpp_w) & 0xffff;
+    uint16_t y = (r_h * (mdxy >> 16) / vpp_msg.vpp_h) & 0xffff;
+    if (gx)
+    {
+        *gx = x;
+    }
+    if (gy)
+    {
+        *gy = y;
+    }
+    return y << 16 | x;
+}
+
+uint32 md_get_relative_pot_x0_y0_x1_y1(uint8_t num, uint16_t r_w, uint16_t r_h, uint16_t *gx0, uint16_t *gy0, uint16_t *gx1, uint16_t *gy1)
+{
+    uint16_t x0 = (r_w * (mdet_msg[num].x0 * 32) / vpp_msg.vpp_w) & 0xffff;
+    uint16_t y0 = (r_h * (mdet_msg[num].y0 * 32) / vpp_msg.vpp_h) & 0xffff;
+    uint16_t x1 = (r_w * (mdet_msg[num].x1 * 32) / vpp_msg.vpp_w) & 0xffff;
+    uint16_t y1 = (r_h * (mdet_msg[num].y1 * 32) / vpp_msg.vpp_h) & 0xffff;
+    if (mdet_msg[num].blkmv_cnt == 0)
+    {
+        if (gx0)
+        {
+            *gx0 = 0;
+        }
+        if (gy0)
+        {
+            *gy0 = 0;
+        }
+        if (gx1)
+        {
+            *gx1 = 1;
+        }
+        if (gy1)
+        {
+            *gy1 = 1;
+        }
+
+        return 1;
+    }
+    if (gx0)
+    {
+        *gx0 = x0;
+    }
+    if (gy0)
+    {
+        *gy0 = y0;
+    }
+    if (gx1)
+    {
+        *gx1 = x1;
+    }
+    if (gy1)
+    {
+        *gy1 = y1;
+    }
     return 0;
 }

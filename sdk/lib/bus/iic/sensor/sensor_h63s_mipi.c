@@ -89,7 +89,8 @@ SENSOR_INIT_SECTION const unsigned char H63SInitTable[CMOS_INIT_LEN]=
 	0x8A,0x20,
 	0x90,0x04,
 	0x91,0x04,
-	0x94,0xA0,
+	// 0x94,0xA0,
+    0x94,0xE0,
 	0x9B,0x8F,
 	0xA6,0x00,
 	0xA7,0x80,
@@ -527,6 +528,16 @@ void h63s_ae_adjust(struct isp_exposure_opt *p_cfg)
     p_cfg->cmd_len   = 1+1;
 }
 
+void h63s_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x12;
+    addr[index++] = (p_opt->reverse_en + p_opt->mirror_en * 2) << 4;
+    p_opt->data.size = index; 
+    p_opt->cmd_len   = 1 + 1;   // addr length + data lengt
+}
+
 void h63s_fps_opt(struct isp_sensor_opt *p_opt)
 {
     uint8  *addr        = (uint8 *)p_opt->data.addr;
@@ -564,6 +575,8 @@ const _Sensor_ISP_Init h63s_isp_init =
     .p_ygamma     = (_Sensor_YGAMMA *)h63s_ygamma_tbl,
 	.p_wdr        = (_Sensor_WDR    *)&h63s_wdr_init,
     .fps_opt      = (sensor_fps_opt  )h63s_fps_opt,
+    .img_opt      = (sensor_img_opt  )h63s_img_opt,
+
 };
 
 

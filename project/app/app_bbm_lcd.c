@@ -154,8 +154,10 @@ __weak void user_protocol()
 // 应用程序初始化
 __init static void fpv_app_init(void)
 {
-    int8_t takephoto_from = 0;
-	int8_t takephoto1_from = -1;
+#if TAKEPHOTO_EN || JPG_EN
+    int8_t takephoto_from  = 0;
+    int8_t takephoto1_from = -1;
+#endif
 #ifdef PSRAM_HEAP
     cJSON_Hooks hook;
     hook.malloc_fn = _os_malloc_psram;
@@ -345,16 +347,16 @@ static void hardware_init(uint8_t vcam)
 #endif
 
 #if AUDIO_EN
-	reg_auproc_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
-	reg_wsola_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
-    reg_aucoder_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
+	reg_auproc_alloc(av_malloc, av_zalloc, av_calloc, av_realloc, av_free);
+	reg_wsola_alloc(av_malloc, av_zalloc, av_calloc, av_realloc, av_free);
+    reg_aucoder_alloc(av_malloc, av_zalloc, av_calloc, av_realloc, av_free);
     aucode_mutex_init();
     audio_adc_init(AUSYS_AUAD, 8000, 1, 4, 1);
     audio_dac_init();
 #endif
 
 #if LCD_EN
-    void lcd_demo_thread(void *d);
+    void lcd_demo_thread(int32_t d);
     void lvgl_init_msi(uint16_t w, uint16_t h, uint8_t rotate);
 
     #if LVGL_HW_ROTATE_RPC_EN
@@ -374,7 +376,7 @@ static void hardware_init(uint8_t vcam)
     #endif
     hg_lv_mem_register(&hook);
     
-//    lvgl_init_msi(osd_w, osd_h, rotate);
+    lvgl_init_msi(osd_w, osd_h, rotate);
     lcd_demo_thread(2);
 #endif
     user_hardware_config();

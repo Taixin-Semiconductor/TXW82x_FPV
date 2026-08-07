@@ -10,6 +10,9 @@
 #include "lib/multimedia/msi.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "lib/video/h264/h264_drv.h"
+#include "hal/vpp.h"
+#include "lib/umac/ieee80211.h"
 
 #ifdef SYS_APP_BBM_CAM
 
@@ -102,7 +105,7 @@ void net_tcp_sema_up()
 uint16_t w_gol,h_gol;
 static int net_video_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 param2)
 {
-	static uint16_t oldw,oldh;
+	static uint16_t oldw = 0; 
 	struct fb_h264_s *h264;
     int ret = RET_OK;
     switch (cmd_id)
@@ -175,8 +178,144 @@ int usr_protocol_create_server(uint16_t port)
 	return socket_c;
 }
 
+void  recfg_babymonitor_msg(uint8_t success){
+	static uint8_t  did = 0;
+	static uint16_t last_still = 0;
+	static uint16_t last_move = 0; 
+	uint16_t max_still;
+	uint16_t max_move;
+	static uint8_t  success_frame_num = 0;
+#if 0
+	static uint8_t  framecnt = 0;
+	static uint32_t timeout = 0;
+	static uint8_t  lost_frame_num = 0;
+	static uint8_t  speed_level = 0;
+	static uint8_t  last_speed_level = 0xff;
+	static uint8_t  success_frame_num = 0;
+	
+	if(framecnt > 15){        //15帧内丢帧比例
+		if((os_jiffies() - timeout) > 1000){     //如果刚调整过mclk,那等3秒后再进行下次调整
+			if(lost_frame_num > 12){
+				timeout = os_jiffies();
+				speed_level = 3;			
+			}else if(lost_frame_num > 6){		         //15帧丢了6帧以上
+				timeout = os_jiffies();
+				speed_level = 2;
+			}else if(lost_frame_num > 3){	     //15帧丢了3帧以上
+				timeout = os_jiffies();
+				speed_level = 1;			
+			}else if(lost_frame_num == 0){	     //没丢帧
+				if(speed_level == 0){
+					speed_level = 0;
+				}else{
+					speed_level--;
+				}	
+			}
+
+			if(last_speed_level != speed_level){
+				last_speed_level = speed_level;
+
+				babymsg.speed = speed_level;
+			}
+		}
+		framecnt = 0;
+		lost_frame_num = 0;
+		success_frame_num = 0;
+	}else{
+		if(success){
+			success_frame_num++;
+		}else{
+			lost_frame_num++;
+		}
+		framecnt++;
+	}
+	babymsg.speed = speed_level;
+#else
+	if(success == 0){
+		success_frame_num = 0;
+		if(w_gol == 1280){
+			did = 1;
+		}else{
+			did = 2;
+		}
+
+		if(did == 1){
+			max_still = MAIN_SENSOR_STILL_MAX;
+			max_move  = MAIN_SENSOR_MOVE_MAX;
+		}else{
+			max_still = SEC_SENSOR_STILL_MAX;
+			max_move  = SEC_SENSOR_MOVE_MAX;			
+		}
+
+		if(last_still == 0){
+			last_still = max_still;
+			last_move  = max_move;
+		}
+
+		if(did == 1){
+			if(last_still > MAIN_SENSOR_STILL_MIN){
+				last_still = last_still - BPS_STEP;
+				last_move  = last_move  - BPS_STEP;
+			}else{
+				last_still = MAIN_SENSOR_STILL_MIN;
+				last_move  = MAIN_SENSOR_MOVE_MIN;
+			}
+		}else{
+			if(last_still > SEC_SENSOR_STILL_MIN){
+				last_still = last_still - BPS_STEP;
+				last_move  = last_move  - BPS_STEP;
+			}else{
+				last_still = SEC_SENSOR_STILL_MIN;
+				last_move  = SEC_SENSOR_MOVE_MIN;
+			}
+		}
+
+		h264_recfg_bsp(did,last_move,last_still);
+		h264_reflash_new_gop(did,1);
+	
+	}else{
+		success_frame_num++;
+		if(success_frame_num == UP_BPS_FRM_NUM){
+			if(w_gol == 1280){
+				did = 1;
+			}else{
+				did = 2;
+			}		
+
+			success_frame_num = 0;
+
+			if(did == 1){
+				if(last_still < MAIN_SENSOR_STILL_MAX){
+					last_still = last_still + BPS_STEP;
+					last_move  = last_move  + BPS_STEP;
+				}else{
+					last_still = MAIN_SENSOR_STILL_MAX;
+					last_move  = MAIN_SENSOR_MOVE_MAX;
+				}
+			}else{
+				if(last_still < SEC_SENSOR_STILL_MAX){
+					last_still = last_still + BPS_STEP;
+					last_move  = last_move  + BPS_STEP;
+				}else{
+					last_still = SEC_SENSOR_STILL_MAX;
+					last_move  = SEC_SENSOR_MOVE_MAX;
+				}
+			}
+
+			h264_recfg_bsp(did,last_move,last_still);
+			h264_reflash_new_gop(did,1);
+			
+		}
+		
+	}
+
+#endif
+}
+
 
 void udp_handle_client_status_write_workqueue(void *ei, void *d){
+	int tos;
+	static uint8_t pri_inv = 0;
 	uint32 ie;
 	status_msg *msg_head;
 	char buf[12];
@@ -185,8 +324,15 @@ void udp_handle_client_status_write_workqueue(void *ei, void *d){
 	msg_head->framenum = client_frame.framenum;
 	msg_head->type     = 1;
 	if(client_frame.lost_num != 0){
+		pri_inv++;
+		if((pri_inv%2)==1){
+			tos = IPTOS_PREC_NETCONTROL; // 最高优先级
+			setsockopt(handle_protocol_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));		
+		}
 		len = sendto(handle_protocol_fd, (char*)buf, 2, MSG_DONTWAIT, (struct sockaddr *)d, sizeof(struct sockaddr));
-		// os_printf("W");
+		tos = IPTOS_PREC_ROUTINE; // 最低优先级
+		setsockopt(handle_protocol_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));	
+	    BABY_DBG("W");
 	}else{
 		ie = disable_irq();
 		if(status_unlock){
@@ -221,7 +367,7 @@ void udp_handle_client_status_read_workqueue(){
 		BABY_DBG("E(%d)",msg_head->framenum);
 		return;
 	}
-	os_mutex_unlock(&thread_lock);
+	
 	
 	BABY_DBG("server recv:%d  type:%d\r\n",msg_head->framenum,msg_head->type);
 	
@@ -233,7 +379,9 @@ void udp_handle_client_status_read_workqueue(){
 		for(itk = 0;itk < client_frame.lost_num;itk++){
 			client_frame.lost_packet[itk] = server_staus_buf[2+itk];
 		}
+		client_frame.status = 3;
 	}
+	os_mutex_unlock(&thread_lock);
 
 	ie = disable_irq();
 	if(status_unlock){
@@ -272,9 +420,9 @@ void udp_handle_client_status_thread()
 		while((client_frame.status == 0)&&(framenum  == client_frame.framenum)){         //如果当前frame还处于等待client状态的情况,发送请求状态的要求
 			eloop_add_alarm(os_jiffies(),EVENT_F_ENABLED,udp_handle_client_status_write_workqueue,(void *)&addrServer);   //eventloop send
 			//client_frame.timeout = 5;       //5ms都读不到对回复的状态,重发吧
-			os_sleep_ms(5);
+			os_sleep_ms(10);
 			loop_run++;
-			if(loop_run > 8)   //重发8次后还是读不到状态,认命吧,你掉线了    
+			if(loop_run > 12)   //重发8次后还是读不到状态,认命吧,你掉线了    
 				break;
 		}
 		
@@ -294,11 +442,12 @@ void udp_handle_client_status_thread()
 }
 
 void udp_handle_client_data_thread(){
-	uint8_t loop_run;	
+//	uint8_t loop_run;	
 	int32 ret;
 	uint32 ie;
-	int init_count = 0;
-	void *priv;
+	uint8_t framesuc = 0;
+//	int init_count = 0;
+//	void *priv;
 	uint16_t port = 6002;
 	uint8_t  framenum;
 	uint8_t  oldcount = 0;
@@ -311,7 +460,7 @@ void udp_handle_client_data_thread(){
 	uint32_t sendlen = 0;
 	uint8_t pktcnt = 0;
 	struct fb_h264_s *h264;
-	uint32_t start_tmr = 0;
+//	uint32_t start_tmr = 0;
 	struct sockaddr_in addrServer;
 	struct framebuff *h264_fb = NULL;
 	int  len;
@@ -344,7 +493,7 @@ void udp_handle_client_data_thread(){
 			data_head_msg->cnt = (h264_fb->len+MAX_VIDEO_PKT_LEN-1)/MAX_VIDEO_PKT_LEN;
 			data_head_msg->frmtype = h264->type;
 			framelen = h264_fb->len;
-			BABY_DBG("(%d   %d  %d)",data_head_msg->framenum,h264->type,framelen);
+			BABY_DBG("((%d)%d   %d  %d)",client_dev_magic,data_head_msg->framenum,h264->type,framelen);
 
 			client_frame.framenum = data_head_msg->framenum;
 			client_frame.status = 0;
@@ -361,15 +510,15 @@ void udp_handle_client_data_thread(){
 				if((h264->count == 0)&&(oldcount == 255)){  
 					if(lostframe == 1){
 						if(h264->type != 1){
-							os_printf("send slow,lost frame wait i frame\r\n");
+							BABY_DBG("send slow,lost frame wait i frame\r\n");
 							goto delete_frame;
 						}
 					}
 				}else{
 					if(h264->type == 1){
-						os_printf("frame lost ,but this frame is i frame ,send it\r\n");
+						BABY_DBG("frame lost ,but this frame is i frame ,send it\r\n");
 					}else{
-						os_printf("send slow ,lost frame ,wait I frame:%d  %d\r\n",oldcount,h264->count);
+						BABY_DBG("send slow ,lost frame ,wait I frame:%d  %d\r\n",oldcount,h264->count);
 						h264_reflash_new_gop(1,1);
 						lostframe = 1;
 						goto delete_frame;
@@ -383,7 +532,7 @@ void udp_handle_client_data_thread(){
 			datoffset = 0;
 
 			client_frame.lost_num = data_head_msg->cnt; 
-
+			framesuc = 1;
 			nal_reserve = 0;
 			if(h264_fb->stype == FSTYPE_H264_FILE) {
 				if(h264->type == 1) {
@@ -492,10 +641,11 @@ void udp_handle_client_data_thread(){
 				BABY_DBG("status:%d down:%d\r\n",client_frame.status,ret);
 				if(client_frame.status == 3){
 					h264_reflash_new_gop(1,1);
-					os_printf("frame already lost,wait I frame.......\r\n");
+					BABY_DBG("frame maybe lost,produce I frame.......\r\n");
+					framesuc = 0;
 				}
 			}
-			
+			recfg_babymonitor_msg(framesuc);
 delete_frame:
 			//_os_printf("U(%d %d)",h264->count,lostframe);
 			oldcount = h264->count;
@@ -546,9 +696,11 @@ void user_tcpClientread(void *e, void *d)
 	static uint16_t w;
 	static uint16_t h;
 	int ret;
+	struct vpp_device *vpp_dev;
 	uint8_t tcpbuf[64];
 	connect_cfg_head tcp_hand;
 	h264_dev = (struct h264_device *)dev_get(HG_H264_DEVID);
+	vpp_dev = (struct vpp_device *)dev_get(HG_VPP_DEVID);
 	ret = read(tcp_connect_fd,tcpbuf,64);
 	if(ret > 0) {
 		//memcpy(&tcp_hand,tcpbuf,sizeof(tcp_hand));
@@ -556,6 +708,13 @@ void user_tcpClientread(void *e, void *d)
 		BABY_DBG("get len:%d  tcpbuf:%02x  w:%d  h:%d............\r\n",ret,tcp_hand.type,tcp_hand.w,tcp_hand.h);
 		if(tcp_hand.type == 0){
 			heartbeat++;
+		}else if(tcp_hand.type == 3){
+			h264_reflash_new_gop(1,1);
+			vpp_open(vpp_dev);
+		}else if(tcp_hand.type == 4){
+			vpp_close(vpp_dev);
+		}else if(tcp_hand.type == 5){
+			client_dev_magic = tcp_hand.dev_magic;
 		}else{
 			BABY_DBG("start tran photo\r\n");
 			if(tcp_hand.type == 2){
@@ -582,7 +741,7 @@ void user_tcpClientread(void *e, void *d)
 }
 
 void tcp_handle_client_thread(){	//摄像头端
-	connect_cfg_head tcp_hand;
+//	connect_cfg_head tcp_hand;
 	int32 isstaconnect;
 	int32 ret;
 	struct sockaddr_in addr;

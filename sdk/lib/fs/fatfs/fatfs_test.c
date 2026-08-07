@@ -79,7 +79,7 @@ static DSTATUS fatfs_init(void *init_dev){
 	uint32 err = get_sdhost_status(init_dev);
 	if(err)
 	{
-		err = sdhost_init(48 * 1000 * 1000, SDHC_SINGLE_CODE_SUPPORT_DIS);
+		err = sdhost_init(48 * 1000 * 1000, 0);
 	}
 	
 	return err;

@@ -55,6 +55,7 @@ enum psram_type {
   UPSRAM_4MBx2,
   UPSRAM_8MBx2,
   UPSRAM_16MB,
+  APSRAM_4MB,
 	UNDEFINE,
 };
 
@@ -64,6 +65,8 @@ enum psram_clk_alt {
     PSRAM_CLK_274M,
     PSRAM_CLK_160M,
     PSRAM_CLK_USER = 0xf0,
+    PSRAM_CLK_MIN = 0xf1,
+    PSRAM_CLK_MAX = 0xf2,
     PSRAM_CLK_END,
 };
 
@@ -86,7 +89,7 @@ struct psram_dcfg {
 /***** LL API AND DRIVER API *****/
 struct __ctl_clk;
 
-int psram_auto_init(int extern_pt, enum psram_clk_alt alt, struct __ctl_clk *clk);
+int psram_auto_init(int extern_pt, uint32_t clk);
 int32_t psram_init(struct hg_xspi *xspi, void *vcfg);
 void psram_deinit(struct hg_xspi *xspi);
 void register_psram_dcfg(void *cfg, uint32_t pid);

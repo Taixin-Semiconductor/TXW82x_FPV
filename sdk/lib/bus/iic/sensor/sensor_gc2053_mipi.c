@@ -183,53 +183,56 @@ const _Sensor_BLC gc2053_blc_init =
 
 const _Sensor_AWB gc2053_awb_init = 
 {
-    .default_gain   = {383, 256, 256, 478},
-    .awb_min_gain   = {256, 256, 256, 350},
-    .awb_max_gain   = {550, 256, 256, 768},
- 
+	.default_gain   = {407, 256, 256, 650},
+    .awb_min_gain   = {256, 256, 256, 256},
+    .awb_max_gain   = {550, 256, 256, 860},
+    
     .coarse_constraint = {
-        .coarse_min_bg =  70,
+        .coarse_min_bg =  50,
         .coarse_lb_bg  = 110,
-        .coarse_rt_bg  = 120,
-        .coarse_max_bg = 190,
-        .coarse_min_rg = 100,
-        .coarse_lb_rg  = 145,
-        .coarse_rt_rg  = 170,
-        .coarse_max_rg = 270,
+        .coarse_rt_bg  = 110,
+        .coarse_max_bg = 160,
+        .coarse_min_rg = 90,
+        .coarse_lb_rg  = 150,
+        .coarse_rt_rg  = 150,
+        .coarse_max_rg = 225,
     },
 
-    .constraint = {
-        .section_num = 6,
-        //   temp:   7500, 6500, 5000, 4000, 3000, 2300
-        //  rgain:    457,  448,  406,  363,  319,  275
-        //  bgain:    402,  436,  470,  518,  578,  634
-        // lower,upper range
-        // lower,upper
-        //    15,   10
-        //    15,   15
-        //    20,   15
-        //    20,   15
-        //    15,   15
-        //    15,   15
-        .color_temp          = {        7500,        6500,        5000,        4000,        3000,        2300,           0,           0},
-        .sec_line_slope      = {  0.23076923,        0.75,   1.5217391,   1.6923077,       2.375,         3.3,           0,           0},
-        .sec_line_offset     = {         130,        40.5,        -106,  -179.30769,    -373.875,      -682.4,           0,           0},
-        .sec_line_sqrtk2add1 = {   0.9743912,         0.8,  0.54917789,  0.50872931,    0.388057,   0.2900074,           0,           0},
-        .center_line_slope   = {  -4.3333333, -0.73333333,        -0.6, -0.58333333,  -0.3030303,           0,           0},
-        .center_line_offset  = {   782.66667,   257.06667,       235.6,   232.58333,   175.12121,           0,           0},
-        .lower_line_slope    = {  -3.3168706,  -1.1684311,  -0.6009149, -0.37406012, -0.30550067,           0,           0},
-        .lower_line_offset   = {   585.46066,   297.56977,   212.43301,   173.68044,   160.02483,           0,           0},
-        .upper_line_slope    = {    -1.18883,  -0.6642319, -0.59926374,  -0.5898791, -0.30032946,           0,           0},
-        .upper_line_offset   = {   346.83514,   263.94864,   252.95358,   251.18335,   190.14025,           0,           0},
-        .corner_limit        = {   128.38413,   159.62711,   152.74391,    165.2486,   233.64989,   88.644634,   242.35011,   117.35537},
-    },
+	.constraint = {
+	.section_num = 5,
+	//   temp:   7500, 6500, 5000, 4000, 3000
+	//  rgain:    544,  465,  407,  329,  313
+	//  bgain:    462,  583,  650,  800,  830
+	// lower,upper range
+	// lower,upper
+	//    15,   10
+	//    15,   15
+	//    20,   15
+	//    15,   15
+	//    15,   10
+		.color_temp          = {        7500,        6500,        5000,        4000,        3000,           0,           0,           0},
+		.sec_line_slope      = {         0.7,           1,   1.9333333,   2.1818182,   3.3333333,           0,           0,           0},
+		.sec_line_offset     = {          58,         -29,  -210.26667,  -352.18182,  -617.66667,           0,           0,           0},
+		.sec_line_sqrtk2add1 = {  0.81923192,  0.70710678,  0.45942292,  0.41665471,  0.28734789,           0,           0,           0},
+		.center_line_slope   = {  -1.4285714,       -0.55,        -0.5,        -0.3,           0,           0,           0},
+		.center_line_offset  = {   313.42857,      189.55,       181.5,       141.7,           0,           0,           0},
+		.lower_line_slope    = {  -1.4110237, -0.84777428, -0.36326611, -0.31252481,           0,           0,           0},
+		.lower_line_offset   = {   285.38158,   211.93757,   138.38363,   128.60324,           0,           0,           0},
+		.upper_line_slope    = {   -1.073192, -0.50865633, -0.50021558,  -1.0655304,           0,           0,           0},
+		.upper_line_offset   = {    285.3096,   199.72226,   198.30513,   314.33591,           0,           0,           0},
+		.corner_limit        = {   107.71152,   133.39806,   128.19232,   147.73462,   204.68978,   64.632606,   211.87348,   88.578263},
+		
+	 },
+
 };
+
 
 const _Sensor_AE gc2053_ae_init = 
 {
+	.curr_fps			   = (25.50*256),
     .max_frame_length      = 1125,
     .min_frame_vb          = 1,
-    .max_analog_gain       = 24<<8,
+    .max_analog_gain       = 128<<8,
     .min_analog_gain       = 1<<8,
     .default_exposure_line = 1124,
     .max_exposure_line     = 1124,
@@ -244,6 +247,53 @@ const _Sensor_AE gc2053_ae_init =
     .hs_scene_bv_lut       = {791, 3534},
     .lowlight_lsb_bv_lut   = {34, 80, 204, 400, 791, 1599, 3534, 1e30},
     .lowlight_lsb_gain_lut = {64, 32,  16,  16,  16,  16,   16,   16},  // u7.4
+};
+
+const _Sensor_WDR gc2053_wdr_init = {
+    .wdr_bv           = {791, 1599, 3534,  7000, 10000, 14000, 28000, 56000},
+    .max_ns_slope     = {1.0,  1.0,  1.0,   1.0,  1.0,   1.0,   1.0,   1.0},
+    .max_shadow_slope = {1.0,  1.0,  1.0,   1.0,  1.0,   1.0,   1.0,   1.0},
+};
+
+const _Sensor_DPC gc2053_dpc_init = 
+{
+    .static_psram_addr      = (uint32)0,
+    .white_threshold        = 115,
+    .black_threshold        = 115,
+    .white_threshold_min    = 30,
+    .black_threshold_min    = 30,
+    .sensitivity_value      = 128,
+    .dynamic_white_strength = 4,
+    .dynamic_black_strength = 4,
+};
+
+const _Sensor_GAMMA_BV gc2053_gamma_map = 
+{
+    .bv 		= { 15000,  8000,  3000, 1200,  600,  300, 200, 100, },
+    .y_alpha 	= {	  255,   255,   255,  192,  160,  128,  64,  32, },
+    .rgb_alpha 	= {   255,   255,   255,  192,  160,  128,  64,  32, },
+};
+
+const _Sensor_CSC gc2053_csc_init = 
+{
+    .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
+    .rgb2yuv_range         = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_in_gamut      = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_in_range      = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_out_gamut     = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
+    .y_gamma_alpha         = 0xff,
+    .rgb_gamma_alpha       = 0xff,
+	.gamma_alpha_map       = (void *)&gc2053_gamma_map,
+};
+
+const _Sensor_GIC gc2053_gic_init = 
+{
+    .w_thres  = 14,
+    .w_slope  = 16,
+    .w_str    = 127,
+    .mu_thres = 5,
+    .mu_slope = 16,
 };
 
 const _Sensor_CSUPP gc2053_csupp_init = {
@@ -329,47 +379,6 @@ const _Sensor_COLENH gc2053_colenh_init = {
     .bv2colenh_map = (void *)gc2053_ce_map,
 };
 
-const _Sensor_DPC gc2053_dpc_init = 
-{
-    .static_psram_addr      = (uint32)0,
-    .white_threshold        = 115,
-    .black_threshold        = 115,
-    .white_threshold_min    = 30,
-    .black_threshold_min    = 30,
-    .sensitivity_value      = 128,
-    .dynamic_white_strength = 4,
-    .dynamic_black_strength = 4,
-};
-
-const _Sensor_GAMMA_BV gc2053_gamma_map = 
-{
-    .bv 		= { 15000,  8000,  3000, 1200,  600,  300, 200, 100, },
-    .y_alpha 	= {	  255,   255,   255,  192,  160,  128,  64,  32, },
-    .rgb_alpha 	= {   255,   255,   255,  192,  160,  128,  64,  32, },
-};
-
-const _Sensor_CSC gc2053_csc_init = 
-{
-    .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
-    .rgb2yuv_range         = ISP_YUV_RANGE_NARROW,
-    .yuv2rgb_in_gamut      = ISP_YUV_GAMUT_BT709,
-    .yuv2rgb_in_range      = ISP_YUV_RANGE_NARROW,
-    .yuv2rgb_out_gamut     = ISP_YUV_GAMUT_BT709,
-    .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
-    .y_gamma_alpha         = 0xff,
-    .rgb_gamma_alpha       = 0xff,
-	.gamma_alpha_map       = (void *)&gc2053_gamma_map,
-};
-
-const _Sensor_GIC gc2053_gic_init = 
-{
-    .w_thres  = 14,
-    .w_slope  = 16,
-    .w_str    = 127,
-    .mu_thres = 5,
-    .mu_slope = 16,
-};
-
 const _Sensor_BV2NR gc2053_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
     //           ev, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx
     {    29491,                     6 ,           511,                      63,         0,         0,             0,             0},    // 320lux
@@ -446,17 +455,13 @@ const _Sensor_LHS gc2053_lhs_map[] = {
     {           261,           289,          317,                0,                       0},  // cyan,             range: 28
     {           320,           351,           22,                0,                       0},  // blue,             range: 31
     {           109,           132,          156,                0,                       0},  // skin enhance,     range:
-    {           160,           203,          247,              +32,                       0},  // green enhance(plants),    range:
+    {           160,           203,          247,                0,                       0},  // green enhance(plants),    range:
     {           296,           318,          340,                0,                       0}   // blue enhance,     range:
 };
 
-const _Sensor_WDR gc2053_wdr_init = {
-    .wdr_bv           = {791, 1599, 3534,  7000, 10000, 14000, 28000, 56000},
-    .max_ns_slope     = {1.0,  1.0,  1.0,   1.0,  1.25,   1.5,   2.0,   3.0},
-    .max_shadow_slope = {1.0,  1.0,  1.0,   1.0,   1.0,  1.25,   1.5,   1.5},
-};
-
-const _Sensor_YGAMMA gc2053_ygamma_tbl[] = {
+	
+// 预设的Gamma曲线和对应的BV值
+const _Sensor_YGAMMA gc2053_ygamma_tbl[NUM_CURVES] = {
     {
      .bv = 200,
      .packed_lut = {
@@ -615,7 +620,7 @@ void GC2053_ae_adjust(struct isp_exposure_opt *p_cfg)
     addr[index++] = 0xb2;
     addr[index++] = ((tol_dig_gain & 0x3f) << 2);
     addr[index++] = 0xfe;
-    addr[index++] = 00;
+    addr[index++] = 0x00;
     addr[index++] = 0x03;
     addr[index++] = (p_cfg->exposure_line >> 8);
     addr[index++] = 0x04;
@@ -623,6 +628,30 @@ void GC2053_ae_adjust(struct isp_exposure_opt *p_cfg)
     p_cfg->data.size = index;
     p_cfg->cmd_len   = 1+1;
 }
+
+void gc2053_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x17;
+    addr[index++] = p_opt->reverse_en*2 + p_opt->mirror_en;
+
+    p_opt->data.size = index;
+    p_opt->cmd_len   = 1+1;
+}
+
+void gc2053_fps_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr        = (uint8 *)p_opt->data.addr;
+    uint8  index        = 0;
+    addr[index++]       = 0x41;
+    addr[index++]       = p_opt->curr_length >> 8;
+    addr[index++]       = 0x42;
+    addr[index++]       = p_opt->curr_length & 0xff;
+    p_opt->data.size    = index;
+    p_opt->cmd_len      = 1+1;
+}
+
 
 const _Sensor_ISP_Init gc2053_isp_init = 
 {
@@ -645,9 +674,11 @@ const _Sensor_ISP_Init gc2053_isp_init =
     .p_colenh     = (_Sensor_COLENH *)&gc2053_colenh_init,       
     .p_bv2nr      = (_Sensor_BV2NR  *)gc2053_bv2nr_init,
     .p_lsc        = (_Sensor_LSC    *)&gc2053_lsc_init,
-    .p_lhs        = (_Sensor_LHS    *)gc2053_lhs_map,
-	.p_ygamma     = (_Sensor_YGAMMA *)gc2053_ygamma_tbl,
-    .p_wdr        = (_Sensor_WDR    *)&gc2053_wdr_init,
+	.p_lhs        = (_Sensor_LHS    *)gc2053_lhs_map,
+    .p_ygamma     = (_Sensor_YGAMMA *)gc2053_ygamma_tbl,
+	.p_wdr        = (_Sensor_WDR    *)&gc2053_wdr_init,
+	.img_opt      = (sensor_img_opt  )gc2053_img_opt,
+    .fps_opt      = (sensor_fps_opt  )gc2053_fps_opt,
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ gc2053_cmd = 

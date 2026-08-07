@@ -5,6 +5,7 @@
 #include "walkie_talkie_demo.h"
 #include "keyScan.h"
 #include "walkie_talkie_ui_event.h"
+#include "audio_media_ctrl/audio_media_ctrl.h"
 
 camera_global_t camera_gvar;
 cam_set_t camSetParam;
@@ -36,6 +37,7 @@ char msgnum_str[100];
 #endif
 static char pair_str[100];
 uint32_t USER_KEY_EVENT = 0;
+struct msi *calling_tone_play_msi = NULL;
 
 const lv_img_dsc_t *ui_imgset_iconBat[5] = {&iconBat0,&iconBat1,&iconBat2,&iconBat3,&iconBat4};
 const lv_img_dsc_t *ui_imgset_iconMagicSound[4] = {&iconSoundNormal,&iconSoundAlien,&iconSoundRobot,&iconSoundChild};
@@ -45,7 +47,7 @@ uint32_t user_key_filter(uint32_t val)
 {
 	static uint32_t key =0;
 	uint32_t key_ret = 0;
-    if(val > 0)
+    if(val > 0 && camera_gvar.screen_on)
 	{
 		if((val & 0xff) == KEY_EVENT_SUP)
 		{
@@ -68,7 +70,15 @@ uint32_t user_key_filter(uint32_t val)
 					key_ret = LV_KEY_ENTER;
 				break;
 				case AD_SPEACH:
+#if USE_CALLING_DEMO
+				if(camera_gvar.page_cur == PAGE_INTERCOM)
+				{
+					key = KEY_CALLING_STOP;
+					lv_event_send(curPage_obj, USER_KEY_EVENT, &key);
+				}
+#else
 					mic_img_set_visible(0);
+#endif
 				break;
 				default:
 				break;
@@ -79,10 +89,11 @@ uint32_t user_key_filter(uint32_t val)
 		{
 			switch(val >> 8)
 			{
+#if !USE_CALLING_DEMO
 				case AD_SPEACH:
 					mic_img_set_visible(1);
 				break;
-
+#endif
 				default:
 				break;
 			}
@@ -91,10 +102,11 @@ uint32_t user_key_filter(uint32_t val)
 		{	
 			switch(val >> 8)
 			{
+#if !USE_CALLING_DEMO
 				case AD_SPEACH:
 					mic_img_set_visible(0);
 				break;
-
+#endif
 				default:
 				break;
 			}
@@ -157,12 +169,23 @@ uint32_t user_key_filter(uint32_t val)
 					lv_event_send(curPage_obj, USER_KEY_EVENT, &key);
 				}
 				break;
-				
+
+#if USE_CALLING_DEMO
+				case AD_SPEACH:
+				if(camera_gvar.page_cur == PAGE_INTERCOM)
+				{
+					key = KEY_CALLING_START;
+					lv_event_send(curPage_obj, USER_KEY_EVENT, &key);
+				}					
+				break;
+#endif
+
 				default:
 				break;
 			}
 		}
 	}
+	camera_gvar.key_operate = 1;
 	return key_ret;
 }
 
@@ -338,7 +361,7 @@ void pairDisplayProcess(void)
 			{
 				lv_label_set_text(ui_pairTeimlabel, "配对 成功 ");	
 					
-				 camera_gvar.pair_out_times = 12;
+				//  camera_gvar.pair_out_times = 12;
 
 				if(walkie_talkie_send_event(WT_EVT_DISP_NUM_GET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL) > 0) 
 				{
@@ -351,7 +374,7 @@ void pairDisplayProcess(void)
 			{
 				if(camera_gvar.pair_out_times== 0)
 				{
-					if(walkie_talkie_send_event(WT_EVT_PAIRSTATUS_GET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL))
+					// if(walkie_talkie_send_event(WT_EVT_PAIRSTATUS_GET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL))
 					user_stopPair();
 
 					lv_label_set_text(ui_pairTeimlabel, "配对 超时");	
@@ -402,8 +425,10 @@ void timer_event()
 		if(camera_gvar.welcome_times)
 		{
 			camera_gvar.welcome_times--;
-			if(camera_gvar.welcome_times==0)
-			lv_page_select(camera_gvar.poweron_nextpage);
+			if (camera_gvar.welcome_times == 0) {
+				lv_page_select(camera_gvar.poweron_nextpage);
+				walkie_talkie_send_event(WT_EVT_WELCOME_READY_SET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+			}
 		}
 	}
 
@@ -418,6 +443,64 @@ void timer_event()
 		pairDisplayProcess();
 	}
 	
+	if(camera_gvar.key_operate == 0) {
+		camera_gvar.key_operate_timeout++;
+		if(camera_gvar.key_operate_timeout >= camera_gvar.screen_on_time) {
+			camera_gvar.key_operate_timeout = camera_gvar.screen_on_time;
+			if(camera_gvar.screen_on_time >= 0 && camera_gvar.screen_on) {
+				walkie_talkie_send_event(WT_EVT_BACKLIGHT_OFF, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+				camera_gvar.screen_on = 0;
+			}
+		}
+	}
+	else {
+		camera_gvar.key_operate_timeout = 0;
+		camera_gvar.key_operate = 0;
+		if(camera_gvar.screen_on == 0) {
+			walkie_talkie_send_event(WT_EVT_BACKLIGHT_ON, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+			camera_gvar.screen_on = 1;
+		}
+	}
+
+#if USE_CALLING_DEMO
+	int32 calling_status = status_none;
+	calling_status = walkie_talkie_calling_get();
+	switch(calling_status) {
+		case wait_connect:
+			camera_gvar.key_operate_timeout = 0;
+			if(camera_gvar.screen_on == 0) {
+				walkie_talkie_send_event(WT_EVT_BACKLIGHT_ON, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+				camera_gvar.screen_on = 1;
+			}
+			break;
+		case wait_accept_connect:
+			camera_gvar.key_operate_timeout = 0;
+			if(camera_gvar.screen_on == 0) {
+				walkie_talkie_send_event(WT_EVT_BACKLIGHT_ON, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+				camera_gvar.screen_on = 1;
+			}
+			break;
+		case accept_connect:
+			camera_gvar.key_operate_timeout = 0;
+			if(camera_gvar.screen_on == 0) {
+				walkie_talkie_send_event(WT_EVT_BACKLIGHT_ON, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+				camera_gvar.screen_on = 1;
+			}
+			break;
+		case connecting:
+			camera_gvar.key_operate_timeout = 0;
+			if(camera_gvar.screen_on == 0) {
+				walkie_talkie_send_event(WT_EVT_BACKLIGHT_ON, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);
+				camera_gvar.screen_on = 1;
+			}
+			break;
+		default:
+			break;							
+	}
+#if CALLING_DEMO_DEBUG
+	os_printf("walkie_talkie_calling status:%d\n", calling_status);
+#endif
+#endif
 	timer_count++;
 }
 
@@ -498,6 +581,8 @@ void poweron_welcome(void)
 	camera_gvar.poweron_nextpage 	= PAGE_INTERCOM;
 	camSetParam.volumeSet 			= 3;
 	camSetParam.sundtype 			= 0;
+	camera_gvar.screen_on           = 1;
+	camera_gvar.screen_on_time      = SCREEN_ON_TIME_DEFAULT;
 
 	// 音量设置
 	walkie_talkie_send_event(WT_EVT_VOLUME_SET, (uint32_t)camSetParam.volumeSet, (uint32_t)NULL, (uint32_t)NULL);
@@ -551,8 +636,152 @@ void lv_page_select(uint8_t page)
 	}
 }
 
+void walkie_talkie_calling_callback(uint32_t local_status)
+{
+	static uint32_t last_local_status = status_none;
+	if(walkie_talkie_send_event(WT_EVT_WIFI_CONNECT_GET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL) == 0) {
+		walkie_talkie_calling_set(calling_stop);
+		return;
+	}
+	if(last_local_status == local_status) {
+		return;
+	}
+	last_local_status = local_status;
+	switch(local_status) {
+		case status_none:
+		{
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+			if(camera_gvar.calling_connect == 1) {
+				intercom_deinit();
+#ifdef SYS_APP_WALKIE_TALKIE
+				user_protocol_deinit();
+#endif
+				camera_gvar.calling_connect = 0;
+				walkie_talkie_send_event(WT_EVT_DISP_NUM_SET, 0, (uint32_t)NULL, (uint32_t)NULL);
+				#if USE_90_DEGREE_LOGO
+				extern const unsigned char ui_bgLogo[14217];
+				walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo, sizeof(ui_bgLogo), NULL);
+				#else
+				extern const unsigned char ui_bgLogo_ap[14241];
+				walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo_ap, sizeof(ui_bgLogo_ap), (uint32_t)NULL);
+				#endif
+			}
+			break;
+		}
+		case wait_connect:
+		{
+            AUDEC_INIT audec_init;
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+            audec_init.track_type = MEDIA_TRACK;
+            audec_init.priority = play_nonInterruptible;
+            audec_init.direct_to_dac = 1;
+            audec_init.use_tpc = 0;
+            audec_init.destroy_self = 0;
+            audec_init.src_msi = NULL;
+            calling_tone_play_msi = audio_file_play_init("FLASH:/calling1.mp3",2,&audec_init);
+			break;
+		}
+		case wait_accept_connect:
+		{
+            AUDEC_INIT audec_init;
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+            audec_init.track_type = MEDIA_TRACK;
+            audec_init.priority = play_nonInterruptible;
+            audec_init.direct_to_dac = 1;
+            audec_init.use_tpc = 0;
+            audec_init.destroy_self = 0;
+            audec_init.src_msi = NULL;
+            calling_tone_play_msi = audio_file_play_init("FLASH:/calling2.mp3",2,&audec_init);
+			break;
+		}
+		case accept_connect:
+		{
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+			break;
+		}
+		case connecting:
+		{
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+			if(camera_gvar.calling_connect == 0) {
+#ifdef SYS_APP_WALKIE_TALKIE
+				user_protocol_reinit();
+#endif
+				intercom_init();
+				camera_gvar.calling_connect = 1;
+			}
+			break;
+		}
+		case wait_disconnect:
+		{
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+			if(camera_gvar.calling_connect == 1) {
+				intercom_deinit();
+#ifdef SYS_APP_WALKIE_TALKIE
+				user_protocol_deinit();
+#endif
+				camera_gvar.calling_connect = 0;
+				walkie_talkie_send_event(WT_EVT_DISP_NUM_SET, 0, (uint32_t)NULL, (uint32_t)NULL);
+				#if USE_90_DEGREE_LOGO
+				extern const unsigned char ui_bgLogo[14217];
+				walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo, sizeof(ui_bgLogo), NULL);
+				#else
+				extern const unsigned char ui_bgLogo_ap[14241];
+				walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo_ap, sizeof(ui_bgLogo_ap), (uint32_t)NULL);
+				#endif
+			}
+			break;
+		}
+		case disconnecting:
+		{
+            if(calling_tone_play_msi) {
+                audio_file_play_stop(calling_tone_play_msi);
+                calling_tone_play_msi = NULL;
+            }
+			if(camera_gvar.calling_connect == 1) {
+				intercom_deinit();
+#ifdef SYS_APP_WALKIE_TALKIE
+				user_protocol_deinit();
+#endif
+				camera_gvar.calling_connect = 0;
+				walkie_talkie_send_event(WT_EVT_DISP_NUM_SET, 0, (uint32_t)NULL, (uint32_t)NULL);
+				#if USE_90_DEGREE_LOGO
+				extern const unsigned char ui_bgLogo[14217];
+				walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo, sizeof(ui_bgLogo), NULL);
+				#else
+				extern const unsigned char ui_bgLogo_ap[14241];
+				walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo_ap, sizeof(ui_bgLogo_ap), (uint32_t)NULL);
+				#endif
+			}
+			break;
+		}
+		default:
+			break;
+	}
+}
+
 void walkie_talkie_demo(void)
 {
+#if USE_CALLING_DEMO
+	walkie_talkie_calling_init((void*)walkie_talkie_calling_callback);
+#endif
 	set_lvgl_get_key_func(user_key_filter);
 	walkie_talkie_msi_ext_init();
 	walkie_talkie_send_event(WT_EVT_BAT_DET_INIT, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL);

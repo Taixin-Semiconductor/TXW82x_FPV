@@ -518,6 +518,28 @@ void h63p_ae_adjust(struct isp_exposure_opt *p_cfg)
     p_cfg->cmd_len   = 1+1;
 }
 
+void h63p_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x12;
+    addr[index++] = (p_opt->reverse_en + p_opt->mirror_en * 2) << 4;
+    p_opt->data.size = index; 
+    p_opt->cmd_len   = 1 + 1;   // addr length + data lengt
+}
+
+void h63p_fps_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr        = (uint8 *)p_opt->data.addr;
+    uint8  index        = 0;
+    addr[index++]       = 0x23;
+    addr[index++]       = p_opt->curr_length >> 8;
+    addr[index++]       = 0x22;
+    addr[index++]       = p_opt->curr_length & 0xff;
+    p_opt->data.size    = index;
+    p_opt->cmd_len      = 1+1;
+}
+
 const _Sensor_ISP_Init h63p_isp_init = 
 {
     .type         = ISP_INPUT_DAT_SRC_MIPI0,
@@ -542,6 +564,8 @@ const _Sensor_ISP_Init h63p_isp_init =
     .p_lhs        = (_Sensor_LHS    *)h63p_lhs_map,
     .p_ygamma     = (_Sensor_YGAMMA *)h63p_ygamma_tbl,
 	.p_wdr        = (_Sensor_WDR    *)&h63p_wdr_init,
+	.img_opt      = (sensor_img_opt  )h63p_img_opt,
+    .fps_opt      = (sensor_fps_opt  )h63p_fps_opt,
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ h63p_cmd= 

@@ -4,9 +4,20 @@
 #include "lib/common/atcmd.h"
 #include "syscfg.h"
 #include "media_test_demo/media_test_demo.h"
+#include "print_audio/print_audio.h"
 extern int32 fpv_atcmd_check_heap(const char *cmd, char *argv[], uint32 argc);
 int32 fpv_atcmd_dbg(const char *cmd, char *argv[], uint32 argc);
 extern int32 cpu1_atcmd_recv(char *data, uint32 len);
+
+#ifdef SYS_APP_BBM_LCD
+int32 atcmd_babyprotocol_change_larger(const char *cmd, char *argv[], uint32 argc);
+int32 atcmd_babyprotocol_switch_device(const char *cmd, char *argv[], uint32 argc);
+int32 atcmd_intercom_switch_device(const char *cmd, char *argv[], uint32 argc);
+#endif
+#ifdef SYS_APP_BBM_CAM
+int32 atcmd_bbm_client_playback(const char *cmd, char *argv[], uint32 argc);
+int32 atcmd_bbm_client_record(const char *cmd, char *argv[], uint32 argc);
+#endif
 
 int32 sys_empty_atcmd(const char *cmd, char *argv[], uint32 argc)
 {
@@ -64,12 +75,11 @@ static const struct hgic_atcmd static_atcmds[] = {
     //{ "AT+TCPTEST", tcp_test_atcmd_hdl },
     { "AT+ICMP_MNTR", sys_atcmd_icmp_mntr },
 
-
 //    { "AT+PCAP", sys_wifi_atcmd_pcap },
-    { "AT+REBOOT_TEST", sys_wifi_atcmd_reboot_test_mode },
 
 	{ "AT+SAVE_AUDIO", atcmd_save_audio },
 	{ "AT+PLAY_AUDIO", atcmd_play_audio },
+	{ "AT+PRINT_AUDIO", atcmd_print_audio_enable },
     /*
         继续添加其他AT命令
         ....
@@ -86,6 +96,18 @@ static const struct hgic_atcmd static_atcmds[] = {
     { "AT+FPV_HEAP", fpv_atcmd_check_heap },
     { "AT+FPV_DBG", fpv_atcmd_dbg },
 #endif
+
+#ifdef SYS_APP_BBM_LCD
+    { "AT+SWITCH_VIDEO", atcmd_babyprotocol_switch_device },
+    { "AT+SWITCH_AUDIO", atcmd_intercom_switch_device },
+    { "AT+CHANGE_LARGE", atcmd_babyprotocol_change_larger },
+#endif
+
+#ifdef SYS_APP_BBM_CAM    
+    { "AT+RECORD", atcmd_bbm_client_record },
+    { "AT+PLAYBACK", atcmd_bbm_client_playback },
+#endif
+
 };
 
 __init void sys_atcmd_init(void)

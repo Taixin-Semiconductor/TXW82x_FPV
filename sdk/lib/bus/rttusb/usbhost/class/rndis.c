@@ -17,18 +17,27 @@
 static rt_err_t rt_rndis_msg_send_recv(struct usb_rndis *rndis, rt_uint8_t *send_buf, rt_uint32_t send_len,
             rt_uint8_t *recv_buf, rt_uint32_t recv_size, rt_uint32_t *recv_len)
 {
+    USBD_CDC_RNDIS_MsgTypeDef *msg = (USBD_CDC_RNDIS_MsgTypeDef *)recv_buf;
     uinst_t device = rndis->device;
     int ret = 0;
     rt_uint32_t rndis_avial[2 + (USB_RX_BUFF_RESERVE_SIZE / 4)] = {0};  // 防止越界
+    rt_uint32_t req_type = msg->Ctrl.MsgType;
     
     ret = rt_usbh_cdc_send_command(device, send_buf, send_len);
     if (ret == send_len) {
+__retry:
         /* waite for the interrupt ep */
         ret = rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_int, rndis_avial, 8, USB_TIMEOUT_BASIC);
         if (ret == 8 && rndis_avial[0] == 1 && rndis_avial[1] == 0) {
             ret = rt_usbh_cdc_get_response(device, recv_buf, recv_size);
             if (ret > 0) {
                 *recv_len = ret;
+                if (msg->Resp.MsgType != (0x80000000UL | req_type) ||
+                    msg->Resp.ReqId != rndis->req_id ||
+                    msg->Resp.Status != CDC_RNDIS_STATUS_SUCCESS) {
+                    //os_printf("retry,%d,%d,%d,%d,%d\r\n", msg->Resp.MsgType, req_type, msg->Resp.ReqId, rndis->req_id, msg->Resp.Status);
+                    goto __retry;
+                }
                 return RET_OK;
             }
         }
@@ -53,13 +62,7 @@ static rt_err_t rt_rndis_msg_init(struct usb_rndis *rndis)
     msg->Init.MaxTransferSize = 2048;
     ret = rt_rndis_msg_send_recv(rndis, rndis->msg_buffer, msg->Init.MsgLength,
                     rndis->msg_buffer, 128, &recv_len);
-    if (ret == RET_OK && recv_len == sizeof(USBD_CDC_RNDIS_InitCpltMsgTypeDef) &&
-            msg->InitCplt.MsgType == CDC_RNDIS_INITIALIZE_CMPLT_ID &&
-            msg->InitCplt.ReqId == rndis->req_id &&
-            msg->InitCplt.Status == CDC_RNDIS_STATUS_SUCCESS) {
-        return RET_OK;
-    }
-    return RET_ERR;
+    return ret;
 }
 
 static rt_err_t rt_rndis_msg_keepalive(struct usb_rndis *rndis)
@@ -74,13 +77,7 @@ static rt_err_t rt_rndis_msg_keepalive(struct usb_rndis *rndis)
     msg->KpAlive.ReqId = ++rndis->req_id;
     ret = rt_rndis_msg_send_recv(rndis, rndis->msg_buffer, msg->KpAlive.MsgLength,
                     rndis->msg_buffer, 128, &recv_len);
-    if (ret == RET_OK && recv_len == sizeof(USBD_CDC_RNDIS_KpAliveCpltMsgTypeDef) &&
-            msg->KpAliveCplt.MsgType == CDC_RNDIS_KEEPALIVE_CMPLT_ID &&
-            msg->KpAliveCplt.ReqId == rndis->req_id &&
-            msg->KpAliveCplt.Status == CDC_RNDIS_STATUS_SUCCESS) {
-        return RET_OK;
-    }
-    return RET_ERR;
+    return ret;
 }
 
 rt_err_t rt_rndis_msg_query(struct usb_rndis *rndis, rt_uint32_t oid, rt_uint8_t *buff, rt_uint32_t *len)
@@ -99,15 +96,33 @@ rt_err_t rt_rndis_msg_query(struct usb_rndis *rndis, rt_uint32_t oid, rt_uint8_t
     msg->Query.DeviceVcHandle = 0;
     ret = rt_rndis_msg_send_recv(rndis, rndis->msg_buffer, msg->Query.MsgLength,
                     rndis->msg_buffer, 128, &recv_len);
-    if (ret == RET_OK && recv_len >= sizeof(USBD_CDC_RNDIS_QueryCpltMsgTypeDef) &&
-            msg->QueryCplt.MsgType == CDC_RNDIS_QUERY_CMPLT_ID &&
-            msg->QueryCplt.ReqId == rndis->req_id &&
-            msg->QueryCplt.Status == CDC_RNDIS_STATUS_SUCCESS) {
+    if (ret == RET_OK) {
         os_memcpy(buff, msg->QueryCplt.InfoBuf, msg->QueryCplt.InfoBufLength);
         *len = msg->QueryCplt.InfoBufLength;
         return RET_OK;
     }
-    return RET_ERR;
+    return ret;
+}
+
+rt_err_t rt_rndis_msg_set(struct usb_rndis *rndis, rt_uint32_t oid, rt_uint8_t *buff, rt_uint32_t len)
+{
+    USBD_CDC_RNDIS_MsgTypeDef *msg = (USBD_CDC_RNDIS_MsgTypeDef *)rndis->msg_buffer;
+    uinst_t device = rndis->device;
+    rt_uint32_t recv_len = 0;
+    rt_uint32_t rndis_avial[2 + (USB_RX_BUFF_RESERVE_SIZE / 4)] = {0};  // 防止越界
+    int ret = 0;
+
+    os_memset(rndis->msg_buffer, 0, sizeof(USBD_CDC_RNDIS_SetMsgTypeDef));
+    msg->Set.MsgType = CDC_RNDIS_SET_MSG_ID;
+    msg->Set.MsgLength = sizeof(USBD_CDC_RNDIS_SetMsgTypeDef) + len;
+    msg->Set.ReqId = ++rndis->req_id;
+    msg->Set.Oid = oid;
+    msg->Set.InfoBufLength = 0;
+    msg->Set.InfoBufOffset = 20;
+    msg->Set.DeviceVcHandle = 0;
+    ret = rt_rndis_msg_send_recv(rndis, rndis->msg_buffer, msg->Set.MsgLength,
+                    rndis->msg_buffer, 128, &recv_len);
+    return ret;
 }
 
 static void rt_usbh_rndis_keepalive_timer(void *args)
@@ -129,6 +144,20 @@ static rt_err_t rt_usbh_rndis_open(struct netdev *ndev, netdev_input_cb input_cb
     rndis->input_priv = priv;
     enable_irq(flags);
 
+    return RET_OK;
+}
+
+static rt_err_t rt_usbh_rndis_ioctl(struct netdev *ndev, rt_uint32_t cmd, rt_uint32_t param1, rt_uint32_t param2)
+{
+    struct usb_rndis *rndis = container_of(ndev, struct usb_rndis, ndev);
+
+    switch (cmd) {
+        case NETDEV_IOCTL_GET_ADDR:
+            os_memcpy((rt_uint8_t *)param1, rndis->mac, 6);
+            break;
+        default:
+            return -ENOTSUPP;
+    }
     return RET_OK;
 }
 
@@ -159,7 +188,7 @@ static rt_err_t rt_usbh_rndis_send_data(struct netdev *ndev, rt_uint8_t *p_data,
     packet->DataOffset = 36; // 明明是44，但是抓包看全是36，不知道为什么
     packet->DataLength = size;
     hw_memcpy(packet + 1, p_data, size);
-    rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_out, packet, packet->MsgLength, 0);
+    rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_out, packet, packet->MsgLength, 1000);
     os_free(packet);
     return RET_OK;
 }
@@ -200,7 +229,7 @@ static rt_err_t rt_usbh_rndis_send_scatter_data(struct netdev *ndev, scatter_dat
         hw_memcpy(p_data + offset, data[i].addr, data[i].size);
         offset += data[i].size;
     }
-    rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_out, packet, packet->MsgLength, 0);
+    rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_out, packet, packet->MsgLength, 1000);
     os_free(packet);
     return RET_OK;
 }
@@ -208,8 +237,18 @@ static rt_err_t rt_usbh_rndis_send_scatter_data(struct netdev *ndev, scatter_dat
 void rt_usbh_rndis_network_init(struct usb_rndis *rndis)
 {
     struct netdev *ndev = &rndis->ndev;
+    rt_uint8_t mac[8]; // 有些设备返回mac会多些字节
+    rt_uint32_t recv_len = 0;
+    rt_uint32_t packet_filter = CDC_RNDIS_PACKET_DIRECTED | \
+                                CDC_RNDIS_PACKET_ALL_MULTICAST | \
+                                CDC_RNDIS_PACKET_BROADCAST | \
+                                CDC_RNDIS_PACKET_PROMISCUOUS;
+
     if (ndev) {
         // tcpip_init(NULL, NULL); // 外面wifi应该初始化过了
+        rt_rndis_msg_query(rndis, OID_802_3_CURRENT_ADDRESS, mac, &recv_len);
+        os_memcpy(rndis->mac, mac, 6);
+        rt_rndis_msg_set(rndis, OID_GEN_CURRENT_PACKET_FILTER, (rt_uint8_t *)&packet_filter, 4);
         lwip_netif_add(ndev, "l0", NULL, NULL, NULL);
         // 利用事件驱动
         os_printf("add l0 interface!\r\n");
@@ -219,7 +258,7 @@ void rt_usbh_rndis_network_init(struct usb_rndis *rndis)
 static const struct netdev_hal_ops rndis_ops = {
     .open      = rt_usbh_rndis_open,
     .close     = NULL,
-    .ioctl     = NULL,
+    .ioctl     = rt_usbh_rndis_ioctl,
     .send_data = rt_usbh_rndis_send_data,
     .send_scatter_data = rt_usbh_rndis_send_scatter_data,
 };

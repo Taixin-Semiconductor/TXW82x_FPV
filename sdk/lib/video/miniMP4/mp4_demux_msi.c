@@ -59,6 +59,19 @@ enum MP4_DEMUX_EVT
 
 typedef struct
 {
+    uint8_t  reserved4[4];
+    uint8_t  reserved2[2];
+    uint16_t dataReferenceIndex;
+    uint16_t version, revisionLevel;
+    uint32_t vendor;
+    uint16_t channelCount;
+    uint16_t sampleSize;
+    uint8_t  reserved[4];
+    uint32_t time_scale;
+} mp4_mp4a;
+
+typedef struct
+{
     uint32_t sample_count;
     uint32_t sample_delta;
 } mp4_stts;
@@ -145,6 +158,9 @@ typedef struct
     uint32_t *key_frame_bitmap;
     uint32_t  key_frame_bitmap_count;
 
+    uint32_t timescale;
+    uint32_t duration;
+
 } main_box;
 
 #pragma pack(2)
@@ -209,6 +225,17 @@ typedef struct
     uint8_t flags[3];
 } MP4_gen_head;
 
+typedef struct
+{
+    uint32_t version : 8, flags : 24; // version+flags
+    uint32_t creation_time;
+    uint32_t modification_time;
+    uint32_t timescale;
+    uint32_t duration;
+    uint16_t language;
+    uint16_t pre_defined;
+} mp4_mdhd;
+
 struct mp4_demux_msi_s
 {
     struct msi     *msi;
@@ -266,21 +293,35 @@ uint32_t trak_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int
         uint32_t  bitmap_index;
         uint32_t  bitmap_offset;
         main_box *box = &trak_t->box;
-        if (box->key_frame_bitmap)
+
+        // 这里申请key_frame的空间,用于记录关键帧
+        uint32_t key_frame_count = (box->stsz_count + 0x1f) & (~0x1f);
+        if (key_frame_count)
         {
-            for (int i = 0; i < box->stss_count; i++)
+            key_frame_count             = key_frame_count / 0x20;
+            box->key_frame_bitmap       = (uint32_t *) STREAM_ZALLOC(key_frame_count * sizeof(uint32_t));
+            box->key_frame_bitmap_count = key_frame_count;
+
+            if (box->key_frame_bitmap)
             {
-                // MP4的索引从1开始
-                bitmap = BIG4_ENDIAN(box->stss[i].sample_number) - 1;
-                // 如果超过了,就不要去处理了
-                if (box->key_frame_bitmap_count * 32 > bitmap)
+                for (int i = 0; i < box->stss_count; i++)
                 {
-                    bitmap_index  = bitmap / 0x20;
-                    bitmap_offset = bitmap % 0x20;
-                    box->key_frame_bitmap[bitmap_index] |= (1 << bitmap_offset);
-                    // 记录关键帧的偏移,用bitmap
+                    // MP4的索引从1开始
+                    bitmap = BIG4_ENDIAN(box->stss[i].sample_number) - 1;
+                    // 如果超过了,就不要去处理了
+                    if (box->key_frame_bitmap_count * 32 > bitmap)
+                    {
+                        bitmap_index  = bitmap / 0x20;
+                        bitmap_offset = bitmap % 0x20;
+                        box->key_frame_bitmap[bitmap_index] |= (1 << bitmap_offset);
+                        // 记录关键帧的偏移,用bitmap
+                    }
                 }
             }
+        }
+        else
+        {
+            ret = 1;
         }
     }
     return ret;
@@ -359,15 +400,18 @@ static uint32_t stts_sample_parse(struct mp4_demux_msi_s *mp4_demux, const char 
         box->stsz_time = (mp4_stsz_time *) STREAM_MALLOC(sample_count * sizeof(mp4_stsz_time));
         if (box->stsz_time)
         {
-            uint32_t count  = 0;
-            uint32_t offset = 0;
-            uint32_t time   = 0;
+            uint32_t count      = 0;
+            uint32_t offset     = 0;
+            uint32_t time       = 0;
+            uint32_t remain_mod = 0;
             for (uint32_t i = 0; i < entry_count; i++)
             {
                 count = BIG4_ENDIAN(box->stts[i].sample_count);
                 for (uint32_t j = 0; j < count; j++)
                 {
-                    time += (BIG4_ENDIAN(box->stts[i].sample_delta) / 90);
+                    // os_printf(KERN_ALERT"BIG4_ENDIAN(box->stts[i].sample_delta):%d\tscale:%d\t", BIG4_ENDIAN(box->stts[i].sample_delta), box->timescale);
+                    time += ((BIG4_ENDIAN(box->stts[i].sample_delta) * 1000 + remain_mod) / box->timescale);
+                    remain_mod                         = ((BIG4_ENDIAN(box->stts[i].sample_delta) * 1000 + remain_mod) % box->timescale);
                     box->stsz_time[offset].sample_time = time;
                     offset++;
                 }
@@ -608,12 +652,6 @@ static uint32_t stco_sample_parse(struct mp4_demux_msi_s *mp4_demux, const char 
         box->stco = (mp4_stco *) STREAM_MALLOC(chunk_offset_box_entry_count * sizeof(mp4_stco));
         ret       = osal_fread(box->stco, chunk_offset_box_entry_count, sizeof(mp4_stco), fp);
         MP4_ABORT(ret == 0);
-
-        // 这里申请key_frame的空间,用于记录关键帧
-        uint32_t key_frame_count    = (chunk_offset_box_entry_count + 0x1f) & (~0x1f);
-        key_frame_count             = key_frame_count / 0x20;
-        box->key_frame_bitmap       = (uint32_t *) STREAM_ZALLOC(key_frame_count * sizeof(uint32_t));
-        box->key_frame_bitmap_count = key_frame_count;
     }
 abort_end:
     return ret;
@@ -663,30 +701,18 @@ uint32_t stss_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int
 
 static uint32_t mp4a_sample_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
 {
-    uint8_t  samplerate_index;
-    F_FILE  *fp        = mp4_demux->fp;
-    uint8_t *mp4a_data = (uint8_t *) STREAM_MALLOC(max_size);
-    uint32_t ret       = 0;
-    ret                = osal_fread(mp4a_data, 1, max_size, fp);
+    mp4_mp4a mp4a;
+//    uint8_t  samplerate_index;
+    F_FILE  *fp  = mp4_demux->fp;
+    uint32_t ret = 0;
+    ret          = osal_fread(&mp4a, 1, sizeof(mp4a), fp);
     MP4_ABORT(ret == 0);
-    mp4_demux->aac_dsi[0] = mp4a_data[max_size - 2];
-    mp4_demux->aac_dsi[1] = mp4a_data[max_size - 1];
-
-    samplerate_index = ((mp4_demux->aac_dsi[0] & 0x07) << 1) | (mp4_demux->aac_dsi[1] >> 7);
-    switch (samplerate_index)
+    // 尝试读取下一个box
+    if (max_size - sizeof(mp4a) > 0)
     {
-        case 0x8:
-            mp4_demux->audio_samplerate = 16000;
-            break;
-        case 0xB:
-            mp4_demux->audio_samplerate = 8000;
-            break;
-        default:
-            mp4_demux->audio_samplerate = 8000;
-            break;
+        ret = box_read(mp4_demux, box_name, max_size - sizeof(mp4a));
+        MP4_ABORT(ret > 0);
     }
-    os_printf("mp4_demux->audio_samplerate:%d\n", mp4_demux->audio_samplerate);
-    STREAM_FREE(mp4a_data);
 abort_end:
     return ret;
 }
@@ -694,6 +720,176 @@ abort_end:
 uint32_t mp4a_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
 {
     return mp4a_sample_parse(mp4_demux, box_name, max_size - 8);
+}
+
+// 如果tag_size返回0应该是不正确的
+uint8_t get_tag(uint8_t *data, uint32_t max_size, uint32_t *tag_size, uint8_t *head_size)
+{
+    uint8_t  tag;
+    uint8_t *l_data = data;
+    tag             = *data++;
+
+    uint32_t size = 0;
+    uint8_t  calc;
+//    uint8_t  head_offset = 0;
+    for (int i = 0; i < 4; i++)
+    {
+        calc = *data++;
+        size = size << 7;
+        size |= (calc & (0x7f));
+        if (!(calc & 0x80))
+        {
+            break;
+        }
+    }
+    if (tag_size)
+    {
+        // 判断max_size是否足够,不足够,应该是有错
+        if (max_size - 5 >= size)
+        {
+            *tag_size = size;
+        }
+        else
+        {
+            *tag_size = 0;
+        }
+    }
+
+    // 计算偏移量
+    if (head_size)
+    {
+        *head_size = data - l_data;
+    }
+    return tag;
+}
+
+// 寻找特定的tag
+// 返回对应tag的size,0代表没有找到或者异常,offset是指对应tag的偏移
+uint8_t *get_tag_value(uint8_t tag_v, uint8_t *data, uint32_t max_size, uint32_t *size)
+{
+    uint8_t  tag = 0;
+//    uint8_t  calc;
+    uint32_t tag_size;
+    uint8_t  head_size;
+    uint8_t *tag_data = NULL;
+    for (int i = 0; i < max_size;)
+    {
+        tag = get_tag(data + i, max_size, &tag_size, &head_size);
+        // 异常
+        if (tag_size == 0)
+        {
+            break;
+        }
+        if (tag == tag_v)
+        {
+            tag_data = data + i + head_size;
+            if (size)
+            {
+                *size = tag_size;
+            }
+            break;
+        }
+        i += (head_size + tag_size);
+    }
+    os_printf("tag:%d\ttag_data:%X\ttag_size:%d\tsize:%d\n", tag, tag_data, tag_size, *size);
+    return tag_data;
+}
+
+uint8_t *get_tag_5(uint8_t *data, uint32_t max_size, uint32_t *size)
+{
+    return get_tag_value(0x05, data, max_size, size);
+}
+
+uint8_t *get_tag_4(uint8_t *data, uint32_t max_size, uint32_t *size)
+{
+    return get_tag_value(0x04, data, max_size, size);
+}
+
+uint32_t esds_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
+{
+    F_FILE  *fp        = mp4_demux->fp;
+    uint8_t *esds_data = (uint8_t *) STREAM_MALLOC(max_size - 8);
+    osal_fread(esds_data, 1, max_size - 8, fp);
+    uint8_t *ES_Descriptor_data;
+    uint32_t es_descriptor_size = 0;
+    uint8_t  calc;
+    uint32_t size;
+    uint8_t *data;
+    uint8_t  found = 0;
+    // 直接跳过esds前面4byte,固定的数据
+    // 仅仅解析紧接着的ES_Descriptor_data数据
+    if (esds_data[4] == 0x03)
+    {
+        ES_Descriptor_data = esds_data + 5;
+        for (int i = 0; i < 4; i++)
+        {
+            calc               = *ES_Descriptor_data++;
+            es_descriptor_size = es_descriptor_size << 7;
+            es_descriptor_size |= (calc & (0x7f));
+            if (!(calc & 0x80))
+            {
+                ES_Descriptor_data += 3; // 跳过固定字段
+                found = 1;
+                break;
+            }
+        }
+    }
+    // 开始解析esds,我们只是关注自己需要的字段,我们只是
+    if (found)
+    {
+        data = get_tag_4(ES_Descriptor_data, es_descriptor_size, &size);
+        // 如果找到ID=4,则继续内部找ID=5
+
+        if (data)
+        {
+            if (size > 13)
+            {
+                data += 13;
+            }
+            size = size - 13;
+            data = get_tag_5(data, size, &size);
+            if (data && size >= 2)
+            {
+                mp4_demux->aac_dsi[0] = data[0];
+                mp4_demux->aac_dsi[1] = data[1];
+                uint8_t samplerate_index;
+
+                samplerate_index = ((mp4_demux->aac_dsi[0] & 0x07) << 1) | (mp4_demux->aac_dsi[1] >> 7);
+                switch (samplerate_index)
+                {
+                    case 0x8:
+                        mp4_demux->audio_samplerate = 16000;
+                        break;
+                    case 0xB:
+                        mp4_demux->audio_samplerate = 8000;
+                        break;
+                    default:
+                        mp4_demux->audio_samplerate = 8000;
+                        break;
+                }
+                os_printf("mp4_demux->audio_samplerate:%d\n", mp4_demux->audio_samplerate);
+            }
+        }
+    }
+
+    STREAM_FREE(esds_data);
+    return 0;
+}
+
+static uint32_t mdhd_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
+{
+    F_FILE   *fp     = mp4_demux->fp;
+    trak     *trak_t = &mp4_demux->trak_t[mp4_demux->trak_index];
+    main_box *box    = &trak_t->box;
+    mp4_mdhd  mdhd;
+    uint32_t  ret;
+    ret = osal_fread(&mdhd, 1, sizeof(mdhd), fp);
+    MP4_ABORT(ret == 0);
+    box->timescale = BIG4_ENDIAN(mdhd.timescale);
+    box->duration  = BIG4_ENDIAN(mdhd.duration);
+    os_printf("mdhd.timescale:%d\tmdhd.duration:%d\n", box->timescale, box->duration);
+abort_end:
+    return ret;
 }
 
 const MP4_parse_register MP4_func[] = {
@@ -713,6 +909,8 @@ const MP4_parse_register MP4_func[] = {
         {"avcC", avcc_parse},
         {"mp4a", mp4a_parse},
         {"hdlr", hdlr_parse},
+        {"esds", esds_parse},
+        {"mdhd", mdhd_parse},
         {(const char *) NULL, not_parse},
 };
 
@@ -781,10 +979,10 @@ uint32_t get_frame_offset(trak *trak_t, uint32_t sample_offset, uint32_t *read_s
 {
     main_box *box = &trak_t->box;
     // 这里暂时仅仅考虑sssc都是1  1  1的情况,暂时看到minimp4输出是这样的格式
-    if (box->stco_count > sample_offset)
+    if (box->stsz_count > sample_offset)
     {
         // 现在理论chunk只有一种,所以这里粗暴判断,不匹配就不能解析
-        if (box->stsz_count == box->stco_count && box->stsz)
+        if (box->stsz)
         {
             *read_size = BIG4_ENDIAN(box->stsz[sample_offset].sample_size);
         }
@@ -855,7 +1053,7 @@ uint32_t get_frame_num_pts(trak *trak_t, uint32_t num)
     main_box *box = &trak_t->box;
     if (num < box->stsz_count)
     {
-        // os_printf("box->stsz_time[%d].sample_time:%d\n",num,box->stsz_time[num].sample_time);
+        // os_printf(KERN_ALERT"box->stsz_time[%d].sample_time:%d\n",num,box->stsz_time[num].sample_time);
         return box->stsz_time[num].sample_time;
     }
     else
@@ -936,7 +1134,7 @@ void mp4_demux_thread(void *d)
         {
             vframe_offset = get_frame_offset(&mp4_demux->trak_t[0], mp4_demux->play_vframe_num, &vframe_size);
             // os_printf("vframe_offset:%d\tvframe_size:%d\n", vframe_offset, vframe_size);
-            //  os_printf("mp4_demux->play_vframe_num:%d\n", mp4_demux->play_vframe_num);
+            //   os_printf("mp4_demux->play_vframe_num:%d\n", mp4_demux->play_vframe_num);
             if (!vframe_offset || vframe_size == 0)
             {
                 flag |= BIT(0);
@@ -964,7 +1162,7 @@ void mp4_demux_thread(void *d)
                 // 配置播放的时间
                 last_play_time             = os_jiffies() - video_timestamp;
                 mp4_demux->play_aframe_num = video_timestamp / (1024 * 1000 / mp4_demux->audio_samplerate);
-                flag = 0;
+                flag                       = 0;
                 goto mp4_demux_thread_JMP;
             }
             rflags = 0;
@@ -1030,7 +1228,6 @@ void mp4_demux_thread(void *d)
                         priv->w                = mp4_demux->w;
                         priv->h                = mp4_demux->h;
                     }
-                    // os_printf("play_vframe_num:%d\tkey:%d\tfb:%X\tpriv:%X\tcount:%d\n",mp4_demux->play_vframe_num,is_key_frame(&mp4_demux->trak_t[0], mp4_demux->play_vframe_num),fb,fb->priv,count);
                     count++;
                     msi_output_fb(mp4_demux->msi, fb);
                     _os_printf("M");
@@ -1056,7 +1253,7 @@ void mp4_demux_thread(void *d)
             continue;
         }
 
-        if(flag & BIT(1))
+        if (flag & BIT(1))
         {
             continue;
         }
@@ -1099,7 +1296,7 @@ void mp4_demux_thread(void *d)
                 if (err)
                 {
                     aac_dsi_to_adts(mp4_demux->aac_dsi, fb->data, aframe_size);
-                    
+                    _os_printf("A");
                     msi_output_fb(mp4_demux->msi, fb);
                     fb = NULL;
                 }
@@ -1206,7 +1403,7 @@ static int32_t mp4_demux_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
                 mp4_demux->pps = NULL;
             }
             STREAM_LIBC_FREE(mp4_demux);
-            if(msi->name)
+            if (msi->name)
             {
                 msi->name = NULL;
             }
@@ -1350,6 +1547,82 @@ uint8_t is_key_frame(trak *trak_t, uint32_t frame_num)
     return 0;
 }
 
+// 在对应位置生成视频帧,注意有个最大值,不能越界
+// 从当前
+static uint32_t build_chunk(main_box *box, mp4_stco *ex_stco, uint32_t frame_num, uint32_t stco_offset, uint32_t sample_per_chunk)
+{
+    // 异常退出,要分析代码哪里异常了
+    if (stco_offset > box->stco_count)
+    {
+        os_printf("fail stco_offset:%d,box->stco_count:%d\n", stco_offset, box->stco_count);
+        return 1;
+    }
+    // stco表的基础偏移
+    uint32_t stco_base_offset = BIG4_ENDIAN(box->stco[stco_offset].chunk_offset);
+    // 计算后续帧的偏移
+    for (int i = 0; i < sample_per_chunk; i++)
+    {
+        ex_stco[frame_num + i].chunk_offset = BIG4_ENDIAN(stco_base_offset);
+        stco_base_offset += BIG4_ENDIAN(box->stsz[frame_num + i].sample_size);
+    }
+    return 0;
+}
+uint32_t mp4_demux_stco_rebuild(struct mp4_demux_msi_s *mp4_demux)
+{
+    for (int box_num = 0; box_num < mp4_demux->trak_index+1; box_num++)
+    {
+        trak     *trak_t  = &mp4_demux->trak_t[box_num];
+        main_box *box     = &trak_t->box;
+        mp4_stco *ex_stco = NULL;
+        uint32_t  first_chunk;
+        uint32_t  next_chunk;
+
+        uint32_t first_sample_per_chunk;
+
+        uint32_t frame_num   = 0;
+        uint32_t stco_offset = 0;
+        // 重构一下stco
+        if (box->stsz_count != box->stco_count)
+        {
+            ex_stco = (mp4_stco *) STREAM_MALLOC(box->stsz_count * sizeof(mp4_stco));
+            ASSERT(ex_stco);
+
+            if (box->stsc_count)
+            {
+                for (int i = 0; i < box->stsc_count - 1; i++)
+                {
+                    first_chunk = BIG4_ENDIAN(box->stsc[i].first_chunk);
+                    next_chunk  = BIG4_ENDIAN(box->stsc[i + 1].first_chunk);
+
+                    first_sample_per_chunk = BIG4_ENDIAN(box->stsc[i].sample_per_chunk);
+
+                    for (int j = first_chunk; j < next_chunk; j++)
+                    {
+                        build_chunk(box, ex_stco, frame_num, stco_offset, first_sample_per_chunk);
+                        stco_offset++;
+                        frame_num += first_sample_per_chunk;
+                    }
+                }
+
+                first_sample_per_chunk = BIG4_ENDIAN(box->stsc[box->stsc_count - 1].sample_per_chunk);
+
+                // 最后读取就按照最后一个per_chunk方式去读取
+                while (stco_offset < box->stco_count)
+                {
+                    build_chunk(box, ex_stco, frame_num, stco_offset, first_sample_per_chunk);
+                    stco_offset++;
+                    frame_num += first_sample_per_chunk;
+                }
+            }
+
+            STREAM_FREE(box->stco);
+            box->stco = ex_stco;
+        }
+    }
+
+    return 0;
+}
+
 struct msi *mp4_demux_msi_init(const char *msi_name, const char *filename)
 {
     uint8_t                 isnew     = 0;
@@ -1357,7 +1630,7 @@ struct msi *mp4_demux_msi_init(const char *msi_name, const char *filename)
     struct mp4_demux_msi_s *mp4_demux = NULL;
     if (isnew)
     {
-        mp4_demux = (struct mp4_demux_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct mp4_demux_msi_s) + strlen(filename) + 1+strlen(msi_name)+1);
+        mp4_demux = (struct mp4_demux_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct mp4_demux_msi_s) + strlen(filename) + 1 + strlen(msi_name) + 1);
         if (!mp4_demux)
         {
             goto mp4_demux_msi_init_err;
@@ -1373,10 +1646,10 @@ struct msi *mp4_demux_msi_init(const char *msi_name, const char *filename)
             os_printf("file open fail:%s\n", mp4_demux->filename);
             goto mp4_demux_msi_init_err;
         }
-        char *new_msi_name = mp4_demux->filename+strlen(filename) + 1;
+        char *new_msi_name = mp4_demux->filename + strlen(filename) + 1;
         memcpy(new_msi_name, msi_name, strlen(msi_name) + 1);
-        msi->name = new_msi_name;
-        msi->action = mp4_demux_msi_action;
+        msi->name    = new_msi_name;
+        msi->action  = mp4_demux_msi_action;
         new_msi_name = NULL;
         os_event_init(&mp4_demux->evt);
         fbpool_init(&mp4_demux->tx_pool, MAX_MP4_DEMUX_TX);
@@ -1384,6 +1657,13 @@ struct msi *mp4_demux_msi_init(const char *msi_name, const char *filename)
         uint32_t filesize = osal_fsize(mp4_demux->fp);
         uint32_t mp4_ret  = box_read(mp4_demux, "start", filesize);
         os_printf("mp4_ret:%d\n", mp4_ret);
+
+        // 解析完成,检查stsc是否是1 1 1的情况(如果是这种情况,stco直接使用)
+        // 如果不是1  1  1的情况,就解析stco,重新生成可用的stco(整个视频的偏移)
+        if (!mp4_ret)
+        {
+            mp4_ret = mp4_demux_stco_rebuild(mp4_demux);
+        }
 
         uint16_t sps_len, pps_len;
         uint8_t *sps = mp4_demux_get_sps(msi, &sps_len);

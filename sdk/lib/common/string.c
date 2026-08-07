@@ -580,18 +580,58 @@ int32 os_strtok(char *str, char *separator, char *argv[], int argv_size)
     return cnt;
 }
 
-int os_strncaschr(char *s, int n, char c)
+const char *os_strncasechr(const char *s, char c, int32 n)
 {
-    int32 i = 0;
-    char c1 = 0, c2 = 0;
+    if (!s) return NULL;
 
-    c1 = LOWCASE(c);
-    for (i = 0; i < n; i++) {
-        c2 = LOWCASE(s[i]);
-        if (c1 == c2) {
-            return 1;
+    c = LOWCASE(c);
+
+    // strcasechr
+    if (n < 0) {
+        while (*s) {
+            if (LOWCASE(*s) == c) {
+                return s;
+            }
+            s++;
         }
+        return NULL;
+    } else {
+        for (int32 i = 0; i < n; i++) {
+            if (s[i] == '\0') break;
+
+            if (LOWCASE(s[i]) == c) {
+                return &s[i];
+            }
+        }
+        return NULL;
     }
-    return 0;
 }
+
+const char *os_strncasestr(const char *str1, const char *str2, int32 n)
+{
+    if (!str1 || !str2) return NULL;
+    if (str2[0] == '\0') return str1;
+
+    int32 len2 = 0;
+    while (str2[len2]) len2++;
+
+    int32 len1 = n;
+    if (n < 0) {
+        len1 = 0x7FFFFFFF;
+    }
+
+    if (len2 > len1) return NULL;
+
+    const char *p = str1;
+    while (*p && (p - str1) <= len1 - len2) {
+        if (LOWCASE(p[0]) == LOWCASE(str2[0])) {
+            if (os_strncasecmp(p, str2, len2) == 0) {
+                return p;
+            }
+        }
+        p++;
+    }
+    return NULL;
+}
+
 

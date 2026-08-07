@@ -23,7 +23,9 @@
 #define	RTP_TRANS_UDP	1
 #define RTP_TRANS_INTER	2
 
-#define MAX_INTERLEAVE_CHANNELS	8
+#define MAX_INTERLEAVE_CHANNELS		8
+#define RTP_HEADER_SIZE				12
+#define RTP_TCP_MAX_PACKET_SIZE		(16*1024)
 
 struct rtp_endpoint;
 struct conn;
@@ -186,9 +188,10 @@ int interleave_send( struct conn *conn, int chan, struct iovec *v, int count );
 int interleave_recv( struct conn *c, int chan, unsigned char *d, int len );
 void interleave_recv_rtcp( struct rtp_endpoint *ep, unsigned char *d, int len );
 void del_rtp_endpoint( struct rtp_endpoint *ep );
-void update_rtp_timestamp( struct rtp_endpoint *ep, int time_increment );
-int send_rtp_packet( struct rtp_endpoint *ep, struct iovec *v, int count,
-			unsigned int timestamp, int marker );
+int rtp_get_packet_size_limit( const struct rtp_endpoint *ep );
+int rtp_get_payload_size_limit( const struct rtp_endpoint *ep, int packet_overhead );
+int rtp_sendmsg( struct rtp_endpoint *ep, struct iovec *v, int count, 
+	unsigned int timestamp, uint8_t marker, int retries );
 void new_rtsp_location( const char *path, char *realm, char *username, char *password,
 			open_func open, void *private );
 struct session *new_session(void);
@@ -198,9 +201,6 @@ int http_handle_msg( struct req *req );
 int rtsp_handle_msg( struct req *req );
 void send_rtcp(uint8_t *data);
 int new_rtcp_send( struct rtp_endpoint *ep, void *d );
-unsigned char * get_send_rtp_packet_head(struct iovec *v ,int count,char *send_buf);
-int send_rtp_packet_more( struct rtp_endpoint *ep, unsigned char *sendbuf, int sendLen,int times );
-int set_send_rtp_packet_head( struct rtp_endpoint *ep, struct iovec *v, int count,unsigned int timestamp, int marker,unsigned char *send_buf );
 #endif
 
 

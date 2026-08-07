@@ -36,14 +36,16 @@ struct rdcfg_bk {
 };
 
 
-
 struct hgspi_xip {
     struct spi_device       dev;
-    uint32                  hw;
-    uint32                  ddr   : 1,
+    uint32_t                hw;
+    uint32_t                ddr   : 1,
                             nbp   : 1,
-                            flags : 30;
-    uint32                  tms; //io timeout ms
+                            xip   : 1,
+                            flags : 29;
+    uint32_t                tms; //io timeout ms
+    uint16_t                tdp  : 8,
+                            trst : 8;
     struct xip_wip          wip;
     struct rdcfg_bk         def_cfg;
     struct rdcfg_bk         dtr_cfg;

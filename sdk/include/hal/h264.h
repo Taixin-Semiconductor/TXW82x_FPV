@@ -299,6 +299,12 @@ enum h264_ioctl_cmd {
 	 *@ Describe:
 	 *
 	 */
+	H264_IOCTL_GET_FRAME_IMB,
+
+	/*! Compatible version: V2;
+	 *@ Describe:
+	 *
+	 */
 	H264_IOCTL_GET_MBL_CALC,
 
 	/*! Compatible version: V2;
@@ -404,7 +410,7 @@ int32 h264_get_mbl_calc(struct h264_device *p_h264);
 int32 h264_get_mbl_calc_max(struct h264_device *p_h264);
 int32 h264_is_err(struct h264_device *p_h264);
 int32 h264_set_err(struct h264_device *p_h264,uint32_t err);
-
+int32 h264_get_imb_num(struct h264_device *p_h264);
 
 #ifdef __cplusplus
 }

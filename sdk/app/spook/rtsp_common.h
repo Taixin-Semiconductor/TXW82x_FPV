@@ -44,8 +44,6 @@ struct rtsp_source {
 	struct os_task handle;
 	void *signal;
 	struct rtp_node live_node;
-	char *cache_buf;
-	int cache_buf_len;
 	int head_len; //保留头部的长度
 	//创建线程以及资源的回调函数,参数就是source
 	rtsp_creat creat;

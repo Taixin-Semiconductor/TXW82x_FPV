@@ -168,7 +168,7 @@ SENSOR_INIT_SECTION const unsigned char sc1346InitTable[CMOS_INIT_LEN]=
     0x37, 0xf9, 0x04,
     0x01, 0x00, 0x01,
     0xff, 0xff, 0xff,
-#else
+#elif 0
 	0x01,0x03,0x01,
 	0x01,0x00,0x00,
 	0x36,0xe9,0x80,
@@ -335,6 +335,125 @@ SENSOR_INIT_SECTION const unsigned char sc1346InitTable[CMOS_INIT_LEN]=
 
     0xff,0xff, 0xff,
 #endif
+
+    //12.5 fps
+    0x01, 0x03, 0x01,
+    0x01, 0x00, 0x00,
+    0x36, 0xe9, 0x80,
+    0x37, 0xf9, 0x80,
+    0x30, 0x1f, 0x03,
+    0x31, 0x06, 0x05,
+
+    // 0x32, 0x0e, 0x03,//800
+    // 0x32, 0x0f, 0x84,
+
+    0x32, 0x0e, 0x07,//1944
+    0x32, 0x0f, 0x98,
+
+
+    0x32, 0x21, 0x66,
+    0x32, 0x50, 0x40,
+    0x33, 0x01, 0x06,
+    0x33, 0x06, 0x50,
+    0x33, 0x08, 0x0a,
+    0x33, 0x0a, 0x00,
+    0x33, 0x0b, 0xda,
+    0x33, 0x0e, 0x0a,
+    0x33, 0x1e, 0x61,
+    0x33, 0x1f, 0xa1,
+    0x33, 0x64, 0x1f,
+    0x33, 0x90, 0x09,
+    0x33, 0x91, 0x0f,
+    0x33, 0x92, 0x1f,
+    0x33, 0x93, 0x30,
+    0x33, 0x94, 0x30,
+    0x33, 0x95, 0x30,
+    0x33, 0xad, 0x10,
+    0x33, 0xb3, 0x40,
+    0x33, 0xf9, 0x50,
+    0x33, 0xfb, 0x70,
+    0x33, 0xfc, 0x09,
+    0x33, 0xfd, 0x0f,
+    0x34, 0x9f, 0x03,
+    0x34, 0xa6, 0x09,
+    0x34, 0xa7, 0x0f,
+    0x34, 0xa8, 0x40,
+    0x34, 0xa9, 0x30,
+    0x34, 0xaa, 0x00,
+    0x34, 0xab, 0xe8,
+    0x34, 0xac, 0x00,
+    0x34, 0xad, 0xfc,
+    0x36, 0x30, 0xe2,
+    0x36, 0x32, 0x76,
+    0x36, 0x33, 0x33,
+    0x36, 0x39, 0xf4,
+    0x36, 0x70, 0x09,
+    0x36, 0x74, 0xe2,
+    0x36, 0x75, 0xea,
+    0x36, 0x76, 0xea,
+    0x36, 0x7c, 0x09,
+    0x36, 0x7d, 0x0f,
+    0x36, 0x90, 0x22,
+    0x36, 0x91, 0x22,
+    0x36, 0x92, 0x22,
+    0x36, 0x98, 0x88,
+    0x36, 0x99, 0x90,
+    0x36, 0x9a, 0xa1,
+    0x36, 0x9b, 0xc3,
+    0x36, 0x9c, 0x09,
+    0x36, 0x9d, 0x0f,
+    0x36, 0xa2, 0x09,
+    0x36, 0xa3, 0x0b,
+    0x36, 0xa4, 0x0f,
+    0x36, 0xd0, 0x01,
+    0x36, 0xea, 0x1b,
+    0x36, 0xeb, 0x0d,
+    0x36, 0xec, 0x15,
+    0x36, 0xed, 0x28,
+    0x37, 0x0f, 0x01,
+    0x37, 0x22, 0x41,
+    0x37, 0x24, 0x41,
+    0x37, 0x25, 0xc1,
+    0x37, 0x28, 0x00,
+    0x37, 0xb0, 0x41,
+    0x37, 0xb1, 0x41,
+    0x37, 0xb2, 0x47,
+    0x37, 0xb3, 0x09,
+    0x37, 0xb4, 0x0f,
+    0x37, 0xfa, 0x09,
+    0x37, 0xfb, 0x33,
+    0x37, 0xfc, 0x11,
+    0x37, 0xfd, 0x37,
+    0x39, 0x03, 0x40,
+    0x39, 0x04, 0x04,
+    0x39, 0x05, 0x8d,
+    0x39, 0x07, 0x00,
+    0x39, 0x08, 0x41,
+    0x39, 0x33, 0x80,
+    0x39, 0x34, 0x0a,
+    0x39, 0x37, 0x79,
+    0x39, 0x39, 0x00,
+    0x39, 0x3a, 0x00,
+    0x3e, 0x01, 0x2e,
+    0x3e, 0x02, 0xa0,
+    0x44, 0x0e, 0x02,
+    0x45, 0x09, 0x20,
+    0x45, 0x0d, 0x28,
+    0x48, 0x00, 0x44,
+    0x48, 0x19, 0x06,
+    0x48, 0x1b, 0x03,
+    0x48, 0x1d, 0x0b,
+    0x48, 0x1f, 0x03,
+    0x48, 0x21, 0x08,
+    0x48, 0x23, 0x03,
+    0x48, 0x25, 0x03,
+    0x48, 0x27, 0x03,
+    0x48, 0x29, 0x05,
+    0x36, 0xe9, 0x28,
+    0x37, 0xf9, 0x20,
+    0x01, 0x00, 0x01,
+    0xff, 0xff, 0xff,
+
 };
 
 const _Sensor_CCM sc1346_ccm_init =
@@ -385,11 +504,42 @@ const _Sensor_AWB sc1346_awb_init =
     },
 };
 
+const _Sensor_GAMMA_BV sc1346_gamma_map = 
+{
+    .adj_by_bv = 1,
+
+    .bv = {
+        29491, 3534, 1599, 347, 222, 115, 57, 34,
+    },
+
+    .y_alpha = {
+        255,  255, 192, 192, 128, 128, 64, 64,                         
+    },
+
+    .rgb_alpha = {
+        255,  255, 192, 192, 128, 128, 64, 64,     
+    },
+};
+
+const _Sensor_CSC sc1346_csc_init = 
+{
+    .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
+    .rgb2yuv_range         = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_in_gamut      = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_in_range      = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_out_gamut     = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
+    .y_gamma_alpha         = 0xff,
+    .rgb_gamma_alpha       = 0xff,
+    .gamma_alpha_map       = (void *)&sc1346_gamma_map,
+};
+
 const _Sensor_AE sc1346_ae_init = 
 {
+	.curr_fps              = (uint32)(12.5*256),
     .max_frame_length      = 880,
     .min_frame_vb          = 8,
-    .max_analog_gain       = 32<<8,
+    .max_analog_gain       = 126<<8,
     .min_analog_gain       =  1<<8,
     .default_exposure_line = 872,
     .max_exposure_line     = 872,
@@ -453,21 +603,21 @@ const _Sensor_YUVNR sc1346_yuvnr_init = {
 };
 
 const _Sensor_COLENH_BV sc1346_ce_map[BV2COLENH_ARRAY_NUM] = {
-    {.bv =   29491, .hue = 0, .luma = 50, .contrast = 56, .saturation = 65},
-    {.bv =    3534, .hue = 0, .luma = 50, .contrast = 56, .saturation = 65},
-    {.bv =    4531, .hue = 0, .luma = 50, .contrast = 56, .saturation = 65},
-    {.bv =     400, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
-    {.bv =     222, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
-    {.bv =     115, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
-    {.bv =      57, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
-    {.bv =      34, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =   29491, .hue = 0, .luma = 58, .contrast = 60, .saturation = 70},
+    {.bv =    3534, .hue = 0, .luma = 58, .contrast = 60, .saturation = 70},
+    {.bv =    4531, .hue = 0, .luma = 50, .contrast = 60, .saturation = 65},
+    {.bv =     400, .hue = 0, .luma = 50, .contrast = 60, .saturation = 50},
+    {.bv =     222, .hue = 0, .luma = 50, .contrast = 60, .saturation = 50},
+    {.bv =     115, .hue = 0, .luma = 50, .contrast = 60, .saturation = 50},
+    {.bv =      57, .hue = 0, .luma = 50, .contrast = 60, .saturation = 50},
+    {.bv =      34, .hue = 0, .luma = 50, .contrast = 60, .saturation = 50},
 };
 
 const _Sensor_COLENH sc1346_colenh_init = {
     .yuv_range  = 0,
-    .luma       = 50, // range: 0 ~ 100
-    .contrast   = 60, // range: 0 ~ 100
-    .saturation = 50, // range: 0 ~ 100
+    .luma       = 58, // range: 0 ~ 100
+    .contrast   = 53, // range: 0 ~ 100
+    .saturation = 90, // range: 0 ~ 100
     .hue        = 0, // range: -180 ~ 180
     .ce_in_ofs_y   = 128,
     .ce_in_ofs_cb  = 128,
@@ -480,19 +630,21 @@ const _Sensor_COLENH sc1346_colenh_init = {
 };
 
 const _Sensor_BV2NR sc1346_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
-    //           bv, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx. h264_3dnr_lev£¬ h264_3dnr_en
-    {        48664,                     0,          0,                      0,         0,         0},    // 646lux
-    {         5993,                     0,          0,                      0,         0,         0},    // 240lux
-    {         3022,                     0,          0,                      0,         0,         0},    // 20lux
-    {         1528,                     0,          0,                      0,         0,         0},    // 10lux
-    {          754,                     0,          0,                      0,         0,         0},    // 5p03lux
-    {          369,                     0,          0,                      0,         0,         0},    // 2p5lux
-    {          184,                     0,          0,                      0,         0,         0},    // 1p25lux
-    {           90,                     0,          0,                      0,         0,         0},    // 0p62lux
-    {           46,                     0,          0,                      0,         0,         0},    // 0p31lux
-    {           32,                     0,          0,                      0,         0,         0},    // 0p1lux
-    {           24,                     0,          0,                      0,         0,         0},    // 0p01lux
+    //           bv, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx. h264_3dnr_levÂÂ h264_3dnr_en
+    {        10000,                     8 ,          511,                      63,         1,         0,              1,             1},    // 646lux
+    {         5993,                     8 ,          400,                      63,         1,         0,              2,             1},    // 240lux
+    {         3022,                     16,           250,                      63,         1,         1,             2,             1},    // 20lux
+    {         1528,                     16,           271,                      63,         1,         1,             2,             1},    // 10lux
+    {          754,                     16,           165,                      63,         2,         1,             2,             1},    // 5p03lux
+    {          369,                     16,           135,                      63,         2,         1,             2,             1},    // 2p5lux
+    {          184,                     20,           101,                      63,         3,         1,             2,             1},    // 1p25lux
+    {           90,                     24,            62,                      63,         4,         2,             2,             1},    // 0p62lux
+    {           46,                     26,            50,                      63,         4,         2,             2,             1},    // 0p31lux
+    {           32,                     28,            40,                      63,         5,         2,             2,             1},    // 0p1lux
+    {           24,                     31,            25,                      63,         5,         2,             2,             1},    // 0p01lux
 };
+
+
 const uint32 sc1346_lsc_tbl[] = {
 //R channel
 0x0009dad1,0x00071e13,0x0005a58f,0x00050553,0x0005113c,0x0005ad50,0x00074195,0x000a5621,0x0000030a,0x00097eb8,0x0006d1fc,0x00056d7e,0x0004d545,0x0004dd30,0x00056d43,0x0006f582,
@@ -615,24 +767,44 @@ const _Sensor_YGAMMA sc1346_ygamma_tbl[NUM_CURVES] = {
         0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}}
 };
 
+
+const _Sensor_DPC sc1346_dpc_init = 
+{
+    .static_psram_addr      = (uint32)0,
+    .white_threshold        = 115,
+    .black_threshold        = 115,
+    .white_threshold_min    = 30,
+    .black_threshold_min    = 30,
+    .sensitivity_value      = 128,
+    .dynamic_white_strength = 4,
+    .dynamic_black_strength = 4,
+};
+
+
 void SC1346_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
-    uint8  i;
-    uint8  analog_gain        = p_cfg->analog_gain>>8;
-    uint8  gain_segment[]     = {1, 2, 4, 8, 16, 32, 64};
-    uint8  gain_value[]       = {0, 0x08, 0x09, 0x0b, 0x0f, 0x1f};
-    uint8  sensor_gain_part1  = 0;
-    uint16 sensor_gain_part2  = 0;
-    uint32 exposure_line      = p_cfg->exposure_line;
-    uint8  *addr              = (uint8 *)p_cfg->data.addr;
 
-    for(i = 0; i < (sizeof(gain_segment) / sizeof(gain_segment[0])); i++){
-        if(analog_gain < gain_segment[i+1]){
-            sensor_gain_part1 = i;
+    uint8_t  i;
+    uint32_t  total_gain_int     = p_cfg->analog_gain;
+    uint8_t  gain_segment[]     = {   1, 	2,    4,    8,   16,   32};
+    uint8_t  gain_value[]       = {0x00, 0x08, 0x09, 0x0B, 0x0F, 0x1F};
+    uint8_t  ana_idx            = 5;
+    uint16_t fine_val           = 0;
+    uint8_t  dig_gain           = 0;
+    uint32_t exposure_line      = p_cfg->exposure_line;
+    uint8_t  *addr              = (uint8_t *)p_cfg->data.addr;
+
+    for (i = 0; i < 6; i++) {
+        if (total_gain_int >= (gain_segment[i]* 256)) {
+            ana_idx = i;
+        } else {
             break;
         }
     }
-    sensor_gain_part2 = (((p_cfg->analog_gain >> sensor_gain_part1) - 256) >> 3) << 2;
+	
+    (total_gain_int >= 16384)?(dig_gain=1):(dig_gain=0);
+	
+	fine_val = (((p_cfg->analog_gain >> (ana_idx + dig_gain)) - 256) >> 3) << 2;
 
     i = 0;
     addr[i++] = 0x3e;
@@ -647,29 +819,66 @@ void SC1346_ae_adjust(struct isp_exposure_opt *p_cfg)
 
     addr[i++] = 0x3e;
     addr[i++] = 0x09;
-    addr[i++] = gain_value[sensor_gain_part1];
+    addr[i++] = gain_value[ana_idx];
     addr[i++] = 0x3e;
     addr[i++] = 0x06;
-    addr[i++] = 0;
+    addr[i++] = dig_gain;
     addr[i++] = 0x3e;
     addr[i++] = 0x07;
-    addr[i++] = 0x80 + sensor_gain_part2;
+    addr[i++] = 0x80 + fine_val;
+	
     p_cfg->data.size = i;
     p_cfg->cmd_len   = 3;
+
+}
+
+void sc1346_fps_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr        = (uint8 *)p_opt->data.addr;
+    uint8  index        = 0;
+    addr[index++]       = 0x32;
+    addr[index++]       = 0x0e;
+    addr[index++]       = p_opt->curr_length >> 8;
+    addr[index++]       = 0x32;
+    addr[index++]       = 0x0f;
+    addr[index++]       = p_opt->curr_length & 0xff;
+    p_opt->data.size    = index;
+    p_opt->cmd_len      = 2+1;
+}
+
+
+void sc1346_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    uint8  reg_value = 0x00;
+    addr[index++] = 0x32; 
+    addr[index++] = 0x21;
+    if (p_opt->reverse_en) {
+        reg_value |= (0x03 << 5); //set bit[6:5] = 0b11
+    }
+    if (p_opt->mirror_en) {  // 
+        reg_value |= (0x03 << 1); // set bit[2:1] = 0b11
+    }
+    addr[index++] = reg_value;
+    p_opt->data.size = index;
+    p_opt->cmd_len   = 2 + 1;
 }
 
 const _Sensor_ISP_Init sc1346_isp_init = 
 {
-    .type         = ISP_INPUT_DAT_SRC_DVP,
+    .type         = ISP_INPUT_DAT_SRC_MIPI0,
     .pixel_h      = 720,
     .pixel_w      = 1280,
     .bayer_patten = ISP_BAYER_FORMAT_BGGR,
-    .input_format = ISP_INPUT_DAT_FORMAT_RAW08,
+    .input_format = ISP_INPUT_DAT_FORMAT_RAW10,
     .adjust_func  = (isp_ae_func     )SC1346_ae_adjust,
     .p_blc        = (_Sensor_BLC    *)&sc1346_blc_init,
     .p_ccm        = (_Sensor_CCM    *)&sc1346_ccm_init,
     .p_awb        = (_Sensor_AWB    *)&sc1346_awb_init,
     .p_ae         = (_Sensor_AE     *)&sc1346_ae_init,
+    .p_dpc        = (_Sensor_DPC    *)&sc1346_dpc_init,
+    .p_csc        = (_Sensor_CSC    *)&sc1346_csc_init,
     .p_csupp      = (_Sensor_CSUPP  *)&sc1346_csupp_init,
     .p_sharp      = (_Sensor_SHARP  *)&sc1346_sharp_init,
     .p_yuvnr      = (_Sensor_YUVNR  *)&sc1346_yuvnr_init,    
@@ -678,6 +887,8 @@ const _Sensor_ISP_Init sc1346_isp_init =
     .p_lsc        = (_Sensor_LSC    *)&sc1346_lsc_init,
     .p_lhs        = (_Sensor_LHS    *)sc1346_lhs_map,
     .p_ygamma     = (_Sensor_YGAMMA *)sc1346_ygamma_tbl,
+    .fps_opt      = (sensor_fps_opt  )sc1346_fps_opt,
+    .img_opt      = (sensor_img_opt  )sc1346_img_opt,
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ sc1346_cmd= 

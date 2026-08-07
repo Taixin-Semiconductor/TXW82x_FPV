@@ -477,6 +477,14 @@ int32 h264_get_mbl_calc(struct h264_device *p_h264)
 	return RET_ERR;
 }
 
+int32 h264_get_imb_num(struct h264_device *p_h264)
+{
+	if (p_h264 && ((const struct h264_hal_ops *)p_h264->dev.ops)->ioctl) {
+		return ((const struct h264_hal_ops *)p_h264->dev.ops)->ioctl(p_h264, H264_IOCTL_GET_FRAME_IMB, 0, 0);
+	}
+	return RET_ERR;
+}
+
 int32 h264_get_mbl_calc_max(struct h264_device *p_h264)
 {
 	if (p_h264 && ((const struct h264_hal_ops *)p_h264->dev.ops)->ioctl) {

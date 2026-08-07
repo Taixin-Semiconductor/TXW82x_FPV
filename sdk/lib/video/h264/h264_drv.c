@@ -21,11 +21,25 @@
 #include "lib/video/vpp/vpp_dev.h"
 #include "lib/multimedia/msi.h"
 
+//workqueue
+#include "user_work/user_work.h"
+
+struct timeLapse_work_t
+{
+	struct os_work wk;
+	uint32_t timer;
+	uint32_t last_kick_time;
+};
+static struct timeLapse_work_t *timeLapse_wk;
+
 
 #define H264_MALLOC av_psram_malloc
 #define H264_FREE   av_psram_free
 #define H264_ZALLOC av_psram_zalloc
 
+#define H264_LIB_MALLOC av_malloc
+#define H264_LIB_FREE   av_free
+#define H264_LIB_ZALLOC av_zalloc
 
 
 #ifndef H264_HARDWARE_CLK
@@ -35,6 +49,7 @@
 #ifndef H264_I_ONLY
 #define H264_I_ONLY         0
 #endif
+
 
 void h264_sema_up();
 
@@ -561,7 +576,8 @@ void h264_3dnr_ini(struct h264_device  *p_h264,struct h264_cfg_t *enc_cfg)
 }
 
 
-volatile uint16 recfg_h264_bps[2];
+volatile uint16 recfg_h264_mbps[2];   //if stilltomove 0,represent enc_bps,else represent move_enc_bps
+volatile uint16 recfg_h264_sbps[2];
 volatile uint16 recfg_h264_rate[2];
 volatile uint16 recfg_h264_gop[2];
 volatile uint8  recfg_h264_ini_qp[2];
@@ -574,10 +590,11 @@ void h264_reflash_new_gop(uint8_t dev_num,uint8_t en){
 	enable_irq(ie);
 }
 
-void h264_recfg_bsp(uint8_t dev_num,uint16_t bps){
+void h264_recfg_bsp(uint8_t dev_num,uint16_t mbps,uint16_t sbps){
 	uint32_t ie;	
 	ie = disable_irq();
-	recfg_h264_bps[dev_num-1] = bps;
+	recfg_h264_mbps[dev_num-1] = mbps;
+	recfg_h264_sbps[dev_num-1] = sbps;
 	enable_irq(ie);
 }
 
@@ -604,11 +621,24 @@ void h264_recfg_ini_qp(uint8_t dev_num,uint8_t qp){
 
 uint8_t h264_cfg_modify(struct h264_cfg_t *enc_cfg,uint8_t dev_num){
 	uint8_t result = 0;
-	if(enc_cfg->enc_bps != recfg_h264_bps[dev_num-1]){
-		enc_cfg->enc_bps = recfg_h264_bps[dev_num-1];
-		result = 1;
-	}
 
+	if(enc_cfg->stilltomove == 0){
+		if(enc_cfg->enc_bps != recfg_h264_mbps[dev_num-1]){
+			enc_cfg->enc_bps = recfg_h264_mbps[dev_num-1];
+			result = 1;
+		}		
+	}else{
+		if(enc_cfg->move_enc_bps != recfg_h264_mbps[dev_num-1]){
+			enc_cfg->move_enc_bps = recfg_h264_mbps[dev_num-1];
+			result = 1;
+		}
+
+		if(enc_cfg->still_enc_bps != recfg_h264_sbps[dev_num-1]){
+			enc_cfg->still_enc_bps = recfg_h264_sbps[dev_num-1];
+			result = 1;
+		}
+	}
+	
 	if(enc_cfg->frm_rate != recfg_h264_rate[dev_num-1]){
 		enc_cfg->frm_rate = recfg_h264_rate[dev_num-1];
 		result = 1;
@@ -641,7 +671,7 @@ void h264_ini_recfg(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, stru
 
 void h264_ini_seting_cfg(struct h264_device *p_h264,struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl,uint8_t dev_num) {
   h264_reflash_new_gop(dev_num,0);
-  h264_recfg_bsp(dev_num,enc_cfg->enc_bps);
+  h264_recfg_bsp(dev_num,enc_cfg->move_enc_bps,enc_cfg->move_enc_bps);
   h264_recfg_rate(dev_num,enc_cfg->frm_rate);
   h264_recfg_frm_gop(dev_num,enc_cfg->frm_gop);
   h264_recfg_ini_qp(dev_num,enc_cfg->ini_qp);
@@ -766,7 +796,8 @@ void h264_rc_tune_eof(struct h264_device*p_h264,struct h264_cfg_t *enc_cfg, stru
   } else {
     uint8  hw_cal_qp = enc_ctl->hw_cal_qp;
     
-    if(enc_cfg->rc_effort == 1) {
+	if(enc_cfg->cc_corect)
+	{
       //high effort
       if(bs_len > (frm_target + 1*frm_target_step)) {       //real > target
           if(bs_len > (frm_target + 4*frm_target_step))         //>= 1.4*target
@@ -778,7 +809,9 @@ void h264_rc_tune_eof(struct h264_device*p_h264,struct h264_cfg_t *enc_cfg, stru
           else if(bs_len >= (frm_target + 1*frm_target_step))   //>= 1.1*target
               hw_cal_qp += 1;
       } else if(bs_len < (frm_target - 1*frm_target_step)) {//real < target
-          if(bs_len <= (frm_target - 3*frm_target_step))        //<= 0.7*target
+          if(bs_len <= (frm_target - 5*frm_target_step))        //<= 0.5*target
+              hw_cal_qp -= 4;    	  
+          else if(bs_len <= (frm_target - 3*frm_target_step))        //<= 0.7*target
               hw_cal_qp -= 2;
           else if(bs_len < (frm_target - 1*frm_target_step))    //<= 0.9*target
               hw_cal_qp -= 1;
@@ -786,7 +819,7 @@ void h264_rc_tune_eof(struct h264_device*p_h264,struct h264_cfg_t *enc_cfg, stru
     } else {
       //low or relax mode
       //start QP change between each P frame is [-2, 3]
-      if((hw_cal_qp >= (rc_ctl->p_qp + 3))) {
+      if((hw_cal_qp >= (rc_ctl->p_qp + 3))) {      
         hw_cal_qp = rc_ctl->p_qp + 3;
       } else if((hw_cal_qp <= (rc_ctl->p_qp - 3))) {
         hw_cal_qp = rc_ctl->p_qp - 2;
@@ -1231,6 +1264,18 @@ void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, 
 		else
 			penc_cfg->run_gop_3dnr--;
 	}
+
+	if(penc_cfg->stilltomove != 0){
+		if(penc_cfg->move_remain_gop){
+			penc_cfg->move_remain_gop--;
+			penc_cfg->enc_bps = penc_cfg->move_enc_bps;
+		}else{
+			penc_cfg->enc_bps = penc_cfg->still_enc_bps;
+		}
+		
+		enc_ctl->target_gop = ( ((uint32_t)penc_cfg->enc_bps * 1000 * (uint32_t)penc_cfg->frm_gop) / penc_cfg->frm_rate ) >> 3;
+	}
+
 	
     enc_ctl->frm_type = 2;
     rc_ctl->gop_remain_byte = enc_ctl->target_gop;
@@ -1413,6 +1458,9 @@ void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, 
 void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	h264_frame* hf;
 	uint32 	  rdata;
+	uint16 imb_mov_num;
+	uint8_t 	drop = 0;
+	uint8_t 	new_gop = 0;	//为了缩时录影,强行需要I帧
 	//uint32 	dat_ofs=0;
 	uint32     bw_cnt_wr,bw_cnt_rd,enc_cnt_cyc;
 	struct h264_device *p_h264 = (struct h264_device *)irq_data;
@@ -1437,6 +1485,18 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 		//ll_m2m_memcpy(M2M_DMA0,frame_cache+frame_offset,h264_dat_buf[1],dat_ofs,0);
 //	}
 	//帧OK
+	if(penc_ctl->gop_frm_cnt != 0){
+		if(penc_cfg->stilltomove == 0){
+			penc_cfg->still_enc_bps = penc_cfg->enc_bps;
+			penc_cfg->move_enc_bps = penc_cfg->enc_bps;
+		}else{
+			imb_mov_num = h264_get_imb_num(p_h264);
+			if(((imb_mov_num*1000)/((penc_cfg->frm_width * penc_cfg->frm_height)/256)) > penc_cfg->stilltomove){
+				//_os_printf("dev running ,cfg move enc_fps(%d)",h264_get_imb_num(p_h264));
+				penc_cfg->move_remain_gop = penc_cfg->move_keep_gop;
+			}
+		}
+	}
 		
 	hf = list_entry((struct list_head *)h264_f_p,h264_frame,list);
 	hf->frame_len = rdata;
@@ -1458,7 +1518,7 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 		set_frame_ready(hf);
 	}
 	
-	enc_ctl.enc_bs_byte = rdata;
+	penc_ctl->enc_bs_byte = rdata;
 	h264_get_intr_status(p_h264,(struct	h264_cfg_t*)penc_cfg, (struct h264_ctl_t*)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
 	h264_clr_intr(p_h264);
 	
@@ -1477,17 +1537,19 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 
 	if(param || h264_is_err(p_h264)){
 		os_printf("isp ov,h264 frame drop\r\n");
+		drop = 1;
 		h264_set_err(p_h264,0);
 		del_264_frame(h264_f_p);
 		if(h264_dev_num == 2){
 			if(penc_ctl == &enc_ctl){
-				recfg_h264_new_grop[1] = 1; 
+				recfg_h264_new_grop[0] = 1; 
 			}else{
-				recfg_h264_new_grop[0] = 1;
+				recfg_h264_new_grop[1] = 1;
 			}
 		}else{
 			recfg_h264_new_grop[0] = 1; 	  //重新配置成I帧
 		}
+		os_printf("grop[0]:%d\tgrop[1]:%d\tfrom:%d\n",recfg_h264_new_grop[0],recfg_h264_new_grop[1],penc_cfg->src_from);
 	}
 
 ///////////////////////////////////////////////////////
@@ -1495,7 +1557,8 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	//p_h264->WRAP_CON |= 0x01|0x10;
 ///////////////////////////////////////////////////////
 	if(h264_dev_num == 2){
-		if(penc_ctl == &enc_ctl){
+		//只有不丢帧的情况才能切换到副码流,仅仅适用主码流(vpp)+镜头副码流情况(不适合从外部其他来源gen420编码)
+		if(penc_ctl == &enc_ctl && drop == 0 ){
 			penc_ctl = &enc_2_ctl;
 			penc_cfg = &enc_2_cfg;
 			prc_ctl  = &rc_2_ctl; 
@@ -1530,6 +1593,7 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 		if(recfg_h264_new_grop[0] == 1){
 			recfg_h264_new_grop[0] = 0;
 			penc_ctl->gop_frm_cnt = 0;
+			new_gop = 1;
 		}
 
 		if(penc_ctl->gop_frm_cnt == 0){
@@ -1541,15 +1605,39 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 
 	h264_set_wrap_img_size(p_h264,penc_cfg->wrap_width,penc_cfg->wrap_height);
 	
-	enc_ctl.bs_buf_id = 0;	
+	penc_ctl->bs_buf_id = 0;	
 	if(penc_cfg->src_from == GEN420_DATA)
 	{
 		//唤醒任务去kick gen420
 		extern void *get_vpp_psram_buf();
 		wake_up_gen420_queue(1,get_vpp_psram_buf());
 	}else{
-		h264_cfg_srcdat(p_h264,penc_cfg->src_from);
-		h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+		if(!penc_cfg->timeLapse_en)
+		{
+			h264_cfg_srcdat(p_h264,penc_cfg->src_from);
+			h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+		}
+		else
+		{
+			if(timeLapse_wk)
+			{
+				if(new_gop)
+				{
+					h264_cfg_srcdat(p_h264,penc_cfg->src_from);
+					h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+				}
+				else
+				{
+					h264_cfg_srcdat(p_h264,SOFT_DATA);
+					penc_cfg->timeLapse_ready_kick = 1;
+					timeLapse_wk->last_kick_time += timeLapse_wk->timer;	//设置下一次kick的时间
+					os_run_work(&timeLapse_wk->wk);
+				}
+
+			}
+
+		}
+
 	}	
 	_os_printf(KERN_DEBUG"Z%d",penc_cfg->src_from);
 
@@ -1558,6 +1646,7 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 void h264_frame_done_norekick_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	h264_frame* hf;
 	uint32 	  rdata;
+	uint16 imb_mov_num;
 	//uint32 	dat_ofs=0;
 	uint32     bw_cnt_wr,bw_cnt_rd,enc_cnt_cyc;
 	struct h264_device *p_h264 = (struct h264_device *)irq_data;
@@ -1575,6 +1664,18 @@ void h264_frame_done_norekick_isr(uint32 irq_flags, uint32 irq_data, uint32 para
 		//ll_m2m_memcpy(M2M_DMA0,frame_cache+frame_offset,h264_dat_buf[1],dat_ofs,0);
 //	}
 	//帧OK
+	if(penc_ctl->gop_frm_cnt != 0){
+		if(penc_cfg->stilltomove == 0){
+			penc_cfg->still_enc_bps = penc_cfg->enc_bps;
+			penc_cfg->move_enc_bps = penc_cfg->enc_bps;
+		}else{
+			imb_mov_num = h264_get_imb_num(p_h264);
+			if(((imb_mov_num*1000)/((penc_cfg->frm_width * penc_cfg->frm_height)/256)) > penc_cfg->stilltomove){
+				//_os_printf("dev running ,cfg move enc_fps(%d)",h264_get_imb_num(p_h264));
+				penc_cfg->move_remain_gop = penc_cfg->move_keep_gop;
+			}
+		}
+	}
 		
 	hf = list_entry((struct list_head *)h264_f_p,h264_frame,list);
 	hf->frame_len = rdata;
@@ -1746,6 +1847,7 @@ void h264_isr_init(struct h264_device *p_h264){
 	h264_request_irq(p_h264,H264_ENC_TIME_OUT,(h264_irq_hdl )&h264_enc_timeout_isr,(uint32)p_h264);
 }
 
+#ifdef SYS_APP_WALKIE_TALKIE
 void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8_t src_from){
 	enc_cfg.enc_mode		= 1;	//0:dec, 1:enc
 	enc_cfg.enc_bs_buf_size = 4;	//0:1KB; 1:2KB; 2:4KB; 3:8KB; 4:16KB
@@ -1754,7 +1856,12 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	enc_cfg.wrap_width      = w;
 	enc_cfg.wrap_height     = h;
 	enc_cfg.src_from        = src_from;
-	enc_cfg.enc_bps 		= 4000; //Kbit pre second
+	enc_cfg.enc_bps 		= 200; //Kbit pre second
+	
+	enc_cfg.still_enc_bps   = 100;    //Kbit pre second
+	enc_cfg.move_enc_bps    = 200;   //Kbit pre second	
+	enc_cfg.stilltomove     = 100;    //permil for judgmemnt is move or still 
+	enc_cfg.move_keep_gop   = 5;	
 	enc_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY 
 	enc_cfg.frm_gop 		= 1;	//IPPPP frame number of a gop
@@ -1764,6 +1871,55 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	enc_cfg.rc_en			= 1;	//enc rate control enable
 #endif	
 	enc_cfg.rc_grp			= 2;	//mb line number when RC change qp
+	enc_cfg.rc_effort		= 2;	//0:low; 1: high; 2:relax;
+	//still video: bigger frm_ip_rate; moving video: smaller frm_ip_rate;
+	enc_cfg.frm_ip_rate 	= 10;	//initial (Intra MB line)/(Inter MB line) target bit rate times; not critical parameter.
+	enc_cfg.frm_ip_rate_max = 15;
+	enc_cfg.frm_ip_rate_min = 5;
+	enc_cfg.flt3d_en		= 0;	//3D filter enable    对讲机一定要关掉
+	enc_cfg.flt3d_en_last	= 1;	//3D filter enable
+	enc_cfg.flt_noise_lev	= 2;	//0: very low nosie; 1: low; 2: medium; 3: high; 4: very high; naomal usage is: 2
+    enc_cfg.flt_noise_lev_last = enc_cfg.flt_noise_lev;
+	enc_cfg.ini_qp			= 26;	//initial QP for this sequence, not critical
+	enc_cfg.roi_qp			= 22;	//QP used in ROI windows
+	enc_cfg.gop_rst_3dnr    = 10;   //10个ip gop后，重新使能一下3dnr
+	enc_cfg.auto_ctl_3dnr   = 0;    //需要打开vpp移动帧测，否则无效
+
+	enc_cfg.run_gop_3dnr    = enc_cfg.gop_rst_3dnr;
+	h264_ini_seting_cfg(p_h264,(struct h264_cfg_t *)&enc_cfg, (struct h264_ctl_t *)&enc_ctl, (struct h264_rc_ctl_t *)&rc_ctl,1);
+	if(enc_cfg.flt3d_en) {
+	  enc_cfg.r3dnr = h264_get_flt_3dnr(p_h264);
+	  enc_cfg.r3dnr = enc_cfg.r3dnr & 0x0fffffff;
+	  h264_3dnr_ini(p_h264,(struct h264_cfg_t *)&enc_cfg);
+//	  os_printf("Z:%08x\r\n",enc_cfg.r3dnr);
+	}
+	
+}
+#else
+void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8_t src_from){
+	enc_cfg.enc_mode		= 1;	//0:dec, 1:enc
+	enc_cfg.enc_bs_buf_size = 4;	//0:1KB; 1:2KB; 2:4KB; 3:8KB; 4:16KB
+	enc_cfg.frm_width		= (w+0xf)&(~0xf);
+	enc_cfg.frm_height		= (h+0xf)&(~0xf);
+	enc_cfg.wrap_width      = w;
+	enc_cfg.wrap_height     = h;
+	enc_cfg.src_from        = src_from;
+	enc_cfg.enc_bps 		= 4000; //Kbit pre second
+	
+	enc_cfg.still_enc_bps   = 600;    //Kbit pre second
+	enc_cfg.move_enc_bps    = 4000;   //Kbit pre second	
+	enc_cfg.stilltomove     = 0;    //permil for judgmemnt is move or still
+	enc_cfg.move_keep_gop   = 5;
+	enc_cfg.frm_rate		= 25;	//fps
+#if H264_I_ONLY 
+	enc_cfg.frm_gop 		= 1;	//IPPPP frame number of a gop
+	enc_cfg.rc_en			= 0;	//enc rate control enable
+#else
+	enc_cfg.frm_gop 		= 25;	//IPPPP frame number of a gop
+	enc_cfg.rc_en			= 1;	//enc rate control enable
+#endif	
+	enc_cfg.rc_grp			= 2;	//mb line number when RC change qp
+	enc_cfg.cc_corect		= 0;	//0: no corection; 1: corection
 	enc_cfg.rc_effort		= 2;	//0:low; 1: high; 2:relax;
 	//still video: bigger frm_ip_rate; moving video: smaller frm_ip_rate;
 	enc_cfg.frm_ip_rate 	= 10;	//initial (Intra MB line)/(Inter MB line) target bit rate times; not critical parameter.
@@ -1788,6 +1944,7 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	}
 	
 }
+#endif
 
 void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8_t src_from){
 
@@ -1797,8 +1954,13 @@ void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uin
 	enc_2_cfg.frm_height	= (h+0xf)&(~0xf);//h;//
 	enc_2_cfg.wrap_width    = w;
 	enc_2_cfg.wrap_height   = h;
-	enc_2_cfg.src_from        = src_from;	
+	enc_2_cfg.src_from      = src_from;	
 	enc_2_cfg.enc_bps 		= 1000; //Kbit pre second
+
+	enc_2_cfg.still_enc_bps = 300;    //Kbit pre second
+	enc_2_cfg.move_enc_bps  = 1000;   //Kbit pre second	
+	enc_2_cfg.stilltomove   = 0;    //permil for judgmemnt is move or still
+	enc_2_cfg.move_keep_gop = 5;
 	enc_2_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY
 	enc_2_cfg.frm_gop		= 1;	//IPPPP frame number of a gop
@@ -1808,6 +1970,7 @@ void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uin
 	enc_2_cfg.rc_en			= 1;	//enc rate control enable
 #endif	
 	enc_2_cfg.rc_grp		= 2;	//mb line number when RC change qp
+	enc_2_cfg.cc_corect		= 0;	//0: no corection; 1: corection
 	enc_2_cfg.rc_effort		= 2;	//0:low; 1: high; 2:relax;
 	//still video: bigger frm_ip_rate; moving video: smaller frm_ip_rate;
 	enc_2_cfg.frm_ip_rate 	= 10;	//initial (Intra MB line)/(Inter MB line) target bit rate times; not critical parameter.
@@ -1817,8 +1980,8 @@ void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uin
     enc_2_cfg.flt3d_en_last = 1;	
 	enc_2_cfg.flt_noise_lev	= 2;	//0: very low nosie; 1: low; 2: medium; 3: high; 4: very high; naomal usage is: 2
     enc_2_cfg.flt_noise_lev_last = enc_2_cfg.flt_noise_lev;
-	enc_2_cfg.ini_qp			= 26;	//initial QP for this sequence, not critical
-	enc_2_cfg.roi_qp			= 22;	//QP used in ROI windows
+	enc_2_cfg.ini_qp		= 26;	//initial QP for this sequence, not critical
+	enc_2_cfg.roi_qp		= 22;	//QP used in ROI windows
 	enc_2_cfg.gop_rst_3dnr	= 10;	//10个ip gop后，重新使能一下3dnr
 	enc_2_cfg.auto_ctl_3dnr	= 1;   
 
@@ -1917,6 +2080,12 @@ int h264_mem_init(uint8_t init,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_w,u
 	h264_mem_init_end:
 	if(err)
 	{
+		if(timeLapse_wk)
+		{
+			os_work_cancle2(&timeLapse_wk->wk, 1);
+			H264_LIB_FREE(timeLapse_wk);
+			timeLapse_wk = NULL;
+		}
 		if(h264_ref_lu_base_psram)
 		{
 			H264_FREE(h264_ref_lu_base_psram);
@@ -2001,6 +2170,7 @@ int h264_enc(uint32_t drv1_from,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_fr
 	penc_cfg = &enc_cfg;
 	prc_ctl  = &rc_ctl;
 	
+	penc_cfg->timeLapse_en = 0;
 	penc_ctl->bs_buf_id = 0;
 	#if 0
 	if(penc_cfg->frm_height == 1088){
@@ -2030,6 +2200,95 @@ int h264_enc(uint32_t drv1_from,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_fr
 #endif	
 	return 0;
 }
+
+
+
+
+//缩时录影外部调用kick接口(不能随时调用,需要结合模式去调用)
+//没有考虑临界,比如外部要注意不要close又继续重新kick
+int32_t h264_extern_kick()
+{
+	if(penc_cfg->timeLapse_en && penc_cfg->timeLapse_ready_kick)
+	{
+		//去启动kick
+		struct h264_device *h264_dev;
+		h264_dev = (struct h264_device *)dev_get(HG_H264_DEVID);
+		extern void h264_cfg_srcdat(struct h264_device *p_h264,uint8_t mode);	
+		h264_cfg_srcdat(h264_dev,penc_cfg->src_from);
+		penc_cfg->timeLapse_ready_kick = 0;
+		h264_start_enc_frm(h264_dev,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+		return 0;
+	}
+	return 1;
+}
+
+
+static int32 h264_timeLapse(struct os_work *work)
+{
+	struct timeLapse_work_t *timeLapse_wk = (struct timeLapse_work_t *)work;
+	//如果计算时间大于0,代表还没有到kick的时间
+	//如果小于0,则已经错过了,立刻去kick
+	int32_t err_time = timeLapse_wk->last_kick_time - os_jiffies();
+	if(err_time > 0 )
+	{
+		os_run_work_delay(&timeLapse_wk->wk,err_time);
+	}
+	else
+	{
+		h264_extern_kick();
+	}
+	
+	return 0;
+}
+//h264,并且启动缩时录影功能,主要与原来模式不能共存,timer是定时的时间
+int h264_enc_with_timeLapse(uint32_t drv1_from,uint32_t drv1_w,uint32_t drv1_h,uint32_t timer)
+{
+	struct h264_device *h264_dev;
+	h264_dev = (struct h264_device *)dev_get(HG_H264_DEVID);	
+	h264_dev_num = 1;
+	uint8_t err = 0;
+	//创建workqueue
+	timeLapse_wk = (struct timeLapse_work_t *)H264_LIB_MALLOC(sizeof(struct timeLapse_work_t));
+	if(!timeLapse_wk)
+	{
+		err = -1;
+		goto h264_enc_with_timeLapse_end;
+	}
+	timeLapse_wk->timer = timer;
+	err = h264_mem_init(1,drv1_w,drv1_h,0,0);
+	if(err)
+	{
+		goto h264_enc_with_timeLapse_end;
+	}
+	timeLapse_wk->last_kick_time = os_jiffies();
+	OS_WORK_INIT(&timeLapse_wk->wk, h264_timeLapse, 0);
+
+
+	h264_room_init();
+	h264_drv_init(h264_dev);
+	h264_main_sensor_cfg(h264_dev,drv1_w,drv1_h,drv1_from);	
+	h264_isr_init(h264_dev);
+	//h264_wrap_init
+	penc_ctl = &enc_ctl;
+	penc_cfg = &enc_cfg;
+	prc_ctl  = &rc_ctl;
+	penc_ctl->bs_buf_id = 0;
+	//启动缩时录影的模式
+	penc_cfg->timeLapse_en = 1;
+	h264_set_wrap_img_size(h264_dev,penc_cfg->wrap_width,penc_cfg->wrap_height);
+	h264_cfg_srcdat(h264_dev,penc_cfg->src_from);
+	h264_set_vpp_vsync_delay(h264_dev,1);
+	h264_set_hw_open(h264_dev,1);
+	h264_start_enc_frm(h264_dev,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+h264_enc_with_timeLapse_end:
+	if(err && timeLapse_wk)
+	{
+		H264_LIB_FREE(timeLapse_wk);
+		timeLapse_wk = NULL;
+	}
+	return err;
+}
+
 
 
 void h264_dec_intr_status(struct h264_device *p_h264,struct h264_ctl_t *dec_ctl) {
@@ -2167,8 +2426,10 @@ void get_h264_stream_w_h(uint16_t* w,uint16_t* h,uint8_t *h264data){
 extern uint8_t h264_dec_sps_src_param(uint32 w, uint32 h, uint8_t *buf);
 void h264_dec_src_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_t devid){
 	//--- platform initial 
+#if VIDEO_YUV_RANGE_TYPE
 	uint8_t spsbuf[20];
 	uint8_t spslen;
+#endif
 	uint8_t onlysps = 0;
 	int32 ret;
 	uint8_t *psram_room;
@@ -2342,7 +2603,7 @@ void h264_frame_gen420_kick_run(struct h264_device *p_h264,uint32 addr,uint16_t 
 	h264_cfg_srcdat(p_h264,penc_cfg->src_from);
 	h264_set_vpp_vsync_delay(p_h264,1);
 	h264_set_hw_open(p_h264,1);
-	h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+	//h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
 	enc_ctl.bs_buf_id = 0;	
 	h264_open(p_h264);
 
@@ -2448,9 +2709,10 @@ void h264_wq_thread(){
 						}
 					}else{	
 						//_os_printf("%s	%d\r\n",__func__,__LINE__);
-						scale2_cfg_run(H264_DEC,scaler2_dev_id);
+						int32 ret = scale2_cfg_run(H264_DEC,scaler2_dev_id);
+						if(ret == 0) {
 						h264_dec_src_264((uint8_t*)h264dev->data,h264dev->len,h264dev->w,16*((h264dev->h + 15)/16) ,0);
-
+						}
 						
 						//scale2_cfg_run(MJPEG_DEC,scaler2_dev_id);
 						//void jpg_decode_run(uint32_t addr);						
@@ -2494,6 +2756,7 @@ int32_t h264_gen420_kick()
 	h264_start_enc_frm(h264_dev,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
 	return 0;
 }
+
 
 
 

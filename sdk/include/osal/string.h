@@ -34,6 +34,8 @@ int _os_sprintf(char *str, const char *format, ...);
 int _os_vsnprintf(char *s, size_t n, const char *format, va_list arg);
 int _os_snprintf(char *str, size_t size, const char *format, ...);
 int32 os_strtok(char *str, char *separator, char *argv[], int argv_size);
+const char *os_strncasechr(const char *s, char c, int32 n);
+const char *os_strncasestr(const char *str1, const char *str2, int32 n);
 char *os_strdup(const char *s);
 uint32 os_atoh(char *str);
 uint64 os_atohl(char *str);

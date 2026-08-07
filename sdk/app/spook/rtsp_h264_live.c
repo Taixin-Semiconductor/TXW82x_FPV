@@ -122,7 +122,7 @@ static void self_creat(struct rtsp_source *source, void *priv)
             {
                 msi_add_output(r->video_msi, NULL, R_RTP_JPEG_H264); // 将video_msi的数据输出到R_RTP_JPEG_H264的msi,即v_msi
                 msi_do_cmd(r->video_msi, MSI_CMD_VIDEO_DEMUX_CTRL, MSI_VIDEO_DEMUX_START, 0);
-                OS_TASK_INIT("live_rtsp", &source->handle, self_thread, r, OS_TASK_PRIORITY_NORMAL + 1, NULL, 1024);
+                OS_TASK_INIT("live_rtsp_h264", &source->handle, self_thread, r, OS_TASK_PRIORITY_NORMAL + 2, NULL, 1024);
             }
         }
         // 这里没有增加容错

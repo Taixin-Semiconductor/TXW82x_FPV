@@ -63,6 +63,14 @@ struct  video_cfg_t {
 	uint16_t csi1_oh;
 	uint16_t csi1_type;         //0:master 1:slave0  2:slave1
 };
+
+struct mdt_coord_msg {	
+	uint16_t x0,x1;
+	uint16_t y0,y1;
+	uint16_t x,y;
+	uint8_t blkmv_cnt;
+};
+
 enum
 {
 	VPP_MODE_2N_ADD_16 = 0,        //[16,32] 2N+16

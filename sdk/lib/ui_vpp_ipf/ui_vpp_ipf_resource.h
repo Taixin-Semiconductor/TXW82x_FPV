@@ -2,7 +2,6 @@
 #define _UI_VPP_IPF_RESOURCE_H_
 
 #include "basic_include.h"
-#include "lib/video/dvp/cmos_sensor/csi.h"
 
 typedef struct {
     uint32_t data_size;     /**< Size of the image in bytes*/

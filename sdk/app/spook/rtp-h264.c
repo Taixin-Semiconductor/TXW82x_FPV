@@ -39,22 +39,16 @@
 #include "osal/sleep.h"
 #include "stream_define.h"
 
-
 #define H264_SAMPLE	90000
-#define DYNAMIC_FRAGMENT_SIZE 1
-
 
 struct rtp_h264 {
 	//为了获取到frame,因为使用了链表形式
 	unsigned char *d;//链表第一帧数据
 	struct frame *f;
 	unsigned int timestamp;	
-	int max_send_size;
 	uint8_t first_flag;
 	uint8_t last_count;
 };
-
-
 
 static int h264_get_sdp( char *dest, int len, int payload, int port, void *d )
 {
@@ -67,8 +61,6 @@ static int h264_get_sdp( char *dest, int len, int payload, int port, void *d )
 	
 	return snprintf( dest, len, "m=video %d RTP/AVP 96\r\na=rtpmap:96 H264/%d\r\na=decode_buf=300\r\n", port,h264_sample_rate);
 }
-
-
 
 static int h264_process_frame( struct frame *f, void *d )
 {
@@ -90,413 +82,220 @@ static int h264_get_payload( int payload, void *d )
 
 static int h264_send( struct rtp_endpoint *ep, void *d )
 {
-
 	return 0;
 }
 
-
-//设置数据头部,并且将音频数据拷贝到需要发送的buf中,返回需要发送的buf长度
-static int set_send_rtp_packet_head_h264(struct rtp_endpoint *ep, unsigned int timestamp, int marker,unsigned char *real_buf,unsigned char *send_buf,int plen )
+static int h264_send_nalu( struct rtp_endpoint *ep, uint32_t timestamp, uint8_t *nalu, uint32_t nalu_len, uint8_t marker, int times, int max_payload )
 {
-	uint8_t *inter,*rtphdr;
-	//unsigned char *data_buf = send_buf+12;
-	inter = send_buf;
-	rtphdr = inter;
-	//int i;
-	ep->last_timestamp = ( ep->start_timestamp + timestamp )& 0xFFFFFFFF;
+	struct iovec v[3];
+	uint8_t fu_hdr[2];
+	uint32_t offset;
+	uint32_t chunk;
 
-	inter[0] = 2 << 6; /* version */
-	if(marker)
+	if( !ep || !ep->sendEnable || !nalu || nalu_len <= 0 )
 	{
-		inter[1] = ep->payload | 0x80;
-	}
-	else
-	{
-		inter[1] = ep->payload;
-	}
-
-	PUT_32(rtphdr+4, ep->last_timestamp);
-	PUT_32( rtphdr + 8, ep->ssrc );
-
-
-	PUT_16(rtphdr + 2, ep->seqnum );
-	ep->seqnum = ( ep->seqnum + 1 ) & 0xFFFF;
-	++ep->packet_count;
-	ep->octet_count += (plen);
-
-	return plen+12;
-}
-
-
-//端口发送数据,
-int fd_send_data_h264(int fd,unsigned char *sendbuf,int sendLen,int times)
-{
-	int size = -1;
-	int timeouts = 0;
-	struct sockaddr_in rtpaddr;
-	unsigned int namelen = sizeof( rtpaddr );
-	if( getsockname( fd, (struct sockaddr *)&rtpaddr, &namelen ) < 0 ) {
-		spook_log( SL_ERR, "sendmsg getsockname error");
-	}
-
-	
-	while(size < 0 )
-	{
-		//size = sendto(fd, sendtobuf, total_len, MSG_DONTWAIT, (struct sockaddr *)&rtpaddr, namelen);
-		size = sendto(fd, sendbuf, sendLen, MSG_DONTWAIT, (struct sockaddr *)&rtpaddr, namelen);
-		//_os_printf("P:%d ",size);
-		timeouts++;
-		if(timeouts>times)
-		{
-
-			break;
-		}
-		if(size < 0)
-		{
-			os_sleep_ms(3);
-		}		
-	}
-	if(size<0)
-	{
-		_os_printf("%s err size:%d\n",__FUNCTION__,size);
 		return -1;
-
 	}
-	else
+
+	if( nalu_len <= max_payload )
 	{
+		// single NALU
+		v[1].iov_base = (void *)nalu;
+		v[1].iov_len = nalu_len;
+		if( rtp_sendmsg( ep, v, 2, timestamp, marker, times ) < 0 )
+		{
+			ep->sendEnable = 0;
+			return -1;
+		}
 		return 0;
 	}
-}
 
+	if( nalu_len <= 1 || max_payload <= 2 )
+	{
+		ep->sendEnable = 0;
+		return -1;
+	}
 
-//数据发送
-int send_rtp_packet_more_h264( struct rtp_endpoint *ep, unsigned char *sendbuf, int sendLen,int times )
-{
-	fd_send_data_h264(ep->trans.udp.rtp_fd,sendbuf,sendLen,times);
+	// FU-A
+	fu_hdr[0] = ( nalu[0] & 0xE0 ) | 28;
+	for( offset = 1; offset < nalu_len; offset += chunk )
+	{
+		chunk = nalu_len - offset;
+		if( chunk > max_payload - 2 )
+		{
+			chunk = max_payload - 2;
+		}
+		fu_hdr[1] = nalu[0] & 0x1F;
+		if( offset == 1 )
+		{
+			fu_hdr[1] |= 0x80;
+		}
+		
+		if( offset + chunk >= nalu_len )
+		{
+			fu_hdr[1] |= 0x40;
+		}
+
+		v[1].iov_base = fu_hdr;
+		v[1].iov_len = sizeof( fu_hdr );
+		v[2].iov_base = (void *)( nalu + offset );
+		v[2].iov_len = chunk;
+		if( rtp_sendmsg( ep, v, 3, timestamp, offset + chunk >= nalu_len ? marker : 0, times ) < 0 )
+		{
+			ep->sendEnable = 0;
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
-
-//支持大于1460的音频数量
-static int h264_send_more( rtp_loop_search_ep search,void *ls,void *track, void *d,void *cache_buf,int cache_buf_len )
+static void h264_send_nalu_to_endpoint( struct rtp_endpoint *ep, struct rtp_h264 *out, uint8_t *nalu, uint32_t nalu_len, uint8_t marker, int times )
 {
-	int max_data_size;
-	unsigned char *send_buf;
-	uint8_t is_i_frame = 0;
-	int plen;
-	int plen_offset;
-	int send_first = 1;
-	int send_end = 0;
-	struct rtp_endpoint *ep;
-	void *head;
-	int send_total_len;
-	int i = 0;
-	int itk = 0;
-	char *sps_pps_buf;
+	int max_payload;
 
-	
+	if( !ep || !ep->sendEnable )
+	{
+		return;
+	}
+	max_payload = rtp_get_payload_size_limit( ep, RTP_HEADER_SIZE );
+	if( max_payload <= 0 )
+	{
+		ep->sendEnable = 0;
+		return;
+	}
+	if( h264_send_nalu( ep, out->timestamp, nalu, nalu_len, marker, times, max_payload ) < 0 )
+	{
+		ep->sendEnable = 0;
+	}
+}
+
+static void h264_send_sps_pps( struct rtp_endpoint *ep, struct rtp_h264 *out, struct fb_h264_s *h264, int retries )
+{
+	// stap-a: 1B头 + 2B sps_len + sps + 2B pps_len + pps
+	struct iovec v[6];
+	unsigned char stap_hdr;
+	unsigned char sps_len[2];
+	unsigned char pps_len[2];
+	int max_payload;
+	int stap_payload_len;
+
+	if( !ep || !ep->sendEnable || !h264 || !h264->sps || !h264->pps || !h264->sps_len || !h264->pps_len ) 
+	{
+		_os_printf("%s %d\n", __FUNCTION__, __LINE__);
+		return;
+	}
+
+	max_payload = rtp_get_payload_size_limit( ep, RTP_HEADER_SIZE );
+	if( max_payload <= 0 )
+	{
+		ep->sendEnable = 0;
+		_os_printf("%s %d\n", __FUNCTION__, __LINE__);
+		return;
+	}
+
+	stap_payload_len = 1 + 2 + h264->sps_len + 2 + h264->pps_len;
+	if( stap_payload_len > max_payload )
+	{
+		h264_send_nalu_to_endpoint( ep, out, h264->sps, h264->sps_len, 0, retries );
+		if( ep->sendEnable )
+		{
+			h264_send_nalu_to_endpoint( ep, out, h264->pps, h264->pps_len, 0, retries );
+		}
+		return;
+	}
+
+	stap_hdr = ( h264->sps[0] & 0xE0 ) | 24;
+	PUT_16( sps_len, h264->sps_len );
+	PUT_16( pps_len, h264->pps_len );
+	v[1].iov_base = &stap_hdr;
+	v[1].iov_len = 1;
+	v[2].iov_base = sps_len;
+	v[2].iov_len = 2;
+	v[3].iov_base = h264->sps;
+	v[3].iov_len = h264->sps_len;
+	v[4].iov_base = pps_len;
+	v[4].iov_len = 2;
+	v[5].iov_base = h264->pps;
+	v[5].iov_len = h264->pps_len;
+	if( rtp_sendmsg( ep, v, 6, out->timestamp, 0, retries ) < 0 )
+	{
+		ep->sendEnable = 0;
+	}
+}
+
+static int h264_send_more( rtp_loop_search_ep search, void *ls, void *track, void *d )
+{
 	struct rtp_h264 *out = (struct rtp_h264 *)d;
 	struct framebuff *fb = (struct framebuff *)out->f->get_f;
-	uint8_t *real_buf = fb->data;
-	int h264_flen = fb->len;	
-	#if DYNAMIC_FRAGMENT_SIZE
-	uint8_t send_times = 0;
-	int dynamic_fragment_size;
-	#endif
+	struct fb_h264_s *h264;
+	uint8_t *nalu;
+	uint32_t nalu_len;
+	struct rtp_endpoint *ep;
+	void *head;
 
-	if(fb->priv)
+	if( !fb || !fb->data || fb->len <= 0 )
 	{
-		send_buf = cache_buf;
-		
-		max_data_size = out->max_send_size-12;
-		struct fb_h264_s *h264 = (struct fb_h264_s *)fb->priv;
-		real_buf = fb->data+1 + h264->start_len;//第一byte是数据类型(I帧  P帧 B帧)
-		//I帧,先发送pps和sps
-		//os_printf("h264->type:%d\tfb:%X\tpriv:%X\tcount:%d\n",h264->type,fb,fb->priv,h264->count);
-		if(h264->type == 1)
+		return -1;
+	}
+
+	h264 = (struct fb_h264_s *)fb->priv;
+	if( h264 )
+	{
+		if( h264->type == 1 )
 		{
-			//plen = 19;
 			out->first_flag = 1;
-			is_i_frame = 1;
-			head = ls;
-			while(head)
-			{
-				head = search(head,track,(void*)&ep);
-				if(ep)
-				{
-					//uint16_t rtp_head_len;
-					//数据内容是一样的,修改头部就可以了
-					int start = 12;
-					plen = 0;
-					sps_pps_buf = (char*)&send_buf[start];
-					sps_pps_buf[plen++] = 0x78;
-					sps_pps_buf[plen++] = (h264->sps_len>>8)&0xff;
-					sps_pps_buf[plen++] = h264->sps_len;
-					memcpy(&sps_pps_buf[plen],h264->sps,h264->sps_len);
-					plen+= h264->sps_len;
-					sps_pps_buf[plen++] = (h264->pps_len>>8)&0xff;
-					sps_pps_buf[plen++] = h264->pps_len;
-					memcpy(&sps_pps_buf[plen],h264->pps,h264->pps_len);
-					plen += h264->pps_len;
-
-					send_total_len = set_send_rtp_packet_head_h264(ep,out->timestamp, 0,NULL,send_buf,plen );
-					send_rtp_packet_more(ep, send_buf, send_total_len,30 );
-				}
-			}
 		}
-
-
-		if(h264->type != 1 && out->last_count != h264->count)
+		else if( out->last_count != h264->count )
 		{
 			out->first_flag = 0;
+			os_printf(KERN_NOTICE"drop frame\n");
 		}
 
-		//如果不是1,则需要丢帧
-		if(!out->first_flag)
+		if( !out->first_flag )
 		{
-			os_printf(KERN_NOTICE"drop frame\n");
-			goto rtp_h264_end;
+			return -1;
+		}
+
+		nalu = fb->data + h264->start_len;
+		nalu_len = fb->len - h264->start_len;
+		if( nalu_len <= 0 )
+		{
+			return -1;
 		}
 
 		out->last_count = h264->count + 1;
-
-		h264_flen = fb->len - 1 - h264->start_len;
-		plen_offset = 0;
-		send_first = 1;
-		for( i = 0; i < h264_flen; i += plen )
+		head = ls;
+		while( head )
 		{
-			#if DYNAMIC_FRAGMENT_SIZE
-			if(h264_flen < max_data_size && send_times == 0)
-			{
-				send_times = 1;
-				dynamic_fragment_size = is_i_frame ? max_data_size : 6;
-			}
-			else
-				dynamic_fragment_size = max_data_size;
-			
-			if((h264_flen - i) > dynamic_fragment_size)
-			{
-				plen = dynamic_fragment_size;
-				send_end = 0;
-			}
-			#else
-			if((h264_flen - i) > max_data_size)
-			{
-				plen = max_data_size;
-				send_end = 0;
-			}
-			#endif
-			else
-			{
-				plen = h264_flen - i;
-				send_end = 1;
-			}
+			head = search( head, track, (void *)&ep );
+			if( !ep ) 
 
-			send_buf = cache_buf;
-			hw_memcpy(&send_buf[itk+14],&real_buf[plen_offset],plen);
-
-
-			plen_offset += plen;
-
-			if(plen_offset == h264_flen){
-				send_end = 1;
-			}
-
-			if(send_first)
 			{
-				send_buf[12] = 0x7c;
-				if(is_i_frame == 1)
-					send_buf[13] = 0x85;
-				else
-					send_buf[13] = 0x81;
-				
-				send_first = 0;
-			}else{
-				if(send_end){
-					send_buf[12] = 0x7c;
-					if(is_i_frame == 1)
-						send_buf[13] = 0x45;
-					else
-						send_buf[13] = 0x41;
-				}else{
-					send_buf[12] = 0x7c;
-					if(is_i_frame == 1)
-						send_buf[13] = 0x05;
-					else
-						send_buf[13] = 0x01;
-				}
+				continue;
 			}
 			
-			//重新赋值ls的头
-			head = ls;
-			while(head)
+			if( !ep->sendEnable )
 			{
-				//获取ep
-				head = search(head,track,(void*)&ep);
-				if(ep)
-				{
-					//数据内容是一样的,修改头部就可以了
-					send_total_len = set_send_rtp_packet_head_h264(ep,out->timestamp, plen + i == h264_flen,NULL,send_buf,plen );
-					if(ep->sendEnable)
-					{
-						send_rtp_packet_more(ep, send_buf, send_total_len+2,30 );
-					}
-					
-				}
+				continue;
 			}
 
-		}
-	}
+			if( h264->type == 1 )
+			{	
+				h264_send_sps_pps( ep, out, h264, 30 );
+			}
 
-	else
-	{
-		//real_buf = real_buf+4;
-		//h264_flen = h264_flen-4;
-		if((real_buf[3] == 0x01) && (real_buf[4] == 0x67) && (real_buf[5] == 0x4d)){
-			is_i_frame = 1;
-		}else{
-			is_i_frame = 0;
-		}
-		
-		max_data_size = out->max_send_size-12;
-		//h264_flen = sizeof(h264_demo_I);
-		//is_i_frame = 1;
-
-		send_buf = cache_buf;
-
-		if(is_i_frame == 1){
-			plen = 20;
-			head = ls;
-			head = search(head,track,(void*)&ep);
-			if(ep)
+			if( ep->sendEnable )
 			{
-				//数据内容是一样的,修改头部就可以了
-				send_total_len = set_send_rtp_packet_head_h264(ep,out->timestamp, plen + i == h264_flen,NULL,send_buf,plen );
-				send_buf[12] = 0x78;
-				send_buf[13] = 0x00;
-				send_buf[14] = 0x0b;
-				for(itk = 0;itk < 11;itk++){
-					send_buf[14+1+itk] = real_buf[4+itk];
-				}
-				send_buf[14+11+1] = 0x00;
-				send_buf[14+11+2] = 0x04;
-				for(itk = 0;itk < 4;itk++){
-					send_buf[14+11+2+1+itk] = real_buf[4+11+4+itk];
-				}		
-				
-				send_rtp_packet_more(ep, send_buf, send_total_len,31 );
-			}
-		}
-
-		if(is_i_frame == 1){
-			h264_flen = h264_flen-4-10-4-4-4-1;
-		}else{
-			h264_flen = h264_flen-4;
-		}
-		
-		plen_offset = 0;
-		send_first = 1;
-		for( i = 0; i < h264_flen; i += plen )
-		{
-			#if DYNAMIC_FRAGMENT_SIZE
-			if(h264_flen < max_data_size && send_times == 0)
-			{
-				send_times = 1;
-				dynamic_fragment_size = is_i_frame ? max_data_size : 6;
-			}
-			else
-				dynamic_fragment_size = max_data_size;
-			
-			if((h264_flen - i) > dynamic_fragment_size)
-			{
-				plen = dynamic_fragment_size;
-				send_end = 0;
-			}
-			#else
-			if((h264_flen - i) > max_data_size)
-			{
-				plen = max_data_size;
-				send_end = 0;
-			}
-			#endif
-			else
-			{
-				plen = h264_flen - i;
-				send_end = 1;
+				h264_send_nalu_to_endpoint( ep, out, nalu, nalu_len, 1, 30 );
 			}
 
-			send_buf = cache_buf;
-			if(is_i_frame == 1){
-				for(itk = 0;itk < plen;itk++){
-					send_buf[itk+14] = real_buf[28+itk+plen_offset];
-				}
-			}else{
-				for(itk = 0;itk < plen;itk++){
-					send_buf[itk+14] = real_buf[5+itk+plen_offset];
-				}
-			}
-
-			plen_offset += plen;
-
-			if(plen_offset == h264_flen){
-				send_end = 1;
-			}
-
-			if(send_first)
-			{
-				send_buf[12] = 0x7c;
-				if(is_i_frame == 1)
-					send_buf[13] = 0x85;
-				else
-					send_buf[13] = 0x81;
-				
-				send_first = 0;
-			}else{
-				if(send_end){
-					send_buf[12] = 0x7c;
-					if(is_i_frame == 1)
-						send_buf[13] = 0x45;
-					else
-						send_buf[13] = 0x41;
-				}else{
-					send_buf[12] = 0x7c;
-					if(is_i_frame == 1)
-						send_buf[13] = 0x05;
-					else
-						send_buf[13] = 0x01;
-				}
-			}
-			
-			//重新赋值ls的头
-			head = ls;
-			while(head)
-			{
-				//获取ep
-				head = search(head,track,(void*)&ep);
-				if(ep)
-				{
-					//数据内容是一样的,修改头部就可以了
-					send_total_len = set_send_rtp_packet_head_h264(ep,out->timestamp, plen + i == h264_flen,NULL,send_buf,plen );
-					send_rtp_packet_more(ep, send_buf, send_total_len+2,30 );
-				}
-
-			}
-		}
-	}
-rtp_h264_end:
-	head = ls;
-	while(head)
-	{
-		//获取ep
-		head = search(head,track,(void*)&ep);
-		if(ep)
-		{
 			ep->sendEnable = 1;
 		}
 	}
+
 	return 0;
 }
-
 
 struct rtp_media *new_rtp_media_h264_stream( struct stream *stream )
 {
@@ -508,7 +307,6 @@ struct rtp_media *new_rtp_media_h264_stream( struct stream *stream )
 	out = (struct rtp_h264 *)malloc( sizeof( struct rtp_h264 ) );
 	out->f = NULL;
 	out->timestamp = 0;
-	out->max_send_size = MAX_DATA_PACKET_SIZE;
 	//return new_rtp_media( audio_get_sdp, audio_get_payload,audio_process_frame, audio_send, out );
 	m = new_rtp_rtcp_media( h264_get_sdp, h264_get_payload,h264_process_frame, h264_send,new_rtcp_send, out );
 	if(m)
@@ -520,6 +318,3 @@ struct rtp_media *new_rtp_media_h264_stream( struct stream *stream )
 	}
 	return m;
 }
-
-
-

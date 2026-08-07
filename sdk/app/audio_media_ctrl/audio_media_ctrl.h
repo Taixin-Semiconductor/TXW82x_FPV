@@ -32,10 +32,12 @@ typedef struct {
 int32_t audio_file_record_pause(void);
 int32_t audio_file_record_continue(void);
 int32_t audio_file_record_stop(void);
-void audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_time);
+int32_t audio_file_record_status(struct msi *msi);
+int32_t audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_time);
 int32_t audio_file_play_pause(struct msi *msi);
 int32_t audio_file_play_continue(struct msi *msi);
 int32_t audio_file_play_stop(struct msi *msi);
+int32_t audio_file_play_status(struct msi *msi);
 struct msi *audio_file_play_init(char *filename, uint8_t play_mode, AUDEC_INIT *audec_init);
 
 #endif

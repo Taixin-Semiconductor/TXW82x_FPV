@@ -1,6 +1,8 @@
 #ifndef _MAGIC_VOICE_H_
 #define _MAGIC_VOICE_H_
 
+#include "lib/multimedia/msi.h"
+#include "lib/multimedia/framebuff.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
 
@@ -22,6 +24,16 @@ typedef enum {
     deep_voice,
     etourdi_voice
 }magic_voice_type;
+
+typedef struct {
+    struct msi *msi;
+    struct msi *autpc_msi;
+    struct fbpool tx_pool;
+    int16_t *buf;
+    uint8_t new_type;
+    uint8_t current_type;
+    uint32_t table_index;
+}magic_voice_struct;
 
 int32_t magic_voice_set_type(uint8_t type);
 int32_t magic_voice_msi_add_output(const char *msi_name);

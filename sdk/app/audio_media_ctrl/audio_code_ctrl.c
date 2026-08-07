@@ -115,6 +115,13 @@ int32_t audio_code_del_output(struct msi *msi, const char *msi_name)
     return ret;
 }
 
+int32_t audio_code_direct_to_dac(struct msi *msi, uint32_t direct_to_dac)
+{
+    int32_t ret = RET_ERR;
+    ret = msi_do_cmd(msi, MSI_CMD_AUCODER, MSI_AUCODER_DIRECT_TO_DAC, direct_to_dac);    
+    return ret;    
+}
+
 int32_t audio_code_get_status(struct msi *msi)
 {
     int32_t ret = RET_ERR;

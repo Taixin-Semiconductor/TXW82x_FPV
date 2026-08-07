@@ -9,6 +9,7 @@
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
 #include "app_lcd/app_lcd.h"
+#include "user_work/user_work.h"
 
 extern void yuv_blk_cpy(uint8 *des, uint8* src,uint32 des_w,uint32 des_h, uint32 src_w, uint32_t src_h,uint32 x,uint32 y);
 extern void yuv_blk_reduce(uint8 *des, uint8* src,uint32 des_w,uint32 des_h, uint32 src_w, uint32_t src_h,uint32 x,uint32 y);

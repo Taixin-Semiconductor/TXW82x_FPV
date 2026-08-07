@@ -28,6 +28,7 @@ struct auadc_struct
 	uint16_t soft_gain;
     uint32_t data_len;
     uint32_t sampleRate;
+	uint32_t energy;
     struct msi *msi;
     struct os_msgqueue msg;
     struct os_task *task_hdl;    
@@ -39,10 +40,11 @@ struct auadc_struct
 #endif
 };
 
+extern uint32_t auadc_calc_energy_asm(volatile int16_t *data, uint16_t soft_gain, uint32_t nsamples);
+
 void auadc_deal_task(void *d)
 {
-    int16_t *data;  
-    int32_t tmp32;
+    volatile int16_t *data = NULL;  
 	int32_t ret = 0;
     uint32_t samples_len;
 	struct framebuff *frame_buf = NULL;
@@ -58,23 +60,23 @@ void auadc_deal_task(void *d)
 get_frame_buf:
 			frame_buf = fbpool_get(&auadc_s->tx_pool, 0, auadc_s->msi);
 			if(frame_buf) {
-				data = (int16_t *)frame_buf->data;
-				os_memcpy(data, (const void*)(ausys_msg.ad_content.fifo_cur_addr), ausys_msg.ad_content.fifo_cur_len);
+				data = (volatile int16_t *)frame_buf->data;
+				os_memcpy((void*)data, (const void*)(ausys_msg.ad_content.fifo_cur_addr), ausys_msg.ad_content.fifo_cur_len);
 				frame_buf->len = ausys_msg.ad_content.fifo_cur_len;
 				frame_buf->time = os_jiffies();
 				samples_len = frame_buf->len/2;
+#if AUADC_OUTPUT_SIN
+				for(uint32_t i=0; i<samples_len; i++) {
+					*(data+i) = sin1khz_table[i%8];
+				}
+#else
 #if AUDIO_PROCESS
 				if(auadc_s->auproc_hdl) {
-					audio_process_data(auadc_s->auproc_hdl, data, samples_len);
+					audio_process_data(auadc_s->auproc_hdl, (int16_t*)data, samples_len);
 				}
 #endif
-				for(uint32_t i=0; i<samples_len; i++) {
-					tmp32 = *(data+i) * auadc_s->soft_gain;
-					*(data+i) = LIMIT(tmp32, 32767, -32768);
-				#if AUADC_OUTPUT_SIN
-					*(data+i) = sin1khz_table[i%8];
-				#endif
-				}
+				auadc_s->energy = auadc_calc_energy_asm(data, auadc_s->soft_gain, samples_len);
+#endif
 				frame_buf->mtype = F_AUDIO;	
 				frame_buf->stype = FSTYPE_AUDIO_ADC;
 				AUADC_DEBUG("auadc send framebuff:%p\r\n",frame_buf);   
@@ -256,6 +258,52 @@ int32_t audio_adc_get_samplerate(enum ausys_ad_platform platform)
 		samplerate = auadc_s->sampleRate;
 	}
 	return samplerate;
+}
+
+int32_t audio_adc_set_soft_gain(enum ausys_ad_platform platform, uint32_t soft_gain)
+{
+	int32_t ret = RET_ERR;
+	struct msi *msi = NULL;
+	struct auadc_struct *auadc_s = NULL;
+
+	switch(platform) {
+		case AUSYS_AUAD:msi = msi_find("S_AUADC", 1);break;
+		case AUSYS_PDM:msi = msi_find("S_AUPDM", 1);break;
+		case AUSYS_IIS_SLAVER0:msi = msi_find("S_AUIIS0", 1);break;
+		case AUSYS_IIS_SLAVER1:msi = msi_find("S_AUIIS1", 1);break;
+		default:break;
+	}
+	if(msi) {
+		msi_put(msi);
+		auadc_s = (struct auadc_struct*)msi->priv;
+	}	
+	if(auadc_s) {
+		auadc_s->soft_gain = soft_gain;
+		ret = RET_OK;
+	}	
+	return ret;
+}
+
+uint32_t audio_adc_get_energy(enum ausys_ad_platform platform)
+{
+	struct msi *msi = NULL;
+	struct auadc_struct *auadc_s = NULL;
+
+	switch(platform) {
+		case AUSYS_AUAD:msi = msi_find("S_AUADC", 1);break;
+		case AUSYS_PDM:msi = msi_find("S_AUPDM", 1);break;
+		case AUSYS_IIS_SLAVER0:msi = msi_find("S_AUIIS0", 1);break;
+		case AUSYS_IIS_SLAVER1:msi = msi_find("S_AUIIS1", 1);break;
+		default:break;
+	}
+	if(msi) {
+		msi_put(msi);
+		auadc_s = (struct auadc_struct*)msi->priv;
+	}	
+	if(auadc_s) {
+		return auadc_s->energy;
+	}	
+	return 0;	
 }
 
 int32_t audio_adc_init(enum ausys_ad_platform platform, uint32_t sampleRate, uint32_t channels, uint32_t soft_gain, uint32_t auproc_enable)

@@ -85,7 +85,9 @@ static void scale1_soft_from_psram_to_enc(struct scale1_jpg_msi_s *scale1_jpg, u
     scale_set_data_from_vpp(scale_dev, 0);
     scale_set_line_buf_num(scale_dev, line_num * 2); // soft的line buf
     scale_request_irq(scale_dev, FRAME_END, scale1_done, (uint32_t) scale1_jpg);
-    // scale_request_irq(scale_dev,INBUF_OV,scale1_soft_ov_isr,(uint32_t)scale1_jpg);
+    //没有用到的中断主动关闭
+	scale_release_irq(scale_dev,INBUF_OV);
+	scale_release_irq(scale_dev,ERROR_PEND);
     scale_open(scale_dev);
 
     scale_set_inbuf_num(scale_dev, 0, 0);

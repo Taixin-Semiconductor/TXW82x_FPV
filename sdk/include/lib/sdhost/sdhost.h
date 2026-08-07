@@ -81,10 +81,12 @@ typedef enum
     LL_SDHC_LINE_FOUR,
 }TYPE_LL_SDHC_WIDTH;
 
-enum {
-    SDHC_SINGLE_CODE_SUPPORT_DIS = 0,
-    SDHC_SINGLE_CODE_SUPPORT_EN  = 1,
-};
+
+typedef enum
+{
+    SDHC_INIT_FLAGS_SINGLE_BLK_RW_EN = BIT(0),
+    SDHC_INIT_FLAGS_BUSY_FILTER_EN   = BIT(1),
+} TYPE_SDHC_INIT_FLAGS;
 
 enum {
     LL_SDHC_RETRY_DEFAULT = 0,
@@ -315,9 +317,17 @@ struct rt_sd_scr {
 	uint8		sd_bus_widths;
 };
 
-
 struct sdh_device {
     struct dev_obj dev;
+    uint32 *cfg_backup;
+    void   *private_data;
+	struct os_task state_task;
+	struct os_semaphore dat_sema;
+	struct os_mutex lock;
+#ifdef CONFIG_SLEEP
+	struct os_mutex bp_suspend_lock;
+	struct os_mutex bp_resume_lock;
+#endif
 	uint32  freq_min;
     uint32  freq_max;
 	uint32  valid_ocr;	/* current valid OCR */
@@ -370,12 +380,11 @@ struct sdh_device {
 #define CARD_FLAG_HIGHSPEED  (1 << 0)   /* SDIO bus speed 50MHz */
 #define CARD_FLAG_SDHC       (1 << 1)   /* SDHC card */
 #define CARD_FLAG_SDXC       (1 << 2)   /* SDXC card */
-
-	uint16	card_type;	
-	uint8   sd_8clk_open : 1, sd_8clk_default : 1, sd_read_retry_flag : 1, sd_write_retry_flag : 1, sd_cmd_retry_flag : 1, sd_stop : 1, single_support : 1, reserved : 1;
+    uint8   *sd_read_sample_value;
+    uint8   *sd_write_sample_value;
+    uint8   *sd_cmd_sample_value;
+    uint8   sd_8clk_open : 1, sd_8clk_default : 1, sd_read_retry_flag : 1, sd_write_retry_flag : 1, sd_cmd_retry_flag : 1, sd_stop : 1, single_support : 1, reserved : 1;
 	uint8   sd_opt;
-    uint16  spi_mode_baud;
-    uint32  init_clk;
     uint8   sd_clk_io;
     uint8   sd_mode_type;
     uint8   sd_cmd_sample;
@@ -385,44 +394,38 @@ struct sdh_device {
     uint8   write_crc_pending;
     uint8   sd_read_dly_chain;
     uint8   sd_write_dly_chain;
-    uint8   *sd_read_sample_value;
-    uint8   *sd_write_sample_value;
-    uint8   *sd_cmd_sample_value;
     uint8   sd_write_retry;
     uint8   sd_read_retry;
     uint8   sd_write_sample_num;
     uint8   sd_read_sample_num ;
     uint8   sd_cmd_sample_num  ;
+	uint16	card_type;	
+    uint16  spi_mode_baud;
+    uint32  init_clk;
     uint32  write_last_time_retry;
     uint32  read_last_time_retry;
-
     uint16  clk_io_type;
-	void    *private_data;
+    uint16  reserved1;
+    uint8   opt_timeout;    // seconds
+    uint8   cmd12_timeout;  // *100 millisconds
+    uint8   busy_filter_cnt;    
+};
 
-
-	uint32 *cfg_backup;
+struct sdhc_hal_ops{
+    struct devobj_ops ops;
     int32  (*open)(struct sdh_device *sdhost,uint8 bus_w, uint8 mode_type);
     int32  (*close)(struct sdh_device *sdhost);
-	int32  (*suspend)(struct sdh_device *sdhost);
-	int32  (*resume)(struct sdh_device *sdhost);
 	int32  (*iocfg)(struct sdh_device *sdhost,struct rt_mmcsd_io_cfg *io_cfg);
 	int32  (*cmd)(struct sdh_device *sdhost,struct rt_mmcsd_cmd *cmd);
 	int32  (*write)(struct sdh_device *sdhost,uint8* buf);
 	int32  (*read)(struct sdh_device *sdhost,uint8* buf);
     int32  (*complete)(struct sdh_device *sdhost);
-	struct os_task state_task;
-	struct os_semaphore dat_sema;
-	struct os_mutex lock;
-#ifdef CONFIG_SLEEP
-	struct os_mutex bp_suspend_lock;
-	struct os_mutex bp_resume_lock;
-#endif
 };
 
 struct hgsdh {
     struct sdh_device       dev;
     //struct hgsdh_hw         *hw;
-	uint32              hw;
+	uint32                  hw;
     uint32                  irq_data;
     uint32                  irq_num;
     uint32                  opened : 1,
@@ -611,7 +614,7 @@ struct hgsdh {
 void hgsdh_attach(uint32 dev_id, struct hgsdh *sdhost);
 int sd_multiple_write(struct sdh_device * host,uint32 lba,uint32 len,uint8* buf);
 int sd_multiple_read(struct sdh_device * host,uint32 lba,uint32 len,uint8* buf);
-uint32 sdhost_init(uint32 clk, uint8 single_support);
+uint32 sdhost_init(uint32 clk, uint32 flags);
 uint32 sdhost_suspend(struct sdh_device * host);
 uint32 sdhost_resume(struct sdh_device * host);
 void stop_card();

@@ -46,6 +46,7 @@
 #include "log_save_msi.h"
 #include "fpv_mem.h"
 #include "lib/flashdisk/flashdisk.h"
+#include "lib/lmac/lmac.h"
 
 
 int32 atcmd_recv(uint8 *data, int32 len);
@@ -67,8 +68,10 @@ __weak void user_protocol()
 // 应用程序初始化
 __init static void fpv_app_init(void)
 {
-    int8_t takephoto_from = 0;
-	int8_t takephoto1_from = -1;
+#if TAKEPHOTO_EN || JPG_EN
+    int8_t takephoto_from  = 0;
+    int8_t takephoto1_from = -1;
+#endif
 #ifdef PSRAM_HEAP
     cJSON_Hooks hook;
     hook.malloc_fn = _os_malloc_psram;
@@ -167,7 +170,9 @@ __init static void fpv_app_init(void)
     void isp_tunning_init(uint32 img_w, uint32 img_h);
     isp_tunning_init(1920, 1080);
     #endif
+#if !USE_CALLING_DEMO
     user_protocol();
+#endif
 }
 
 __weak void user_hardware_config()
@@ -333,9 +338,9 @@ static void hardware_init(uint8_t vcam)
 #if AUDIO_EN
 	reg_auproc_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
 	reg_wsola_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
-    reg_aucoder_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
+    reg_aucoder_alloc(av_malloc, av_zalloc, av_calloc, av_realloc, av_free);
     aucode_mutex_init();
-    audio_adc_init(AUSYS_AUAD, 8000, 1, 4, 0);
+    audio_adc_init(AUSYS_AUAD, 8000, 1, 4, 1);
     audio_dac_init();
 #endif
 
@@ -375,7 +380,7 @@ static void hardware_init(uint8_t vcam)
 #endif
 #endif
 #if LCD_EN
-    void lcd_demo_thread(void *d);
+    void lcd_demo_thread(int32_t d);
     void lvgl_init_msi(uint16_t w, uint16_t h, uint8_t rotate);
 
     #if LVGL_HW_ROTATE_RPC_EN
@@ -443,9 +448,14 @@ int sys_app_walkie_talkie_init(void)
     hardware_init(vcam);
     fpv_app_init();
 
+	lmac_set_beacon_modulation(NULL, LMAC_RATE_NON_HT_RATE0);
+	lmac_set_supp_rate(NULL, WIFI_TX_SUPP_RATE & 0xFFFFFFF0);
+
+#if !USE_CALLING_DEMO
 	intercom_send_enable(0);
 	intercom_init();
 	add_keycallback((key_callback)intercom_ctrl_key, NULL);
+#endif
 
     OS_WORK_INIT(&fpv_wk, sys_fpv_loop, 0);
     os_run_work_delay(&fpv_wk, 1000);

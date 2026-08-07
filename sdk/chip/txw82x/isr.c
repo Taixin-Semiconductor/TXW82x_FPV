@@ -7,6 +7,7 @@
  ******************************************************************************/
 #include "sys_config.h"
 #include "typesdef.h"
+#include <csi_kernel.h>
 #include "errno.h"
 #include "osal/irq.h"
 #include "osal/string.h"
@@ -171,12 +172,12 @@ __ram ATTRIBUTE_ISR void CPU_SOFT_INT_IRQHandler(void)
     SYS_IRQ_STATE_ST(CPU_SOFT_INT_IRQn);
 
     uint32 flags = disable_irq();
+    mcu_watchdog_feed();
     uint32 wdt_feed_time = CoreSetting->cpu_clk/8; // ~0.5s
     uint32 wdt_feed_cnt = CoreSetting->wdt1_to * 4;
     sysctrl_cpu1_kick_cpu0_softint(); //ack
     /* cpu0 critical section : cpu0 cann't lock cpu1 */
     //os_printf("  IRQ 100: trig:%d %d\r\n", SYSCTRL_GET_CPU0_SOFTINT_PENDING, SYSCTRL_GET_CPU1_SOFTINT_PENDING);
-    mcu_watchdog_feed();
     while (CoreSetting->soft_int_pending) {
         wdt_feed_time--;
         if (!wdt_feed_time) {

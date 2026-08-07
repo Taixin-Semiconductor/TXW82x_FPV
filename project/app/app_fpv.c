@@ -47,6 +47,9 @@
 #include "fpv_mem.h"
 #include "hal/i2s.h"
 #include "scale/scale_common.h"
+#if PRINTER_EN
+#include "printer.h"
+#endif
 
 int32 atcmd_recv(uint8 *data, int32 len);
 void  user_workqueue_init(uint16 pri, void *stack, uint16 stack_size);
@@ -154,8 +157,10 @@ __weak void user_protocol()
 // 应用程序初始化
 __init static void fpv_app_init(void)
 {
+#if TAKEPHOTO_EN || JPG_EN
     int8_t takephoto_from  = 0;
     int8_t takephoto1_from = -1;
+#endif
 #ifdef PSRAM_HEAP
     cJSON_Hooks hook;
     hook.malloc_fn = _os_malloc_psram;
@@ -198,14 +203,13 @@ __init static void fpv_app_init(void)
     if (!scale_ret)
     {
         os_printf(KERN_INFO "scale_w:%d\tscale_h:%d\n", scale_w, scale_h);
-        set_vpp_scale_w_h(1, VPP_SCALE_WIDTH, VPP_SCALE_HIGH);
 #if SUB_STREAM_EN == 1
         {
             uint16_t h264_w, h264_h;
             uint8_t  h264_ret = get_vpp1_w_h(&h264_w, &h264_h);
             if (!h264_ret)
             {
-                auto_h264_msi_init(AUTO_H264, SCALER_DATA, scale_w, scale_h, GEN420_DATA, h264_w, h264_h);
+                auto_h264_msi_init(AUTO_H264, SCALER_DATA, 0, 0, GEN420_DATA, h264_w, h264_h);
             }
             else
             {
@@ -482,8 +486,13 @@ void        hardware_init(uint8_t vcam)
 #endif
 #endif
 #endif
+
+#if PRINTER_EN
+    printer_thread_init();
+#endif
+
 #if LCD_EN
-    void lcd_demo_thread(void *d);
+    void lcd_demo_thread(int32_t d);
     void lvgl_init_msi(uint16_t w, uint16_t h, uint8_t rotate);
 
 #if LVGL_HW_ROTATE_RPC_EN

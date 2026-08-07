@@ -56,13 +56,13 @@ static void self_creat(struct rtsp_source *source,void *priv)
 			if(r->v_msi)
 			{
 				msi_add_output(r->video_msi, NULL, "custom_rtp");
-				OS_TASK_INIT("live_rtsp", &source->handle, self_thread	, r, OS_TASK_PRIORITY_NORMAL, NULL,1024);
+				OS_TASK_INIT("live_rtsp_custom", &source->handle, self_thread, r, OS_TASK_PRIORITY_NORMAL + 2, NULL, 1024);
 			}
 		}
 		else
 		{
-			os_printf("%s jpg_concat_msi_init_start fail\n",__FUNCTION__);
-            OS_TASK_INIT("live_rtsp_err", &source->handle, err_exit_thread	, &source->live_node, OS_TASK_PRIORITY_NORMAL, NULL,1024);
+			os_printf("%s jpg_concat_msi_init_start fail\n", __FUNCTION__);
+            OS_TASK_INIT("live_rtsp_err", &source->handle, err_exit_thread, &source->live_node, OS_TASK_PRIORITY_NORMAL + 2, NULL, 1024);
 			return;
 		}
 
@@ -70,7 +70,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 	else
 	{
 		os_printf("%s not enough space\n",__FUNCTION__);
-        OS_TASK_INIT("live_rtsp_err", &source->handle, err_exit_thread	, &source->live_node, OS_TASK_PRIORITY_NORMAL, NULL,1024);
+        OS_TASK_INIT("live_rtsp_err", &source->handle, err_exit_thread, &source->live_node, OS_TASK_PRIORITY_NORMAL + 2, NULL, 1024);
 	}
 
 	return;

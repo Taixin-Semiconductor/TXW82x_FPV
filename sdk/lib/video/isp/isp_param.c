@@ -486,8 +486,8 @@ void *isp_sensor_param_load(uint16 *buff)
                     os_memcpy((void *)&init->sensor_info[i], (void *)&buff[data_offset], info_szie);
                     init->sensor_info[i].info_src = ISP_INFO_SRC_TYPE_CODE_PARAM;
                     data_offset += (info_szie >> 1);
-                    init->sensor_info[i].sensor_param.y_gamma   = (_Sensor_YGAMMA *)&buff[data_offset];
-                    data_offset += (gamma_size >> 1);
+                    // init->sensor_info[i].sensor_param.y_gamma.local_ygamma_map   = (_Sensor_YGAMMA *)&buff[data_offset];
+                    // data_offset += (gamma_size >> 1);
                     init->sensor_info[i].sensor_param.rgb_gamma = (uint32 *)&buff[data_offset];
                     data_offset += (gamma_size >> 1);
                     init->sensor_info[i].sensor_param.lsc_tbl   = (uint32 *)&buff[data_offset];

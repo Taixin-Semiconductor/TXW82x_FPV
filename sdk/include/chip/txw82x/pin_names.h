@@ -939,6 +939,10 @@ extern "C" {
 #define MUTE_PORT_IO 255
 #endif
 
+#ifndef PIN_MIPI_FSYNC
+#define PIN_MIPI_FSYNC 255
+#endif
+
 enum pin_name {
 
     PA_0  =  0,

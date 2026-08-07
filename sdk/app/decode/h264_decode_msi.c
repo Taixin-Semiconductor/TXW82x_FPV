@@ -101,7 +101,7 @@ static int32_t h264_dec_done(uint32 irq_flags, uint32 irq_data, uint32 param)
 {
     struct h264_msi_s *decode = (struct h264_msi_s *) irq_data;
     decode->hardware_ready    = 1;
-	return 0;
+    return 0;
 }
 
 static int32 h264_decode_work(struct os_work *work)
@@ -259,14 +259,15 @@ static int32 h264_decode_work(struct os_work *work)
 
         struct framebuff *rfb       = decode->parent_fb->next;
         struct fb_h264_s *h264_priv = (struct fb_h264_s *) rfb->priv;
-
         // w变化,就需要等待I帧
         if (decode->w != h264_priv->w || decode->h != h264_priv->h)
         {
             decode->sps_flag = 0;
             if (decode->ref_mem && (uint32_t) decode->ref_mem != 0x40000000)
             {
-                uint32_t ref_max_size = (h264_priv->w) + (h264_priv->w * (h264_priv->h + 48)) / 2 + 3 * 4096;
+                uint32_t r_w          = ((h264_priv->w + 15) >> 4) << 4;
+                uint32_t r_h          = ((h264_priv->h + 15) >> 4) << 4;
+                uint32_t ref_max_size = (r_w * (r_h + 48)) + (r_w * (r_h + 48)) / 2 + 3 * 4096;
                 if (decode->ref_max_size < ref_max_size)
                 {
                     STREAM_FREE(decode->ref_mem);
@@ -275,10 +276,13 @@ static int32 h264_decode_work(struct os_work *work)
                     decode->w            = 0;
                     decode->h            = 0;
                 }
+                // 如果空间足够,修改frm_width与frm_height
                 else
                 {
-                    decode->w = h264_priv->w;
-                    decode->h = h264_priv->h;
+                    decode->w                  = h264_priv->w;
+                    decode->h                  = h264_priv->h;
+                    decode->dec_cfg.frm_width  = r_w;
+                    decode->dec_cfg.frm_height = r_h;
                 }
             }
         }
@@ -313,11 +317,13 @@ static int32 h264_decode_work(struct os_work *work)
         {
             if (decode->only_I_H264)
             {
-                uint32_t w = h264_priv->w;
-                uint32_t h = h264_priv->h;
+                uint32_t w   = h264_priv->w;
+                uint32_t h   = h264_priv->h;
+                uint32_t r_w = ((w + 15) >> 4) << 4;
+                uint32_t r_h = ((h + 15) >> 4) << 4;
 
-                decode->dec_cfg.frm_width  = w;
-                decode->dec_cfg.frm_height = h;
+                decode->dec_cfg.frm_width  = r_w;
+                decode->dec_cfg.frm_height = r_h;
 
                 decode->w = w;
                 decode->h = h;
@@ -328,15 +334,19 @@ static int32 h264_decode_work(struct os_work *work)
             {
                 if (!decode->ref_mem)
                 {
-                    uint32_t w      = h264_priv->w;
-                    uint32_t h      = h264_priv->h;
-                    decode->ref_mem = STREAM_MALLOC((w * (h + 48)) + (w * (h + 48)) / 2 + 3 * 4096);
+                    uint32_t w   = h264_priv->w;
+                    uint32_t h   = h264_priv->h;
+                    uint32_t r_w = ((w + 15) >> 4) << 4;
+                    uint32_t r_h = ((h + 15) >> 4) << 4;
+
+                    decode->ref_mem = STREAM_MALLOC((r_w * (r_h + 48)) + (r_w * (r_h + 48)) / 2 + 3 * 4096);
                     if (decode->ref_mem)
                     {
-                        sys_dcache_clean_range((uint32_t *) decode->ref_mem, (w * (h + 48)) + (w * (h + 48)) / 2 + 3 * 4096);
-                        decode->ref_max_size       = (w * (h + 48)) + (w * (h + 48)) / 2 + 3 * 4096;
-                        decode->dec_cfg.frm_width  = w;
-                        decode->dec_cfg.frm_height = h;
+                        decode->ref_max_size = (r_w * (r_h + 48)) + (r_w * (r_h + 48)) / 2 + 3 * 4096;
+                        sys_dcache_clean_range((uint32_t *) decode->ref_mem, decode->ref_max_size);
+
+                        decode->dec_cfg.frm_width  = r_w;
+                        decode->dec_cfg.frm_height = r_h;
 
                         decode->w = w;
                         decode->h = h;
@@ -627,10 +637,24 @@ static int decode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint
                             STREAM_LIBC_FREE(decode->scaler2buf_v);
                             decode->scaler2buf_v = NULL;
                         }
+                        uint8_t scale_coeff = 0;
+                        uint32_t iw = cfg->decode_w;
+//                        uint32_t ih = cfg->decode_h;
+                        uint32_t ow = decode->p1_w;
+//                        uint32_t oh = decode->p1_h;
+                        if(iw >= ow)
+                        {
+                            scale_coeff = 1;
+                        }
+                        else
+                        {
+                            scale_coeff = 2;
+                        }
+
                         // 默认一定申请到,没有做申请失败的处理
-                        decode->scaler2buf_y = STREAM_LIBC_MALLOC(0x20 + decode->p1_w + 17 * 4 * SRAMBUF_WLEN);
-                        decode->scaler2buf_u = STREAM_LIBC_MALLOC(0x12 + decode->p1_w / 2 + 9 * 4 * SRAMBUF_WLEN);
-                        decode->scaler2buf_v = STREAM_LIBC_MALLOC(0x12 + decode->p1_w / 2 + 9 * 4 * SRAMBUF_WLEN);
+                        decode->scaler2buf_y = STREAM_LIBC_MALLOC(0x20+ow+scale_coeff*20*SRAMBUF_WLEN*4+256);
+                        decode->scaler2buf_u = STREAM_LIBC_MALLOC(((0x12+ow/2+scale_coeff*11*SRAMBUF_WLEN*2+128 + 3)/4)*4);
+                        decode->scaler2buf_v = STREAM_LIBC_MALLOC(((0x12+ow/2+scale_coeff*11*SRAMBUF_WLEN*2+128 + 3)/4)*4);
                         if (!decode->scaler2buf_y || !decode->scaler2buf_u || !decode->scaler2buf_v)
                         {
                             os_printf(KERN_ERR "%s:%d err\tpw:%X\tnow_pw:%X\n", __FUNCTION__, __LINE__, decode->p1_w, decode->now_decode_pw);
@@ -690,7 +714,7 @@ static int decode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint
                     struct fb_h264_s  *h264_priv = (struct fb_h264_s *) rfb->priv;
                     uint32_t           dst       = (uint32_t) rfb->data;
                     uint32_t           dst_len   = rfb->len;
-                    uint8_t           *rom_ptr   = (uint8_t*)(((uint32_t) decode->rom + 0xfff) & (~0xfff));
+                    uint8_t           *rom_ptr   = (uint8_t *) (((uint32_t) decode->rom + 0xfff) & (~0xfff));
 
                     decode->hardware_ready   = 0;
                     decode->last_decode_time = os_jiffies();
@@ -704,7 +728,7 @@ static int decode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint
                         pps_setting(&decode->h264_str, &decode->h264_head, h264_priv->pps, h264_priv->pps_len);
                         decode->sps_flag = 1;
                     }
-                    h264_rom_memcpy(rom_ptr, (uint8_t*)dst, dst_len);
+                    h264_rom_memcpy(rom_ptr, (uint8_t *) dst, dst_len);
                     h264_decode_I_P_setting(&decode->h264_str, &decode->h264_head, rom_ptr);
 
                     if (h264_priv->type == 1)

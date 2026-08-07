@@ -761,6 +761,7 @@ static int32 hgscale1_close(struct scale_device *p_scale){
 		{
 			os_sleep_ms(1);
 		}
+		scale_hw->need_close = 0;
 	}
 	hw->SCALECON &= ~BIT(0);  //disable
 	hw->SCALESTA = hw->SCALESTA;

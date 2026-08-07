@@ -59,7 +59,7 @@ typedef struct
 	uint32_t udp_status_fd;
 	uint32_t udp_data_fd;
 	uint32_t udp_status_task;
-	EVT_HDL  udp_read_status_ev;
+	void*  udp_read_status_ev;
 	uint32_t udp_data_task;
 	uint32_t dev_id;
 	uint32_t frame_rate;
@@ -70,8 +70,8 @@ typedef struct
 
 typedef struct
 {
-	uint32_t tx_data;
-	uint32_t rx_data;
+	int32_t tx_data;
+	int32_t rx_data;
 	uint8_t  speed;
 	uint8_t  frame_tx_lost;
 	uint8_t  frame_tx_success;
@@ -79,11 +79,23 @@ typedef struct
 	uint8_t  frame_rx_success;	
 	uint8_t  mcs;
 	uint8_t  frmtype;
+	uint8_t  have_init;
+    uint8_t  run_state;
+    uint8_t  run_task;
+	struct os_mutex run_state_mutex;
 }walkie_msg;
 
 #ifdef SYS_APP_WALKIE_TALKIE
 extern walkie_msg walkmsg;
 extern uint8_t   apsta_mode;
+void user_protocol_task_decrease(void);
+void user_protocol_task_increase(void);
+void user_protocol2(uint16_t status_port,uint16_t data_port);
+void user_protocol2_deinit(void);
+void user_protocol3(uint16_t status_port,uint16_t data_port);
+void user_protocol3_deinit(void);
+void user_protocol_deinit(void);
+void user_protocol_reinit(void);
 #endif
 
 #define OPEN_DBG       0

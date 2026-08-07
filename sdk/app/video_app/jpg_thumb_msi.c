@@ -122,10 +122,7 @@ static int32_t jpg_thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
                 break;
                 case MSI_JPG_THUMB_TAKEPHOTO_SETPATH:
                 {
-                    if(jpg_thumb->dirpath == NULL)
-                    {
-                        jpg_thumb->dirpath = (char *) arg;
-                    }
+                    jpg_thumb->dirpath = (char *) arg;
                 }
                 break;
             }
@@ -141,18 +138,17 @@ static int32_t jpg_thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
             else
             {
                 // 检查是否来自需要的数据源头
-                if (fb->srcID == jpg_thumb->filter)
-                {
-                    os_run_work(&jpg_thumb->work);
-                }
-                else
+                if (fb->srcID != jpg_thumb->filter)
                 {
                     ret = RET_ERR;
                 }
             }
         }
         break;
-
+        case MSI_CMD_TRANS_FB_END:
+        {
+            os_run_work(&jpg_thumb->work);
+        }
         case MSI_CMD_FREE_FB:
         {
             struct framebuff *fb = (struct framebuff *) param1;
@@ -183,7 +179,7 @@ struct msi *jpg_thumb_msi_init(const char *msi_name, uint8_t filter, uint8_t thu
         jpg_thumb->msi         = msi;
         jpg_thumb->filter      = filter;
         jpg_thumb->thumb_stype = thumb_stype;
-        jpg_thumb->dirpath      = NULL;
+        jpg_thumb->dirpath     = IMG_PATH;
         msi->action            = jpg_thumb_msi_action;
         msi->enable            = 0;
 

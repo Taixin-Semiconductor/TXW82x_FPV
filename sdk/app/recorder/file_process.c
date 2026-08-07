@@ -49,7 +49,7 @@ rec_create_file_get_node:
                 free_file_list(*loop);
                 *loop = get_file_list2(main_path, extension_name, list);
                 if (!*loop) {
-                    _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
+                    os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
                     goto rec_create_file_end;
                 }
                 node = get_file_node(*loop);
@@ -58,30 +58,31 @@ rec_create_file_get_node:
                 dir_path = get_file_dir(*loop);
                 res = osal_unlink_dir(dir_path, 0);
                 if (res != FR_OK) {
-                    _os_printf("unlink dir %s err, res: %d\r\n", dir_path, res);
+                    os_printf("unlink dir %s err, res: %d\r\n", dir_path, res);
                     if(res == FR_DENIED) {
-                        res = osal_unlink_dir(dir_path, 1);
-                        if (res != FR_OK) {
-                            _os_printf("%s %d, force unlink dir %s err, res: %d\r\n", __FUNCTION__, __LINE__, dir_path, res);
-                            err_dir_add_list(*loop, dir_path);
-                        } else {
-                            _os_printf("force unlink dir %s\r\n", dir_path);
-                        }
+                        err_dir_add_list(*loop, dir_path);
+                        // res = osal_unlink_dir(dir_path, 1);
+                        // if (res != FR_OK) {
+                        //     _os_printf("%s %d, force unlink dir %s err, res: %d\r\n", __FUNCTION__, __LINE__, dir_path, res);
+                        //     err_dir_add_list(*loop, dir_path);
+                        // } else {
+                        //     _os_printf("force unlink dir %s\r\n", dir_path);
+                        // }
                     } else if(res == FR_NO_FILE) {
-                        _os_printf("%s %d, could not find dir %s\r\n", __FUNCTION__, __LINE__, dir_path);
+                        os_printf("%s %d, could not find dir %s\r\n", __FUNCTION__, __LINE__, dir_path);
                     } else {
-                        _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
+                        os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
                         goto rec_create_file_end;
                     }
                 } else {
-                    _os_printf("unlink dir %s\r\n", dir_path);
+                    os_printf("unlink dir %s\r\n", dir_path);
                 }
                 
                 list = get_err_dir_list(*loop);
                 free_file_list(*loop);
                 *loop = get_file_list2(main_path, extension_name, list);
                 if (!*loop) {
-                    _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
+                    os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
                     goto rec_create_file_end;
                 }
                 node = get_file_node(*loop);
@@ -90,7 +91,7 @@ rec_create_file_get_node:
                 }
             }
             old_file_size = get_file_size(node);
-            _os_printf("earliest file size: %d\r\n", old_file_size);
+            os_printf("earliest file size: %d\r\n", old_file_size);
             if(unlink_size + old_file_size < file_size) {
                 char path[64];
                 char *name = get_file_name(node);
@@ -98,18 +99,18 @@ rec_create_file_get_node:
                 os_sprintf(path, "%s/%s", dir_path, name);
                 res = osal_unlink(path);
                 if(res != FR_OK) {
-                    _os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, path, res);
+                    os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, path, res);
                 } else {
-                    _os_printf("unlink file %s\r\n", path);
+                    os_printf("unlink file %s\r\n", path);
                     unlink_size += old_file_size;
                 }
                 
                 gen_thumb_path(name, thumb_path, sizeof(thumb_path));
                 res = osal_unlink(thumb_path);
                 if (res != FR_OK) {
-                    _os_printf("unlink thumb_path %s err, res: %d\r\n", thumb_path, res);
+                    os_printf("unlink thumb_path %s err, res: %d\r\n", thumb_path, res);
                 } else {
-                    _os_printf("unlink thumb_path: %s\r\n", thumb_path);
+                    os_printf("unlink thumb_path: %s\r\n", thumb_path);
                 }
                 free_file_node(node);
                 node = NULL;
@@ -117,13 +118,21 @@ rec_create_file_get_node:
             }
             changeflag = 1;
         } else {
-            _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
+            os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
             goto rec_create_file_end;
         }
     }
-
-    if (get_extension_file_name(main_path, sub_path, file_name, extension_name)) {
-        _os_printf("%s %d\tget_file_name fail\r\n", __FUNCTION__, __LINE__);
+    struct timeval *time;
+    struct timeval ptimeval;
+    time = &ptimeval;
+    gettimeofday(time, NULL);
+    if(file_process->frame_time)
+    {
+        time->tv_sec = time->tv_sec - (os_jiffies() - file_process->frame_time) / 1000;
+        time->tv_usec = time->tv_usec - ((os_jiffies() - file_process->frame_time) % 1000) * 1000;
+    }
+    if (get_extension_file_name_time(main_path, sub_path, file_name, extension_name, time)) {
+        os_printf("%s %d\tget_file_name fail\r\n", __FUNCTION__, __LINE__);
         goto rec_create_file_end;
     }
     os_sprintf(file_path, "%s/%s", sub_path, file_name);
@@ -140,42 +149,42 @@ rec_create_file_get_node:
                 os_sprintf(path, "%s/%s", dir_path, name);
                 res = osal_unlink(path);
                 if(res != FR_OK) {
-                    _os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, path, res);
+                    os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, path, res);
                     goto rec_create_file_end;
                 }
-                _os_printf("unlink file %s\r\n", path);
+                os_printf("unlink file %s\r\n", path);
                 free_file_node(node);
                 node = NULL;
                 res = osal_fmkdir(sub_path);
                 if (res == FR_OK) {
                     goto rec_create_file_get_node;
                 } else {
-                    _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
+                    os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
                     goto rec_create_file_end;
                 }
             }
-            _os_printf("mkdir %s err, create rec dir\r\n", sub_path);
+            os_printf("mkdir %s err, create rec dir\r\n", sub_path);
 
             void *rec_dir = osal_opendir(main_path);
             if (!rec_dir) {
                 res = osal_fmkdir(main_path);
                 if (res != FR_OK) {
-                    _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, main_path, res);
+                    os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, main_path, res);
                     goto rec_create_file_end;
                 } else {
                     res = osal_fmkdir(sub_path);
                     if (res != FR_OK) {
-                        _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
+                        os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
                         goto rec_create_file_end;
                     }
                 }
             } else {
                 osal_closedir(rec_dir);
-                _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
+                os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
                 goto rec_create_file_end;
             }
         }
-        _os_printf("mkdir %s\r\n", sub_path);
+        os_printf("mkdir %s\r\n", sub_path);
     } else {
         osal_closedir(sub_dir);
     }
@@ -187,37 +196,37 @@ rec_create_file_get_node:
         os_sprintf(old_filepath, "%s/%s", dir_path, name);
         res = osal_rename(old_filepath, file_path);
         if (res != FR_OK) {
-            _os_printf("rename file %s err, res: %d\r\n", old_filepath, res);
+            os_printf("rename file %s err, res: %d\r\n", old_filepath, res);
             if (sd_cap < LOOP_REMAIN_CAP) {
                 if(res == FR_DENIED) {
                     res = osal_unlink(old_filepath);
                     if(res != FR_OK) {
-                        _os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, old_filepath, res);
+                        os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, old_filepath, res);
                         goto rec_create_file_end;
                     } else {
-                        _os_printf("unlink file %s\r\n", old_filepath);
+                        os_printf("unlink file %s\r\n", old_filepath);
                         res = osal_fatfsfree("0:", NULL, &sd_cap);
                         if(res != FR_OK) {
-                            _os_printf("%s %d\tfatfsfree err, res: %d\r\n", __FUNCTION__, __LINE__, res);
+                            os_printf("%s %d\tfatfsfree err, res: %d\r\n", __FUNCTION__, __LINE__, res);
                             goto rec_create_file_end;
                         }
                     }
                 }
-                _os_printf("%s %d\tsd_cap: %d\r\n", __FUNCTION__, __LINE__, sd_cap);
+                os_printf("%s %d\tsd_cap: %d\r\n", __FUNCTION__, __LINE__, sd_cap);
                 free_file_node(node);
                 node = NULL;
                 goto rec_create_file_get_node;
             }
         } else {
-            _os_printf("rename file %s to %s\r\n", old_filepath, file_path);
+            os_printf("rename file %s to %s\r\n", old_filepath, file_path);
         }
 
         gen_thumb_path(name, thumb_path, sizeof(thumb_path));
         res = osal_unlink(thumb_path);
         if (res != FR_OK) {
-            _os_printf("unlink thumb_path %s err, res: %d\r\n", thumb_path, res);
+            os_printf("unlink thumb_path %s err, res: %d\r\n", thumb_path, res);
         } else {
-            _os_printf("unlink thumb_path: %s\r\n", thumb_path);
+            os_printf("unlink thumb_path: %s\r\n", thumb_path);
         }
 
         free_file_node(node);
@@ -228,7 +237,7 @@ rec_create_file_get_node:
             list = get_err_dir_list(*loop);
             free_file_list(*loop);
             *loop = NULL;
-            _os_printf("%s %d\tfree_file_list\r\n", __FUNCTION__, __LINE__);
+            os_printf("%s %d\tfree_file_list\r\n", __FUNCTION__, __LINE__);
         }
     }
 

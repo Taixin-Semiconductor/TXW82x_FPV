@@ -7,6 +7,7 @@ extern "C" {
 #include "osal/mutex.h"
 #include "osal/atomic.h"
 
+
 /**
   * @brief spi nor mode
   */
@@ -35,6 +36,8 @@ enum spi_nor_cmd {
 
     SPI_NOR_CMD_SUSPEND,
     SPI_NOR_CMD_RESUME,
+    
+    SPI_NOR_CMD_4B_ADDR,
 };
 
 enum spi_nor_erase_mode {
@@ -98,8 +101,12 @@ struct spi_nor_flash {
     } spi_config;
     struct bpreg_cfg bpbk[4];
     struct bp_info *bpi;
-    int (*bp_conv) (struct spi_nor_flash *flash, 
-    uint32_t addrl, uint32_t addru, struct bpreg_cfg *bp);
+    int (*bp_conv) (
+        struct spi_nor_flash *flash, 
+        uint32_t addrl, uint32_t addru, 
+        struct bpreg_cfg *bp
+    );
+    uint8_t bits_of_addr;
 };
 
 const struct spi_nor_bus *spi_nor_bus_get(enum spi_nor_mode mode);

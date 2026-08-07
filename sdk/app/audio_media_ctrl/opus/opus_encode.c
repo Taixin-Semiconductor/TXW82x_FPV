@@ -65,12 +65,12 @@ static void opus_encode_thread(void *d)
             clear_finish = 0;
         }
         if(s->next_status == AUCODEC_PAUSE) {
-            // if(s->current_status == AUCODEC_RUN) {
-            //     audio_coder_close(opus_enc);
-            //     opus_enc = audio_coder_open(OPUS_ENC, s->samplerate, 1);
-            //     if(opus_enc == NULL) 
-            //         goto opus_encode_thread_end;
-            // }
+            if(s->current_status == AUCODEC_RUN) {
+                audio_coder_close(opus_enc);
+                opus_enc = audio_coder_open(OPUS_ENC, s->samplerate, 1);
+                if(opus_enc == NULL) 
+                    goto opus_encode_thread_end;
+            }
             s->current_status = AUCODEC_PAUSE;
             inbuf_reslen = (FRAME_SIZE << 1);
             inbuf_offset = 0; 

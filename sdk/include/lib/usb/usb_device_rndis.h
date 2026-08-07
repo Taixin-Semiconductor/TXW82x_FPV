@@ -367,6 +367,7 @@ typedef union
     USBD_CDC_RNDIS_KpAliveMsgTypeDef        KpAlive;
     USBD_CDC_RNDIS_KpAliveCpltMsgTypeDef    KpAliveCplt;
     USBD_CDC_RNDIS_CtrlMsgTypeDef           Ctrl;
+    USBD_CDC_RNDIS_CommonCpltMsgTypeDef     Resp;
 } USBD_CDC_RNDIS_MsgTypeDef;
 
 

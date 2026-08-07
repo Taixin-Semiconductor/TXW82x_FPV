@@ -84,6 +84,10 @@ typedef struct {
     uint8_t new_bitrate_mode;
     uint8_t loss_state;
 
+    uint8_t connected_num;
+    uint8_t current_dev_id;
+    uint8_t next_dev_id;
+
     int local_trans_fd;
     int local_ret_fd;
 
@@ -132,15 +136,15 @@ typedef struct {
 
 typedef struct {
     struct list_head list;
-    struct sockaddr_in trans_addr;
-    struct sockaddr_in ret_addr;
+    uint32_t ip_addr;
     uint32_t identify_num;
-    uint16_t online;
+    uint8_t dev_id;
+    uint8_t online;
     uint16_t timeout_cnt;
 } intercom_device;
 
 struct msi *intercom_init(void);
-void intercom_deinit(struct msi *msi);
+void intercom_deinit(void);
 void intercom_send_enable(uint8_t state);
 void intercom_recv_enable(uint8_t state);
 void intercom_encode_pause(uint8_t state, uint8_t clear);

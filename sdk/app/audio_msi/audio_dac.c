@@ -67,14 +67,15 @@ void set_audac_filter_track(struct audac_struct *audac_s, uint8_t fiter_none, AU
 {
 	struct filter_track_struct *filter_track_s = &(audac_s->filter_track_s);
 	uint32_t wait_empty_cnt = 0;
+	os_mutex_lock(&filter_track_s->mutex, osWaitForever);
 	if(fiter_none == 1) {
 		audac_s->filter_type = FSTYPE_NONE;
+		os_mutex_unlock(&filter_track_s->mutex);
 		return;
 	}
 	if((fiter_none==0) && (audio_track==NULL)) {
 		goto set_audac_filter_type_end;
 	}
-	os_mutex_lock(&filter_track_s->mutex, osWaitForever);
 	if((audio_track->priority&0xC0) == play_disabled) {
 		uint8_t del_priority = audio_track->priority;
 		for(uint32_t i=0; i<filter_track_s->audio_track_num; i++) {
@@ -102,7 +103,7 @@ void set_audac_filter_track(struct audac_struct *audac_s, uint8_t fiter_none, AU
 					os_memmove(&(filter_track_s->audio_track[i+2]), &(filter_track_s->audio_track[i+1]), (filter_track_s->audio_track_num-(i+1))*sizeof(AUDIO_TRACK*));
 					filter_track_s->audio_track[i+1] = audio_track;
 					AUDIO_TRACK *new_audio_track = filter_track_s->audio_track[i+1];
-					new_audio_track->priority = cur_audio_track->priority++;
+					new_audio_track->priority = cur_audio_track->priority+1;
 					filter_track_s->audio_track_num++;
 					goto set_audac_filter_type_end;
 				}

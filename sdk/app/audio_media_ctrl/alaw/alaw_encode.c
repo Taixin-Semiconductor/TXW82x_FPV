@@ -110,6 +110,7 @@ alaw_encode_frame_end:
         }
 
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             goto alaw_encode_thread_end;
         }
     }

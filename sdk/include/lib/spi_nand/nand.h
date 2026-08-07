@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2026 ChuangDian, Xu
+ *
+ * Author: ChuangDian, Xu <xcdanswer@gmail.com>
+ */
+
 #ifndef __NAND_H__
 #define __NAND_H__
 
@@ -125,10 +131,10 @@ struct nand_dev {
     int (*pg_wr)(struct nand_dev *nd, uint32 page, uint8 *buf, uint32 len);
     struct os_mutex mutex;
     uint32_t \
-    ofs_shift_block : 8,
-                    ofs_shift_page  : 8,
-                    ofs_shift_oob   : 8,
-                    page_shift_block: 8;
+            ofs_shift_block : 8,
+            ofs_shift_page  : 8,
+            ofs_shift_oob   : 8,
+            page_shift_block: 8;
     struct NandEccCtrl EccCtrl;               /**< ECC configuration parameters */
     struct NandBuffers *Buffers;
 };
@@ -139,5 +145,5 @@ int nand_req(struct nand_dev *nd, struct nand_req *req);
 uint8_t bbt_is_bad(struct nand_dev *nand, int block);
 
 void bbt_mark_entry(struct nand_dev *nand, int block);
-
+int nand_dev_register(uint16 dev_id, struct nand_dev *nand);
 #endif

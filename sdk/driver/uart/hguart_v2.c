@@ -20,6 +20,7 @@
 #include "hal/uart.h"
 #include "dev/uart/hguart_v2.h"
 #include "hguart_v2_hw.h"
+#include "osal/sleep.h"
 
 #define UART_FLAG_TDMA_BUSY (0x1)
 

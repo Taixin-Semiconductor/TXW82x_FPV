@@ -9,9 +9,10 @@ struct bat_det_priv {
     struct os_work work;
     struct hgadc_v0 *adc_dev;
     uint32_t bat_det_io;
-    double vol;
+    float vol;
     uint32_t _update_fme_adc_val;
     uint8_t level;
+    uint8_t get_value;
     uint32_t adc_raw;
 };
 
@@ -30,19 +31,20 @@ static int32 bat_detect_work(struct os_work *work)
     adc_get_value((struct adc_device *)bat_det_priv_data->adc_dev, bat_det_priv_data->bat_det_io, &adc_value);
 
     bat_det_priv_data->adc_raw = adc_value;
+    bat_det_priv_data->get_value = 1;
 
-    bat_det_priv_data->vol = (double)adc_value * 3 / 2048 * 2;
+    bat_det_priv_data->vol = (float)adc_value * 3 / 2048 * 2;
 
     bat_det_priv_data->_update_fme_adc_val = adc_value * 3 * 2 / 5;
     if (bat_det_priv_data->_update_fme_adc_val > 2047) {
         bat_det_priv_data->_update_fme_adc_val = 2047;
     }
 
-	os_printf("---- battery adc:%d vol:%.2fV _update_fme_adc_val:%.2fV adc_val:%d----\n", adc_value, (double)adc_value * 3 / 2048 * 2, (double)bat_det_priv_data->_update_fme_adc_val * 5 / 2048, bat_det_priv_data->_update_fme_adc_val);
+	os_printf("---- battery adc:%d vol:%.2fV _update_fme_adc_val:%.2fV adc_val:%d----\n", adc_value, (float)adc_value * 3 / 2048 * 2, (float)bat_det_priv_data->_update_fme_adc_val * 5 / 2048, bat_det_priv_data->_update_fme_adc_val);
 
     // bat_det_priv_data->vol = 4;
     #if WIFI_FEM_CHIP
-    lmac_update_fem_voltage(ops, (uint32_t)(bat_det_priv_data->vol * (1 << 10)));
+    lmac_update_fem_voltage(ops, (uint32_t)(5 * (1 << 10)));
     #endif
 
     os_run_work_delay(&bat_det_priv_data->work, 5000);
@@ -59,7 +61,9 @@ int bat_get_level()
 
     /* 使用 ADC 阈值表
        阈值单位为 ADC 读数，避免浮点运算。加入整型 hysteresis 防跳变。 */
-    static const uint16_t thresholds_adc[] = {1125, 1194, 1262, 1364, 1432};
+    uint8_t res = 0;
+    static uint8_t first_count = 1;
+    static const uint16_t thresholds_adc[] = {1125, 1185, 1245, 1305, 1365};
     const int max_level = sizeof(thresholds_adc) / sizeof(thresholds_adc[0]);
     const uint16_t hysteresis_adc = 10; /* ADC 单位去抖 */
 
@@ -67,6 +71,9 @@ int bat_get_level()
 
     /* 计算候选等级 */
     int cand = 0;
+    if(g_bat_det_priv_data->get_value == 0) {
+        return 4;
+    }
     while (cand < max_level && adc > thresholds_adc[cand]) {
         cand++;
     }
@@ -74,29 +81,35 @@ int bat_get_level()
         cand = max_level - 1;
     }
 
-    int prev = (int)g_bat_det_priv_data->level;
+    if (first_count) {
+        first_count = 0;
+        g_bat_det_priv_data->level = (uint8_t)cand;
+        return cand;
+    }
 
+    int prev = (int)g_bat_det_priv_data->level;
     if (cand == prev) {
         return (uint8_t)prev;
     }
-
+    
     if (cand > prev) {
         /* 上升：需要超过阈值 + hysteresis 才更新 */
-        if (adc >= (uint32_t)thresholds_adc[cand] + hysteresis_adc) {
+        if (adc >= (uint32_t)thresholds_adc[prev] + hysteresis_adc) {
             g_bat_det_priv_data->level = (uint8_t)cand;
-            return (uint8_t)cand;
+            res = (uint8_t)cand;
         } else {
-            return (uint8_t)prev;
+            res = (uint8_t)prev;
         }
     } else { /* cand < prev */
         /* 下降：需要低于阈值 - hysteresis 才更新 */
-        if (adc <= (uint32_t)thresholds_adc[cand] - hysteresis_adc) {
+        if (adc <= (uint32_t)thresholds_adc[prev] - hysteresis_adc) {
             g_bat_det_priv_data->level = (uint8_t)cand;
-            return (uint8_t)cand;
+            res = (uint8_t)cand;
         } else {
-            return (uint8_t)prev;
+            res = (uint8_t)prev;
         }
     }
+    return res;
 }
 
 void bat_ad_init()

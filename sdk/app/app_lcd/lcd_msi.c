@@ -366,7 +366,7 @@ void lcd_msi_irq_callback(void *data)
     {
         // 检查一下line_buf是否已经申请了,申请空间就是w*line_num的空间(w应该是和屏旋转有关)
         uint16_t rotate_w;
-        rotate_w = lcd_s->video_w;
+        rotate_w = (lcd_s->video_w+15)/16*16;
         if (lcd_s->line_buf)
         {
             lcdc_set_rotate_linebuf_y_addr(lcd_s->lcd_dev, (uint32) lcd_s->line_buf);
@@ -595,7 +595,7 @@ int32 lcd_msi_work(struct os_work *work)
     if (lcd_show_map & (LCD_P0 | LCD_P1 | LCD_P2))
     {
         uint16_t rotate_w;
-        rotate_w = lcd_s->video_w;
+        rotate_w = (lcd_s->video_w+15)/16*16;
         // 这里理论要申请到空间,如果申请失败,重新申请一下(否则要就额外处理资源数据)
         if (!lcd_s->line_buf)
         {

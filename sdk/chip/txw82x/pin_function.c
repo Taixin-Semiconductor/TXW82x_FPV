@@ -583,36 +583,34 @@ static int spi_pin_func(int dev_id, int request)
                 gpio_iomap_inout(MACRO_PIN(PIN_SPI1_CLK), GPIO_IOMAP_IN_SPI1_SCK_IN, GPIO_IOMAP_OUT_SPI1_SCK_OUT);
                 gpio_iomap_inout(MACRO_PIN(PIN_SPI1_IO0), GPIO_IOMAP_IN_SPI1_IO0_IN, GPIO_IOMAP_OUT_SPI1_IO0_OUT);
                 gpio_iomap_inout(MACRO_PIN(PIN_SPI1_IO1), GPIO_IOMAP_IN_SPI1_IO1_IN_LCD_D12_IN_M1_31, GPIO_IOMAP_OUT_SPI1_IO1_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI1_IO2), GPIO_IOMAP_IN_SPI1_IO2_IN_IIS1_BCLK_IN, GPIO_IOMAP_OUT_SPI1_IO2_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI1_IO3), GPIO_IOMAP_IN_SPI1_IO3_IN_IIS1_DAT_IN_UART6_RX_M3_9, GPIO_IOMAP_OUT_SPI1_IO3_OUT);
             } else {
                 gpio_set_dir(MACRO_PIN(PIN_SPI1_CS), GPIO_DIR_INPUT);
                 gpio_set_dir(MACRO_PIN(PIN_SPI1_CLK), GPIO_DIR_INPUT);
                 gpio_set_dir(MACRO_PIN(PIN_SPI1_IO0), GPIO_DIR_INPUT);
                 gpio_set_dir(MACRO_PIN(PIN_SPI1_IO1), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI1_IO2), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI1_IO3), GPIO_DIR_INPUT);                
             }
             break;
-//        case (HG_SPI5_DEVID):
-//            if (request) {
-//                gpio_iomap_inout(MACRO_PIN(PIN_SPI5_CLK), GPIO_IOMAP_IN_SPI5_SCK_IN, GPIO_IOMAP_OUT_SPI5_SCK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_SPI5_IO0), GPIO_IOMAP_IN_SPI5_IO0_IN, GPIO_IOMAP_OUT_SPI5_IO0_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_SPI5_IO1), GPIO_IOMAP_IN_SPI5_IO1_IN, GPIO_IOMAP_OUT_SPI5_IO1_OUT);
-//            } else {
-//                gpio_set_dir(MACRO_PIN(PIN_SPI5_CLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_SPI5_CLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_SPI5_CLK), GPIO_DIR_INPUT);
-//            }
-//            break;
-//        case (HG_SPI6_DEVID):
-//            if (request) {
-//                gpio_iomap_inout(MACRO_PIN(PIN_SPI6_CLK), GPIO_IOMAP_IN_SPI6_SCK_IN, GPIO_IOMAP_OUT_SPI6_SCK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_SPI6_IO0), GPIO_IOMAP_IN_SPI6_IO0_IN, GPIO_IOMAP_OUT_SPI6_IO0_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_SPI6_IO1), GPIO_IOMAP_IN_SPI6_IO1_IN, GPIO_IOMAP_OUT_SPI6_IO1_OUT);
-//            } else {
-//                gpio_set_dir(MACRO_PIN(PIN_SPI6_CLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_SPI6_CLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_SPI6_CLK), GPIO_DIR_INPUT);
-//            }
-//            break;
         case HG_SPI2_DEVID:
+            if (request) {
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI2_CS), GPIO_IOMAP_IN_SPI2_NSS_IN_LCD_D13_IN_M2_0, GPIO_IOMAP_OUT_SPI2_NSS_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI2_CLK), GPIO_IOMAP_IN_SPI2_SCK_IN, GPIO_IOMAP_OUT_SPI2_SCK_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI2_IO0), GPIO_IOMAP_IN_SPI2_IO0_IN, GPIO_IOMAP_OUT_SPI2_IO0_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI2_IO1), GPIO_IOMAP_IN_SPI2_IO1_IN_LCD_D14_IN_M2_1, GPIO_IOMAP_OUT_SPI2_IO1_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI2_IO2), GPIO_IOMAP_IN_SPI2_IO2_IN_LCD_D15_IN_M2_2, GPIO_IOMAP_OUT_SPI2_IO2_OUT);
+                gpio_iomap_inout(MACRO_PIN(PIN_SPI2_IO3), GPIO_IOMAP_IN_SPI2_IO3_IN_LCD_D16_IN_M2_3, GPIO_IOMAP_OUT_SPI2_IO3_OUT);
+            } else {
+                gpio_set_dir(MACRO_PIN(PIN_SPI2_CS), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI2_CLK), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI2_IO0), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI2_IO1), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI2_IO2), GPIO_DIR_INPUT);
+                gpio_set_dir(MACRO_PIN(PIN_SPI2_IO3), GPIO_DIR_INPUT);                
+            }
+            break;
         case HG_SPI3_DEVID:
             break;
         default:

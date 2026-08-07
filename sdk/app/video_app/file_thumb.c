@@ -122,15 +122,15 @@ void *jpg_file_read(const char *filename, uint8_t thumb, int32_t *filesize)
     // 寻找缩略图
     if (thumb)
     {
-        gen_thumb_path(filename, path, sizeof(path));
         // 得到缩略图的路径
-        // 读取文件
+        gen_thumb_path(filename, path, sizeof(path));
     }
     else
     {
-        gen_file_path(filename, path, sizeof(path), 1);
+        gen_photo_path(filename, path, sizeof(path));
     }
 
+    // 读取文件
     // int fd = VFS_open((const char *)path,O_RDONLY);
     F_FILE *fd = osal_fopen((const char *) path, "rb");
     // if(fd >= 0)
@@ -138,7 +138,7 @@ void *jpg_file_read(const char *filename, uint8_t thumb, int32_t *filesize)
     {
         //*filesize = VFS_fsize(fd);
         *filesize = osal_fsize(fd);
-        os_printf("*filesize:%d\tpath:%s\n", *filesize, path);
+        os_printf("filesize:%d\tpath:%s\n", *filesize, path);
         if (*filesize <= 0)
         {
             goto jpg_file_read_end;
@@ -295,32 +295,4 @@ void path_json_free(void *str)
     {
         cJSON_free(str);
     }
-}
-
-uint8_t file_delete(const char *filename, uint8_t type)
-{
-    FRESULT res;
-    char jpg_path[64];
-    char thumb_path[64];
-    
-    gen_file_path(filename, jpg_path, sizeof(jpg_path), type);
-    
-    res = osal_unlink(jpg_path);
-    
-    if (res != FR_OK) {
-        _os_printf("Failed to delete file: %s, error: %d\n", jpg_path, res);
-        return 1;
-    }
-    _os_printf("File deleted successfully: %s\n", jpg_path);
-    
-    gen_thumb_path(jpg_path, thumb_path, sizeof(thumb_path));
-
-    res = osal_unlink(thumb_path);
-    if (res != FR_OK) {
-        os_printf("Failed to delete thumbnail: %s, error: %d\n", thumb_path, res);
-        return 1;
-    }
-    _os_printf("Thumbnail deleted successfully: %s\n", thumb_path);
-    
-    return 0; // 成功
 }

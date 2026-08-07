@@ -54,7 +54,7 @@ int32 sys_atcmd_ping(const char *cmd, char *argv[], uint32 argc);
 int32 sys_atcmd_icmp_mntr(const char *cmd, char *argv[], uint32 argc);
 int32 sys_atcmd_iperf2(const char *cmd, char *argv[], uint32 argc);
 int32 sys_atcmd_goto_boot(const char *cmd, char *argv[], uint32 argc);
-int32 sys_wifi_atcmd_reboot_test_mode(const char *cmd, char *argv[], uint32 argc);
+int32 sys_atcmd_reboot_test_mode(const char *cmd, char *argv[], uint32 argc);
 
 int32 sys_wifi_atcmd_pcap(const char *cmd, char *argv[], uint32 argc);
 int32 sys_wifi_atcmd_wificsa(const char *cmd, char *argv[], uint32 argc);

@@ -24,16 +24,17 @@
 #define AUADC_TIME_INTERVAL   20
 #define AUPROC_FRAME_MS       10
 #define MAX_AUADC_TXBUF       4
-#define AUADC_TASK_PRIORITY   OS_TASK_PRIORITY_ABOVE_NORMAL
+#define AUADC_TASK_PRIORITY   (OS_TASK_PRIORITY_ABOVE_NORMAL-1)
 
 #define AUADC_OUTPUT_SIN      0
 #define AUDIO_PROCESS         1
 
-extern int32_t audio_adc_init(enum ausys_ad_platform platform, uint32_t sampleRate, uint32_t channels, uint32_t soft_gain, uint32_t auproc_enable);
-extern int32_t audio_adc_deinit(enum ausys_ad_platform platform);
-extern int32_t audio_adc_get_samplerate(enum ausys_ad_platform platform);
-extern struct msi *get_auadc_msi(enum ausys_ad_platform platform);
-extern int32_t auadc_msi_add_output(enum ausys_ad_platform platform, const char *msi_name);
-extern int32_t auadc_msi_del_output(enum ausys_ad_platform platform, const char *msi_name);
-
+int32_t audio_adc_init(enum ausys_ad_platform platform, uint32_t sampleRate, uint32_t channels, uint32_t soft_gain, uint32_t auproc_enable);
+int32_t audio_adc_deinit(enum ausys_ad_platform platform);
+int32_t audio_adc_get_samplerate(enum ausys_ad_platform platform);
+struct msi *get_auadc_msi(enum ausys_ad_platform platform);
+int32_t auadc_msi_add_output(enum ausys_ad_platform platform, const char *msi_name);
+int32_t auadc_msi_del_output(enum ausys_ad_platform platform, const char *msi_name);
+int32_t audio_adc_set_soft_gain(enum ausys_ad_platform platform, uint32_t soft_gain);
+uint32_t audio_adc_get_energy(enum ausys_ad_platform platform);
 #endif

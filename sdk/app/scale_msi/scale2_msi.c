@@ -19,6 +19,12 @@ uint8 *scaler2buf;
 extern uint32 scale_p1_w;
 #define SCALE2_SRAMBUF_WLEN   64//64
 
+//0:满屏保留所有的画面，不在意变形                  
+//1:保证画面不变型，再进行缩放 
+#define SCALE2_MODE_SELECT    1
+
+//SCALE2_MODE_SELECT为1有效，10为不放大，11为放大1.1倍，20为放大2.0倍，以此类推
+#define SCALE2_LARGER_SIZE    10
 struct scale2_yuv_arg_s
 {
     struct yuv_arg_s yuv_arg;
@@ -36,6 +42,7 @@ struct  scale2_msg_t scale2_msg[3] = {
 		.x  = 0,
 		.y  = 0,
 		.video_only = 0,
+        .larger = 10,
 	},
 	//ISP_VIDEO_1
 	{
@@ -47,6 +54,7 @@ struct  scale2_msg_t scale2_msg[3] = {
 		.x	= 320,
 		.y	= 0,
 		.video_only = 0,
+        .larger = 10,
 	},
 	//ISP_VIDEO_2
 	{
@@ -58,6 +66,7 @@ struct  scale2_msg_t scale2_msg[3] = {
 		.x	= 0,
 		.y	= 180,
 		.video_only = 0,
+        .larger = 10,
 	},
 };
 
@@ -71,19 +80,11 @@ static int32_t scale2_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param
     struct scale2_yuv_arg_s *arg;
     //判断序号,有可能双镜头
     scale2->seq++;
-    //fb = fbpool_get(&scale2->tx_pool, 0, scale2->msi);
-    //if (!fb)
-    //{
-    	//_os_printf("Y");
-        //os_printf("N scale2->now_fb:%X\r\n",scale2->now_fb);
-        // 找不到新的空间,则返回,使用旧空间
-    //    return 0;
-    //}
-    
 
+    if (scale2->now_fb) {
     arg = (struct scale2_yuv_arg_s*)scale2->now_fb->priv;
     arg->seq = scale2->seq;
-
+    
 	arg->yuv_arg.y_size = scale2->ow*scale2->oh;
 	arg->yuv_arg.x = scale2->x;       
 	arg->yuv_arg.y = scale2->y;
@@ -92,19 +93,29 @@ static int32_t scale2_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param
 	arg->yuv_arg.out_h =scale2->oh;
 	
 	scale2->now_fb->stype = scale2_msg[scaler2_dev_id].stype;
-	//os_printf("D");
-
-
-    // 发送now_data,发送失败也要返回
-	if (os_msgq_put(&scale2->msgq, (uint32_t)scale2->now_fb, 0))
-	{
-		// 正常不能中断del,但是这个模块是内部,只要del没有一些等待信号量操作,问题不大
+    
+    
+        // 不再直接放now_fb，而是把now_fb放到预分配的槽(now_fb_msg)中，然后把槽地址放入消息队列
+        uint8_t idx = scale2->now_fb_msg_idx;
+        if (scale2->now_fb_msg[idx] == NULL) {
+            scale2->now_fb_msg[idx] = scale2->now_fb;
+            // advance index
+            scale2->now_fb_msg_idx = (idx + 1) % MAX_SCALE2_TX;
+    
+            if (os_msgq_put(&scale2->msgq, (uint32_t)&scale2->now_fb_msg[idx], 0)) {
+                if (scale2->now_fb_msg[idx] == scale2->now_fb) {
+                    scale2->now_fb_msg[idx] = NULL;
+                }
 		msi_delete_fb(NULL, scale2->now_fb);
-		//return 0;
 	}
+        } else {
+            msi_delete_fb(NULL, scale2->now_fb);
+        }
+    }
 
+    scale2->now_fb = NULL;
+    scale2->mutex_count = 0;
 
-	
     return 0;
 }
 
@@ -123,19 +134,33 @@ static int32 scale2_stream_work(struct os_work *work)
     struct framebuff *fb;
     struct scale2_yuv_arg_s *arg;
     int32_t err = -1;
-    fb = (struct framebuff *)os_msgq_get2(&scale2->msgq, 0, &err);
+
+    struct framebuff **slot = (struct framebuff **)os_msgq_get2(&scale2->msgq, 0, &err);
     // 没有数据
     if (err)
     {
         goto scale2_stream_work_end;
     }
+    fb = NULL;
+    if (slot)
+    {
+        uint32 ie = disable_irq();
+        fb = *slot;
+        *slot = NULL;
+        enable_irq(ie);
+    }
+    
     arg = (struct scale2_yuv_arg_s*)fb->priv;
 	arg->yuv_arg.dispcnt++;
     fb->mtype = F_YUV;
     //fb->stype = scale2->type;
     //_os_printf("scale2 fb:%X\ttype:%d\n",fb,fb->stype);
+    if (scale2->filter_type != ~0 && scale2->filter_type != fb->srcID) {
+        msi_delete_fb(scale2->msi, fb);
+    } else {
     msi_output_fb(scale2->msi, fb);
-    scale2->mutex_count = 0;
+    }
+
 scale2_stream_work_end:
     // 过1ms就去轮询一遍,实际如果用信号量,可以改成任务形式,等待信号量,可以节约cpu(实际cache影响可能更大,cpu占用很少)
     // 由于workqueue没有支持等待信号量,只能通过1ms轮询一下
@@ -193,7 +218,6 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
             struct framebuff *fb = NULL;
             int32_t err = 0;
 
-			os_printf("%s  %d\r\n",__func__,__LINE__);
             scale_close(scale2->scale_dev);
 			os_work_cancle2(&scale2->work, 1);
             // os_printf("%s:%d MSI_CMD_PRE_DESTROY\n", __FUNCTION__, __LINE__);
@@ -202,10 +226,18 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 
             while (!err)
             {
-                fb = (struct framebuff *)os_msgq_get2(&scale2->msgq, 0, &err);
+                // 取出的是槽地址，首先获取槽，再释放其中的真实fb
+                struct framebuff **slot = (struct framebuff **)os_msgq_get2(&scale2->msgq, 0, &err);
+                if (slot)
+                {
+                    uint32 ie = disable_irq();
+                    fb = *slot;
+                    *slot = NULL;
+                    enable_irq(ie);
                 if (fb)
                 {
                     msi_delete_fb(NULL, fb);
+                }
                 }
                 fb = NULL;
             }
@@ -244,6 +276,12 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
             // 自定义命令
             switch (cmd_self)
             {
+                case MSI_SCALE2_SET_FILTER_TYPE:
+                {
+                    scale2->filter_type = param2;
+                }
+                break;
+
                 case MSI_SCALE2_START:
                 {
                     //注意,这里需要根据vpp那边配置来决定用哪个
@@ -256,16 +294,19 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 					
 					scale_close(scale2->scale_dev);
 					scale_set_input_stream(scale2->scale_dev,decfrom);
-					scale_set_output_sram_or_frame(scale2->scale_dev,1);					
+					scale_set_output_sram_or_frame(scale2->scale_dev,1);		
+					
 					scale_set_in_out_size(scale2->scale_dev,scale2->iw,scale2->ih,scale2->ow,scale2->oh);		
 					scale_set_step(scale2->scale_dev,scale2->iw,scale2->ih,scale2->stw,scale2->sth);
-					scale_set_start_addr(scale2->scale_dev,0,0);
+					scale_set_start_addr(scale2->scale_dev,scale2->sx,scale2->sy);
 					
 					if(scaler2buf == NULL){
 						if(scale2->ow <= scale2->iw){
 							scaler2buf = STREAM_LIBC_MALLOC(0x20+scale2_p1_w+20*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+11*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+11*SCALE2_SRAMBUF_WLEN*2+128+12);
+							memset(scaler2buf,0x55,0x20+scale2_p1_w+20*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+11*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+11*SCALE2_SRAMBUF_WLEN*2+128+12);
 						}else{
 							scaler2buf = STREAM_LIBC_MALLOC(0x20+scale2_p1_w+40*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+12);
+							memset(scaler2buf,0x55,0x20+scale2_p1_w+40*SCALE2_SRAMBUF_WLEN*4+256 + 0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+0x12+scale2_p1_w/2+22*SCALE2_SRAMBUF_WLEN*2+128+12);
 						}
 						
 						if(scaler2buf == NULL){
@@ -305,8 +346,13 @@ static int32_t scale2_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 				        //os_printf("N scale2->now_fb:%X\r\n",scale2->now_fb);
 				        // 找不到新的空间,则返回,使用旧空间
 				        return 0;
-				    }					
+				    }
+                    fb->srcID = decfrom;				
 					data = (uint8_t *)STREAM_MALLOC(scale2->ow * scale2->oh * 3 / 2);
+					if(data == NULL){
+						_os_printf("no scaler room\r\n");
+						return 0;
+					}
 					sys_dcache_invalid_range((uint32_t*)data, scale2->ow * scale2->oh * 3 / 2);
 					fb->data = data;
 					fb->len  = (scale2->ow * scale2->oh * 3) / 2;
@@ -338,6 +384,14 @@ void scale2_output_size_local_change(uint8_t id,uint8_t show_only,uint16 x,uint1
 	enable_irq(ie);
 }
 
+void scale2_output_larger_local_change(uint8_t id, uint8_t larger)
+{
+	uint32 ie;
+	ie = disable_irq();   
+    scale2_msg[id].larger = larger; 
+    enable_irq(ie);
+}
+
 // 参数分别是vpp的图像iw和ih,要scale的ow和oh,如果和屏有关,可以传入屏幕的宽高
 struct msi *scale2_msi(const char *name, uint16_t iw, uint16_t ih, uint16_t ow, uint16_t oh, uint16_t type,uint8_t larger)
 {
@@ -363,7 +417,7 @@ struct msi *scale2_msi(const char *name, uint16_t iw, uint16_t ih, uint16_t ow, 
 			scale2_msg[itk].oh = oh;
 		}
 		
-
+        scale2->filter_type = ~0;
         scale2->ow = ow;
         scale2->oh = oh;
         scale2->iw = iw;
@@ -374,6 +428,11 @@ struct msi *scale2_msi(const char *name, uint16_t iw, uint16_t ih, uint16_t ow, 
         scale2->y = 0;		
         scale2->type = type;
 		scale2->larger = larger;
+        // 初始化now_fb_msg槽位为NULL并重置索引
+        scale2->now_fb_msg_idx = 0;
+        for (itk = 0; itk < MAX_SCALE2_TX; itk++) {
+            scale2->now_fb_msg[itk] = NULL;
+        }
         fbpool_init(&scale2->tx_pool, MAX_SCALE2_TX);
         uint8_t init_count = 0;
         //uint8_t *data;
@@ -412,24 +471,36 @@ struct msi *scale2_msi(const char *name, uint16_t iw, uint16_t ih, uint16_t ow, 
 }
 
 int scale2_cfg_run(uint8_t streamfrom,uint8_t id){
+	uint32 ow_n,oh_n;
+	uint32_t w_start,h_start;
+	uint32 larger;
 	struct msi *scaler_msi = msi_find("scale2",0);
 	struct scale2_msi_s *scale2 = (struct scale2_msi_s *)scaler_msi->priv;
 	uint32 ie;
 	int ret = 0;
+    static uint32 last_cfg_time = 0;
 
 	if(scaler_msi) {
 		msi_put(scaler_msi);
 	}
 
 #ifdef SYS_APP_WALKIE_TALKIE
-    if(scale2->mutex_count){
+    if(scale2->mutex_count) {
+        if(os_jiffies() - last_cfg_time > 1000) {
+            os_printf("scale2_cfg_run timeout\n");
+            goto scale2_cfg_run_continue;
+        }
         ret = 1;
         return ret;
     }
+scale2_cfg_run_continue:
 #endif
     scale2->mutex_count = 1;
-
+    last_cfg_time = os_jiffies();
 	ie = disable_irq();	
+
+// 满屏保留所有的画面，不在意变形
+#if SCALE2_MODE_SELECT == 0
     scale2->ow = scale2_msg[id].ow;
     scale2->oh = scale2_msg[id].oh;
     scale2->iw = scale2_msg[id].iw;
@@ -438,6 +509,35 @@ int scale2_cfg_run(uint8_t streamfrom,uint8_t id){
     scale2->sth = scale2_msg[id].oh;
     scale2->x   = scale2_msg[id].x;
     scale2->y   = scale2_msg[id].y;
+	scale2->sx  = 0;
+	scale2->sy	= 0;
+#endif	
+//保证画面不变型，再进行缩放
+#if SCALE2_MODE_SELECT == 1
+    scale2->ow = scale2_msg[id].ow;
+    scale2->oh = scale2_msg[id].oh;
+    scale2->iw = scale2_msg[id].iw;
+    scale2->ih = scale2_msg[id].ih;	
+    scale2->x   = scale2_msg[id].x;
+    scale2->y   = scale2_msg[id].y;
+    scale2->larger = scale2_msg[id].larger;
+    larger = scale2->larger;
+	
+	if(((scale2->iw*1000)/scale2->ow) > ((scale2->ih*1000)/scale2->oh)){
+		ow_n = (((scale2->iw*scale2->oh)/scale2->ih + 15)/16)*16 ;
+		oh_n = scale2->oh;
+	}else{
+		ow_n = scale2->ow;
+		oh_n = (((scale2->ih*scale2->ow)/scale2->iw + 15)/16)*16 ;
+	}
+	
+	w_start = ow_n*larger/10;
+	h_start = oh_n*larger/10;
+	scale2->stw = w_start;
+	scale2->sth = h_start;	
+	scale2->sx  = (w_start - ow_n)/2;
+	scale2->sy	= (h_start - oh_n)/2;	
+#endif	
 	enable_irq(ie);
 	
 	msi_do_cmd(scaler_msi, MSI_CMD_SCALE2, MSI_SCALE2_START, streamfrom);

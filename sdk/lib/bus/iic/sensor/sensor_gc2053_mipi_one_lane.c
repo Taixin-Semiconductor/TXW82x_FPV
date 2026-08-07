@@ -233,9 +233,10 @@ const _Sensor_AWB gc2053_awb_init =
 
 const _Sensor_AE gc2053_ae_init = 
 {
+	.curr_fps			   = (25.50*256),
     .max_frame_length      = 1350,
     .min_frame_vb          = 1,
-    .max_analog_gain       = 24<<8,
+    .max_analog_gain       = 128<<8,
     .min_analog_gain       = 1<<8,
     .default_exposure_line = 1349,
     .max_exposure_line     = 1349,
@@ -622,8 +623,9 @@ void GC2053_ae_adjust(struct isp_exposure_opt *p_cfg)
     addr[index++] = (tol_dig_gain >> 6);
     addr[index++] = 0xb2;
     addr[index++] = ((tol_dig_gain & 0x3f) << 2);
+
     addr[index++] = 0xfe;
-    addr[index++] = 00;
+    addr[index++] = 0x00;
     addr[index++] = 0x03;
     addr[index++] = (p_cfg->exposure_line >> 8);
     addr[index++] = 0x04;
@@ -631,6 +633,30 @@ void GC2053_ae_adjust(struct isp_exposure_opt *p_cfg)
     p_cfg->data.size = index;
     p_cfg->cmd_len   = 1+1;
 }
+
+void gc2053_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x17;
+    addr[index++] = p_opt->reverse_en*2 + p_opt->mirror_en;
+
+    p_opt->data.size = index;
+    p_opt->cmd_len   = 1+1;
+}
+
+void gc2053_fps_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr        = (uint8 *)p_opt->data.addr;
+    uint8  index        = 0;
+    addr[index++]       = 0x41;
+    addr[index++]       = p_opt->curr_length >> 8;
+    addr[index++]       = 0x42;
+    addr[index++]       = p_opt->curr_length & 0xff;
+    p_opt->data.size    = index;
+    p_opt->cmd_len      = 1+1;
+}
+
 
 const _Sensor_ISP_Init gc2053_isp_init = 
 {
@@ -656,6 +682,8 @@ const _Sensor_ISP_Init gc2053_isp_init =
 	.p_lhs        = (_Sensor_LHS    *)gc2053_lhs_map,
     .p_ygamma     = (_Sensor_YGAMMA *)gc2053_ygamma_tbl,
 	.p_wdr        = (_Sensor_WDR    *)&gc2053_wdr_init,
+	.img_opt      = (sensor_img_opt  )gc2053_img_opt,
+    .fps_opt      = (sensor_fps_opt  )gc2053_fps_opt,
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ gc2053_cmd = 

@@ -114,7 +114,7 @@
 #endif
 
 #ifndef OS_TIMER_MSG_NUM
-#define OS_TIMER_MSG_NUM               (10)
+#define OS_TIMER_MSG_NUM               (30)
 #endif
 
 #ifndef DEFAULT_SYS_CLK

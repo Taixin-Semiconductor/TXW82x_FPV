@@ -40,6 +40,12 @@ int32 cpu1_run_func(void *func, uint32 p1, uint32 p2, uint32 p3)
     return CPU_RPC_CALL(cpu1_run_func);
 }
 
+void *cpu1_new_task(const char * name, os_task_func_t func, void * arg, uint32 prio, uint32 time, void * stack, uint32 stack_size)
+{
+    uint32 args[] = {(uint32)name, (uint32)func, (uint32)arg, (uint32)prio, (uint32)time, (uint32)stack, stack_size};
+    return (void*)(CPU_RPC_CALL(cpu1_new_task));
+}
+
 int32 lmac_ioctl(void * lops, uint32 cmd, uint32 param1, uint32 param2)
 {
     uint32 args[] = {(uint32)lops, cmd, param1, param2};

@@ -1,5 +1,11 @@
 #include "include/rttusb_host.h"
 #include "cdc.h"
+#ifdef RT_USBH_VENDOR_YUGE
+#include "yuge.h"
+#endif
+#ifdef RT_USBH_VENDOR_ZXINFO
+#include "zxinfo.h"
+#endif
 
 #ifdef RT_USBH_CDC
 
@@ -401,7 +407,17 @@ static rt_err_t rt_usbh_cdc_enable(void *arg)
     {
         rt_thread_startup(cdc_d->thread);
     } 
+#endif
 
+#ifdef RT_USBH_VENDOR_YUGE
+    if (intf[0]->device->dev_desc.idVendor == USB_VENDOR_ID_YUGE) {
+        rt_usbh_yuge_at_run(intf);
+    }
+#endif
+#ifdef RT_USBH_VENDOR_ZXINFO
+    if (intf[0]->device->dev_desc.idVendor == USB_VENDOR_ID_ZXINFO) {
+        rt_usbh_zxinfo_at_run(intf);
+    }
 #endif
 
     return RET_OK;
@@ -409,7 +425,7 @@ static rt_err_t rt_usbh_cdc_enable(void *arg)
 
 static rt_err_t rt_usbh_cdc_disable(void *arg)
 {
-    // struct uhintf *intf = arg;
+    struct uhintf *intf = arg;
 
 #ifdef RT_USBH_CDC_THREAD
 
@@ -437,7 +453,17 @@ static rt_err_t rt_usbh_cdc_disable(void *arg)
         rt_free(cdc_d);
         cdc_d = RT_NULL;
     }
+#endif
 
+#ifdef RT_USBH_VENDOR_YUGE
+    if (intf->device->dev_desc.idVendor == USB_VENDOR_ID_YUGE) {
+        rt_usbh_yuge_at_stop(intf);
+    }
+#endif
+#ifdef RT_USBH_VENDOR_ZXINFO
+    if (intf->device->dev_desc.idVendor == USB_VENDOR_ID_ZXINFO) {
+        rt_usbh_zxinfo_at_stop(intf);
+    }
 #endif
 
     return RET_OK;

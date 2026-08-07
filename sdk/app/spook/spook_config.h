@@ -64,6 +64,7 @@ typedef struct
 #define H264_ENCODER_NAME "h264_encoder"
 #define JPG_ENCODER_NAME "jpg_encoder"
 #define AUDIO_AAC_ENCODER_NAME "audio_aac_encoder"
+#define AUDIO_AAC_ENCODER_NAME2 "audio_aac_encoder2"
 
 
 

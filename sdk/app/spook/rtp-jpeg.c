@@ -60,12 +60,9 @@ struct rtp_jpeg {
 	int height;
 	int luma_table;
 	int chroma_table;
-	//unsigned char *quant[16];
 	int quant[16];
 	int huffoff;
 	int hufflen;
-	char rtp_quant[128];//用于临时保存量化表
-	char huff_quant[512];
 	unsigned char exthdr[EXTHDR_LEN];
 	unsigned char *scan_data;
 	int scan_data_len;
@@ -75,7 +72,6 @@ struct rtp_jpeg {
 	unsigned int timestamp;	
 	int reset_interval;
 	int dri_num;
-	int max_send_size;
 	unsigned short int dri_len[100];
 	//为了获取到frame,因为使用了链表形式
 	struct frame *f;
@@ -187,7 +183,7 @@ static int parse_DHT( struct rtp_jpeg *out, unsigned char *d, int len )
   if(0 == out->hufflen)
   {
 		//out->huffoff = out->scan_data - (d - 4);
-  	out->huffoff = (int)(d - 4);
+  	out->huffoff = (int)( ( d - 4 ) - out->d );
   }
   out->hufflen += len + 4;
   PUT_16(out->exthdr+EXTHDROFF_HUFF, out->hufflen);
@@ -216,9 +212,6 @@ void clear_init_done(void *d)
 	struct rtp_jpeg *out = (struct rtp_jpeg *)d;
 	out->init_done = 0;
 }
-
-
-
 
 static int jpeg_process_frame( struct frame *f, void *d )
 {
@@ -392,274 +385,162 @@ static int jpeg_send( struct rtp_endpoint *ep, void *d )
 	return 0;
 }
 
-//#define USE_EXTHDR
-static int jpeg_send_more( rtp_loop_search_ep search,void *ls,void *track, void *d,void *cache_buf,int cache_buf_len )
+static void jpeg_send_frame_to_endpoint( struct rtp_endpoint *ep, struct rtp_jpeg *out, struct framebuff *fb )
 {
-	 unsigned char *tmp_buf ;
-	 //_os_printf("@");
-	 struct rtp_jpeg *out = (struct rtp_jpeg *)d;
-	 //获取链表
-	 struct framebuff *fb = (struct framebuff *)out->f->get_f;
-	 uint8_t *jpeg_buf_addr ;
-	 int i, plen, vcnt, hdr_len,j;
-	 unsigned int node_offset;
-	 struct iovec v[8];
-	 unsigned char vhdr[12], qhdr[4];/*, dhdr[4]*/
-	 int res_len = 1, max_data_size;
-	 int total_len;
-	 struct rtp_endpoint *ep;
-	 void *head;
-	 unsigned char *send_buf;
-	 int send_total_len;
- 
-	 int node_len = out->f->node_len;
-	 out->scan_data_len = out->f->length-out->offset;
- 
- 
- /* There's at least 8-byte video-specific header  
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- | Type-specific |              Fragment Offset                  		|
- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- |      Type     	  |       Q       	|     Width     	|     Height    		|
- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+  
- */	
- 
-	 /* Main JPEG header */
-	 vhdr[0] = 0; /* type-specific, value 0 -> non-interlaced frame */
-	 /* vhdr[1..3] is the fragment offset */
-	 vhdr[4] = out->type; /* type */
-	 vhdr[5] = 255; /* Q, value 255 -> dynamic quant tables */
-	 vhdr[6] = out->width;
-	 vhdr[7] = out->height;
-	 
- /* Restart Marker header present
- 0 				  1 				  2 				  3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- |	   Restart Interval 	   	  |F|L|	   Restart Count	   |
- +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+	 
- */
-	 //PUT_16 (vhdr+8,  out->reset_interval);
-	 //_os_printf("rtp send\n");
-	 /* PUT_16 (vhdr+10, 0xFFFF); */
-	 v[1].iov_base = vhdr;
- 
-	 if (out->type & 0x40)
-		 v[1].iov_len = 12;
-	 else
-		 v[1].iov_len = 8;
- 
-	 /* Quantization table header */
-	 qhdr[0] = 0; /* MBZ */
-	 qhdr[1] = 0; /* precision */
-	 jpeg_buf_addr =fb->data;
-	 #ifdef PSRAM_HEAP
-		 tmp_buf = (unsigned char*)cache_buf;
-		 //拷贝到缓冲区,主要为了解决psram中cache的问题
-		 hw_memcpy0(tmp_buf,jpeg_buf_addr,cache_buf_len);
-	 #else
-		 tmp_buf = jpeg_buf_addr;
-	 #endif
- 
- 
- 
- #ifdef USE_EXTHDR
-	 PUT_16( qhdr + 2, 2 * 64 + out->hufflen + EXTHDR_LEN); /* length */
- #else
-	 PUT_16( qhdr + 2, 2 * 64); /* length */
- #endif
-	 v[2].iov_base = qhdr;
-	 v[2].iov_len = 4;
- 
-	 /* Luma quant table */
-	 /* Kaifan:
-	  * jpeg_process_frame called Only Once by spook, It can locate at any frame in the pool.
-	  * If the frame align at 4KB boundrary like AX3268, The address out->quant set by parse_DQT may error.
-	  * In fix header enviroment, all frame's DQT-distance-from-scan-data is the same.
-	  */
-	 /* Kaifan 20170913:
-	  * - Jonny added the init_done which causes jpeg_process_frame called only once.
-	  * - But jpeg-directly-output usb-sensors let SCAN_DATA_OFFSET & 0x19 & 0x5A non-constant.
-	  * It needs to change the struct rtp_jpeg out->quant to record the quant offset instead of address.
-	  */
-	 hw_memcpy0(out->rtp_quant,tmp_buf+out->quant[out->luma_table],64);
-	 v[3].iov_base = out->rtp_quant;
-	 v[3].iov_len = 64;
- 
- 
-	 /* Chroma quant table */
-	 hw_memcpy0(out->rtp_quant+64,tmp_buf+out->quant[out->chroma_table],64);
-	 v[4].iov_base = out->rtp_quant+64;
-	 v[4].iov_len = 64;
- ///////// PORTA.8 print
- 
-	 hdr_len = 132 + v[1].iov_len;
- #ifdef USE_EXTHDR 
-	 vcnt = 7;					
-	 hw_memcpy0(out->huff_quant,out->huffoff,out->hufflen);
-	 v[5].iov_base = out->exthdr;   
-	 v[5].iov_len = EXTHDR_LEN;
-	 v[6].iov_base = out->huff_quant;//out->huffoff;
-	 //_os_printf("scan_data:%X\thuffoff:%X\t%d\n",out->scan_data,out->huffoff,out->hufflen);
-	 v[6].iov_len = out->hufflen;
-	 hdr_len += (v[5].iov_len+v[6].iov_len);
- #else
-	 vcnt = 5;
- #endif
-	 //获取首个节点
-	 node_offset = out->offset;//out->scan_data-jpeg_buf_addr;
+	uint8_t *jpeg_buf_addr = (uint8_t *)fb->data;
+	int i = 0, plen, vcnt, hdr_len;
+	uint32_t node_offset = out->offset;
+	struct iovec v[8];
+	uint8_t vhdr[12], qhdr[4];
+	int res_len = 1, max_data_size;
+	uint32_t node_len = out->f->node_len;
 
-	 //循环查找链表的buf
- 
-	 //uint32_t flags;
-	 //uint32_t ref;
-	 i = 0;
-	 //这个通过链表轮询,需要源头使用这种结构才行,因为这里知道jpg是使用这种结构发送数据,因此这里直接使用,存在一定耦合性
- 
- 
-		 //根据实际结构获取buf
-		 jpeg_buf_addr = (uint8_t*)fb->data;
-		 //os_printf("node_len:%d\tjpeg_buf_addr:%X\n",node_len,jpeg_buf_addr);
- 
- //改节点还没有完成,继续发送
- continue_send:
-		 if(i >= out->scan_data_len)
-		 {
-			 goto jpeg_send_more_msi_end;
-		 }
- 
- 
-		 //因为有预留,所以这里size就要减少(注意框架不应该进去,如果进去,就是异常,可以设置FREE_JPG_NODE打印错误异常)
-		 if(node_offset >= node_len)
-		 {
-			 node_offset = 0;
-		 }
- 
-		 max_data_size = out->max_send_size-hdr_len;
- 
-		 if(out->type & 0x40) 
-		 {
-			 if((out->scan_data_len - i) > max_data_size)
-			 {
-				 plen = max_data_size;
-			 }
-			 else
-			 {
-				 plen = out->scan_data_len - i;
-			 }
-		 
-			 if(res_len) 
-			 {
-				 memcpy(vhdr+8,out->exthdr+EXTHDROFF_DRI,2);
- 
-			 } 
-			 else 
-			 {
-				 PUT_16 (vhdr+8,  0x28);
-			 }
-			 PUT_16 (vhdr+10, 0xffff);
- 
-		 } 
-		 else 
-		 {
-			 plen = out->scan_data_len - i;
-			 if(plen > max_data_size) 
-			 {
-				 plen = max_data_size;
-			 }
-		 }
-		 vhdr[1] = i >> 16;
-		 vhdr[2] = ( i >> 8 ) & 0xff;
-		 vhdr[3] = i & 0xff;
- 
-		 //如果发送使用原来的buf,记录需要发送的起始地址,v[0].iov_len=12(固定)
-		 //所以这里统计之前iov_len,然后其实地址就是jpeg_buf_addr+node_offset-total_len
-		 //空出前面的位置,填充rtp的头,所以发送数据就是rtp+data
- 
- 
-		 total_len = 12;
-		 for(j=1;j<vcnt;j++)
-		 {
-			 total_len += v[j].iov_len;
-		 }
- 
-		 v[vcnt].iov_base = jpeg_buf_addr+node_offset-total_len;
- 
-		 //判断节点偏移,如果偏移到结尾,则修改pln
-		 if(node_offset+plen>=node_len  )
-		 {
-			 plen = node_len - node_offset;
-		 }
-		 //32byte对齐,默认都是psram
-		 else
-		 {
-			uint32_t align_32 = (node_offset+plen)&(~0x1F);
+	if( !ep )
+	{
+		return;
+	}
+	if( !ep->sendEnable )
+	{
+		ep->sendEnable = 1;
+		return;
+	}
+
+	vhdr[0] = 0;
+	vhdr[4] = out->type;
+	vhdr[5] = 255;
+	vhdr[6] = out->width;
+	vhdr[7] = out->height;
+	v[1].iov_base = vhdr;
+	v[1].iov_len = ( out->type & 0x40 ) ? 12 : 8;
+
+	qhdr[0] = 0;
+	qhdr[1] = 0;
+#ifdef USE_EXTHDR
+	PUT_16( qhdr + 2, 2 * 64 + out->hufflen + EXTHDR_LEN );
+#else
+	PUT_16( qhdr + 2, 2 * 64 );
+#endif
+	v[2].iov_base = qhdr;
+	v[2].iov_len = 4;
+	v[3].iov_base = jpeg_buf_addr + out->quant[out->luma_table];
+	v[3].iov_len = 64;
+	v[4].iov_base = jpeg_buf_addr + out->quant[out->chroma_table];
+	v[4].iov_len = 64;
+	hdr_len = 132 + v[1].iov_len;
+#ifdef USE_EXTHDR
+	vcnt = 7;
+	v[5].iov_base = out->exthdr;
+	v[5].iov_len = EXTHDR_LEN;
+	/* The DHT block stays inside the current JPEG frame, so it can be sent directly. */
+	v[6].iov_base = jpeg_buf_addr + out->huffoff;
+	v[6].iov_len = out->hufflen;
+	hdr_len += v[5].iov_len + v[6].iov_len;
+#else
+	vcnt = 5;
+#endif
+
+	while( i < out->scan_data_len )
+	{
+		if( node_offset >= node_len ) 
+		{
+			node_offset = 0;
+		}
+
+		max_data_size = rtp_get_payload_size_limit( ep, RTP_HEADER_SIZE + hdr_len );
+		if( max_data_size <= 0 )
+		{
+			ep->sendEnable = 0;
+			break;
+		}
+		if( out->type & 0x40 )
+		{
+			if( ( out->scan_data_len - i ) > max_data_size )
+			{
+				plen = max_data_size;
+			}
+			else
+			{
+				plen = out->scan_data_len - i;
+			}
+			
+			if( res_len )
+			{
+				vhdr[8] = out->exthdr[EXTHDROFF_DRI];
+				vhdr[9] = out->exthdr[EXTHDROFF_DRI + 1];
+			}
+			else
+			{
+				PUT_16( vhdr + 8, 0x28 );
+			}
+			PUT_16( vhdr + 10, 0xffff );
+		}
+		else
+		{
+			plen = out->scan_data_len - i;
+			if( plen > max_data_size )
+			{
+				plen = max_data_size;
+			}
+			
+		}
+
+		vhdr[1] = i >> 16;
+		vhdr[2] = ( i >> 8 ) & 0xff;
+		vhdr[3] = i & 0xff;
+		v[vcnt].iov_base = jpeg_buf_addr + node_offset;
+
+		if( node_offset + plen >= node_len )
+		{
+			plen = node_len - node_offset;
+		}
+		else
+		{
+			uint32_t align_32 = ( node_offset + plen ) & ( ~0x1F );
 			plen = align_32 - node_offset;
-		 }
- 
- 
-		 if(i+plen >=out->scan_data_len)
-		 {
-			 plen = out->scan_data_len - i;
-		 }
-		 node_offset+=plen;
-		 v[vcnt].iov_len = plen;
-		 //获取数据内容
-		 send_buf = get_send_rtp_packet_head(v ,vcnt + 1,cache_buf);
-		 //重新赋值ls的头
-		 head = ls;
-		 while(head)
-		 {
-			 //获取ep
-			 head = search(head,track,(void*)&ep);
-			 if(ep)
-			 {
-				 //数据内容是一样的,修改头部就可以了
-				 //_os_printf("real data:%X\tsend_data:%X\n",jpeg_buf_addr,send_buf);
-				 send_total_len = set_send_rtp_packet_head(ep, v, vcnt + 1,out->timestamp, plen + i == out->scan_data_len,send_buf );
-				 if(ep->sendEnable)
-				 {
-					 send_rtp_packet_more(ep, send_buf, send_total_len,30 );
-				 }
-			 }
- 
-		 }
- 
-		 /* Done with all hea	ders except main JPEG header */
-		 vcnt = 2;
-		 hdr_len = v[1].iov_len;		
- 
-		 i += plen;
- 
-		 //os_printf("node_offset:%d\tscan_data_len:%d\ti:%d\tnode_len:%d\n",node_offset,out->scan_data_len,i,node_len);
-		 if(node_offset < node_len && i < out->scan_data_len)
-		 {
-			 //节点没有发送完成,继续回去发送
-			 goto continue_send;
-		 }
- 
- jpeg_send_more_msi_end:
-	 
- 
-	 //重新赋值ls的头
-	 head = ls;
-	 while(head)
-	 {
-		 //获取ep
-		 head = search(head,track,(void*)&ep);
-		 if(ep)
-		 {
-			 ep->sendEnable = 1;
-		 }
-	 }
- 
-	 return 0;
+		}
+
+		if( i + plen >= out->scan_data_len ) plen = out->scan_data_len - i;
+		node_offset += plen;
+		v[vcnt].iov_len = plen;
+		if( rtp_sendmsg( ep, v, vcnt + 1, out->timestamp, plen + i == out->scan_data_len, 30 ) < 0 )
+		{
+			ep->sendEnable = 0;
+			break;
+		}
+
+		vcnt = 2;
+		hdr_len = v[1].iov_len;
+		i += plen;
+	}
+
+	ep->sendEnable = 1;
 }
 
+static int jpeg_send_more( rtp_loop_search_ep search,void *ls,void *track, void *d )
+{
+	struct rtp_jpeg *out = (struct rtp_jpeg *)d;
+	struct framebuff *fb = (struct framebuff *)out->f->get_f;
+	struct rtp_endpoint *ep;
+	void *head;
 
+	if( !fb )
+	{
+		return 0;
+	}
+	out->scan_data_len = out->f->length - out->offset;
 
+	head = ls;
+	while( head )
+	{
+		head = search( head, track, (void **)&ep );
+		if( ep )
+		{
+			jpeg_send_frame_to_endpoint( ep, out, fb );
+		}
+	}
+
+	return 0;
+}
 
 struct rtp_media *new_rtp_media_jpeg_stream( struct stream *stream )
 {
@@ -673,12 +554,8 @@ struct rtp_media *new_rtp_media_jpeg_stream( struct stream *stream )
 	out->timestamp = 0;
 	out->scan_data = NULL;
 	out->scan_data_len = 0;
-	out->max_send_size = MAX_DATA_PACKET_SIZE;
 	out->ts_incr = 90000 * fincr / fbase;
-	memset(out->rtp_quant,0,sizeof(out->rtp_quant));
-
-	m = new_rtp_rtcp_media( jpeg_get_sdp, jpeg_get_payload,
-					jpeg_process_frame, jpeg_send,new_rtcp_send, out );
+	m = new_rtp_rtcp_media( jpeg_get_sdp, jpeg_get_payload, jpeg_process_frame, jpeg_send, new_rtcp_send, out );
 	if(m)
 	{
 		m->type = 0;
@@ -688,160 +565,3 @@ struct rtp_media *new_rtp_media_jpeg_stream( struct stream *stream )
 	return m;
 
 }
- 
-#if (JPG_EN == 1 || USB_EN == 1)
-
-//侧重与无框架无psram方式,同时数据包头需要留24byte的包头
-
-int sendmsg2(int fd, struct msghdr *msg, unsigned flags)
-{	
-	int total_len = 0;
-	unsigned int i = 0;
-	int size = -1;
-	int timeouts = 0;
-	struct sockaddr_in rtpaddr;
-	unsigned int namelen = sizeof( rtpaddr );
-	unsigned char *send_start = NULL;
-
-	if( getsockname( fd, (struct sockaddr *)&rtpaddr, &namelen ) < 0 ) {
-		spook_log( SL_ERR, "sendmsg getsockname error");
-	}
-	
-	
-	//这里到时候整理，将buf数据引导到jpeg的BUF中，减少cpy动作的同时，减少缓存空间
-	send_start = msg->msg_iov[msg->msg_iovlen-1].iov_base;
-	while(i < msg->msg_iovlen-1) {
-		memcpy(send_start + total_len, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-		total_len += msg->msg_iov[i].iov_len;
-		i++;
-	}
-	//不需要copy的位置,所以发送长度要增加
-	total_len += msg->msg_iov[msg->msg_iovlen-1].iov_len;
-
-	while(size < 0 )
-	{
-		size = sendto(fd, send_start, total_len, MSG_DONTWAIT, (struct sockaddr *)&rtpaddr, namelen);
-		timeouts++;
-
-
-		if(timeouts>10)
-		{
-
-			break;
-		}
-		if(timeouts%3 == 0)
-		{
-			os_sleep_ms(1);
-		}
-
-		
-	}
-	//_os_printf("size:%d\n",size);
-	if(timeouts>1)
-	{
-		_os_printf("timeouts:%d\n",timeouts);
-	}
-	//_os_printf("%s:%d\tsize:%d\t%d\n",__FUNCTION__,__LINE__,size,total_len);	
-	if(size <= 0) {
-		_os_printf("%s size err :%d\n",__FUNCTION__,size);
-		return -1;
-	} else {
-		return 0;
-	}
-}
-
-
-#endif
-
-
-//返回发送数据的buf地址
-unsigned char *get_send_real_data(struct msghdr *msg,char *sendtobuf)
-{	
-	unsigned int i = 0;
-	int total_len = 0;
-	unsigned char *send_start = NULL;
-	//实际这里没有用,后面会根据不同的连接设备进行修改
-	while(i < msg->msg_iovlen-1) {
-		//memcpy(sendtobuf + total_len, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-		//hw_memcpy0(sendtobuf + total_len, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-		total_len += msg->msg_iov[i].iov_len;
-		i++;
-	}
-	#if 1
-	//最后的数据补充回来,这里
-	uint32_t cp_real_addr = (uint32_t)msg->msg_iov[i].iov_base + total_len;
-	uint32_t cp_addr = cp_real_addr/0x10 * 0x10;
-	uint32_t diff_len = cp_real_addr - cp_addr;
-	if(diff_len)
-	{
-		//os_printf("diff_len:%d\t%d\t%X\n",diff_len,total_len,cp_addr);
-	}
-	#else
-		uint32_t cp_real_addr = (uint32_t)msg->msg_iov[i].iov_base + total_len;
-		uint32_t cp_addr = cp_real_addr;
-		uint32_t diff_len = 0;
-	#endif
-	//这里主要是为了16byte对齐
-	hw_memcpy0(sendtobuf + total_len - diff_len, (unsigned char *)cp_addr, msg->msg_iov[i].iov_len + diff_len);
-	total_len += msg->msg_iov[i].iov_len;
-	i++;
-	send_start = (unsigned char *)sendtobuf;
-	return send_start;
-}
-
-
-
-//返回需要发送的长度,配置数据头部数据
-int set_send_data_head(unsigned char *send_buf,struct msghdr *msg)
-{
-	int total_len = 0;
-	int i = 0;
-	while(i < msg->msg_iovlen-1) {
-		hw_memcpy0(send_buf + total_len, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-		total_len += msg->msg_iov[i].iov_len;
-		i++;
-	}
-	total_len += msg->msg_iov[msg->msg_iovlen-1].iov_len;
-	return total_len;
-}
-
-//端口发送数据,
-int fd_send_data(int fd,unsigned char *sendbuf,int sendLen,int times)
-{
-	int size = -1;
-	int timeouts = 0;
-	struct sockaddr_in rtpaddr;
-	unsigned int namelen = sizeof( rtpaddr );
-	if( getsockname( fd, (struct sockaddr *)&rtpaddr, &namelen ) < 0 ) {
-		spook_log( SL_ERR, "sendmsg getsockname error");
-	}
-
-	
-	while(size < 0 )
-	{
-		//size = sendto(fd, sendtobuf, total_len, MSG_DONTWAIT, (struct sockaddr *)&rtpaddr, namelen);
-		size = sendto(fd, sendbuf, sendLen, MSG_DONTWAIT, (struct sockaddr *)&rtpaddr, namelen);
-		//_os_printf("P:%d ",size);
-		timeouts++;
-		if(timeouts>times)
-		{
-
-			break;
-		}
-		if(size < 0)
-		{
-			os_sleep_ms(2);
-		}		
-	}
-	if(size<0)
-	{
-		_os_printf(KERN_NOTICE"%s err size:%d\n",__FUNCTION__,size);
-		return -1;
-
-	}
-	else
-	{
-		return 0;
-	}
-}
-

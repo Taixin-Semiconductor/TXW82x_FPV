@@ -4,6 +4,7 @@
 #include "lib/atcmd/libatcmd.h"
 #include "lib/common/atcmd.h"
 #include "lib/umac/ieee80211.h"
+#include "lwip/etharp.h"
 #include "syscfg.h"
 
 /* WiFi配对 */
@@ -51,6 +52,9 @@ void sys_event_hdl_wifi_pair(uint32 event_id, uint32 data, uint32 priv)
                     ieee80211_iface_stop(WIFI_MODE_STA); //stop STA
                     wificfg_flush(WIFI_MODE_AP);
                     ieee80211_iface_start(WIFI_MODE_AP); //switch to AP
+                    sys_cfgs.dhcpd_en = 1;
+                    sys_cfgs.dhcpc_en = 0;
+                    netcfg_flush();
                 }
 
                 if ((int32)data == -1 && sys_cfgs.wifi_mode == WIFI_MODE_AP) {
@@ -59,6 +63,9 @@ void sys_event_hdl_wifi_pair(uint32 event_id, uint32 data, uint32 priv)
                     ieee80211_iface_stop(WIFI_MODE_AP); //stop AP
                     wificfg_flush(WIFI_MODE_STA);
                     ieee80211_iface_start(WIFI_MODE_STA); //switch to STA.
+                    sys_cfgs.dhcpd_en = 0;
+                    sys_cfgs.dhcpc_en = 1;
+                    netcfg_flush();
                 }
 
                 if (sys_cfgs.wifi_mode == WIFI_MODE_STA || data) {

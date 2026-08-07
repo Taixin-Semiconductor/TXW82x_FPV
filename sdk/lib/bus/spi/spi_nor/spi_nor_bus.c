@@ -36,6 +36,7 @@
 #define SPI_NOR_STANDARD_ERASE_SECURITY_REG                     0x44
 #define SPI_NOR_STANDARD_PROGRAM_SECURITY_REG                   0x42
 #define SPI_NOR_STANDARD_READ_SECURITY_REG                      0x48
+#define SPI_NOR_STANDARD_ENABLE_4B_ADDR                         0xB7
 /**
   * @}
   */
@@ -89,6 +90,24 @@
 /**
   * @}
   */
+
+#define SPI_NOR_OPC_ADDR32(_opc, _addr) (struct spi_nor_opc_buf){    \
+    .bytes[0] = _opc,                          \
+    .bytes[1] = (_addr>>24)&0xff,              \
+    .bytes[2] = (_addr>>16)&0xff,              \
+    .bytes[3] = (_addr>>8)&0xff,               \
+    .bytes[4] = (_addr>>0)&0xff,               \
+}
+#define SPI_NOR_OPC_ADDR24(_opc, _addr) (struct spi_nor_opc_buf){    \
+    .bytes[0] = _opc,                          \
+    .bytes[1] = (_addr>>16)&0xff,              \
+    .bytes[2] = (_addr>>8)&0xff,               \
+    .bytes[3] = (_addr>>0)&0xff,               \
+}
+
+struct spi_nor_opc_buf {
+    uint8_t bytes[8];
+};
 
 /**
   * @brief Standard SPI instructions
@@ -158,15 +177,15 @@ static void spi_nor_standard_write_status_register(struct spi_nor_flash *flash, 
 //read data
 static void spi_nor_standard_read_data(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[4];
-
-    write_buf[0] = SPI_NOR_STANDARD_READ_DATA;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_READ_DATA, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_READ_DATA, addr);
+    }
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_read(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 }
@@ -174,16 +193,15 @@ static void spi_nor_standard_read_data(struct spi_nor_flash *flash, uint32 addr,
 //fast read
 static void spi_nor_standard_fast_read(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[5];
-
-    write_buf[0] = SPI_NOR_STANDARD_FAST_READ;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0x00;    //dummy clock
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_FAST_READ, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_FAST_READ, addr);
+    }
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 5);
+    spi_write(flash->spidev, &write_buf, 1+1+flash->bits_of_addr/8);
     spi_read(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 }
@@ -191,17 +209,16 @@ static void spi_nor_standard_fast_read(struct spi_nor_flash *flash, uint32 addr,
 //page program
 static void spi_nor_standard_page_program(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[4];
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_PAGE_PROGRAM, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_PAGE_PROGRAM, addr);
+    }
 
     spi_nor_standard_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_STANDARD_PAGE_PROGRAM;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_write(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
@@ -214,17 +231,15 @@ static void spi_nor_standard_page_program(struct spi_nor_flash *flash, uint32 ad
 //sector erase
 static void spi_nor_standard_sector_erase(struct spi_nor_flash *flash, uint32 addr)
 {
-    uint8 write_buf[4];
-
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_SECTOR_ERASE, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_SECTOR_ERASE, addr);
+    }
     spi_nor_standard_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_STANDARD_SECTOR_ERASE;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
     //wait sector erase done
@@ -236,17 +251,15 @@ static void spi_nor_standard_sector_erase(struct spi_nor_flash *flash, uint32 ad
 //block erase
 static void spi_nor_standard_block_erase(struct spi_nor_flash *flash, uint32 addr)
 {
-    uint8 write_buf[4];
-
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_BLOCK_ERASE, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_BLOCK_ERASE, addr);
+    }
     spi_nor_standard_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_STANDARD_BLOCK_ERASE;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
     //wait block erase done
@@ -300,6 +313,16 @@ static void spi_nor_standard_enter_qpi(struct spi_nor_flash *flash)
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 }
 
+static void spi_nor_standard_enter_4b_addr(struct spi_nor_flash *flash)
+{
+    uint8 instruction = SPI_NOR_STANDARD_ENABLE_4B_ADDR;
+
+    spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
+    spi_write(flash->spidev, &instruction, 1);
+    spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
+    flash->bits_of_addr = 32;
+}
+
 //enter power down
 static void spi_nor_standard_power_down(struct spi_nor_flash *flash)
 {
@@ -323,17 +346,16 @@ static void spi_nor_standard_release_power_down(struct spi_nor_flash *flash)
 //erase security registers
 static void spi_nor_standard_erase_security_reg(struct spi_nor_flash *flash, uint32 addr)
 {
-    uint8 write_buf[4];
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_ERASE_SECURITY_REG, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_ERASE_SECURITY_REG, addr);
+    }
 
     spi_nor_standard_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_STANDARD_ERASE_SECURITY_REG;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
     //wait block erase done
@@ -345,17 +367,16 @@ static void spi_nor_standard_erase_security_reg(struct spi_nor_flash *flash, uin
 //program security registers
 static void spi_nor_standard_program_security_reg(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[4];
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_PROGRAM_SECURITY_REG, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_PROGRAM_SECURITY_REG, addr);
+    }
 
     spi_nor_standard_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_STANDARD_PROGRAM_SECURITY_REG;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr);
     spi_write(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
@@ -368,16 +389,15 @@ static void spi_nor_standard_program_security_reg(struct spi_nor_flash *flash, u
 //read security registers
 static void spi_nor_standard_read_security_reg(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[5];
-
-    write_buf[0] = SPI_NOR_STANDARD_READ_SECURITY_REG;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0;   //dummy
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_STANDARD_READ_SECURITY_REG, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_STANDARD_READ_SECURITY_REG, addr);
+    }
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 5);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr+1);
     spi_read(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 }
@@ -400,7 +420,6 @@ static void spi_nor_standard_close(struct spi_nor_flash *flash)
 
 static int32 spi_nor_standard_ioctl(struct spi_nor_flash *flash, uint32_t cmd, uint32_t param1, uint32_t param2)
 {
-	
     int ret = RET_OK;
 	struct spi_nor_regval *reg;
     switch (cmd) {
@@ -429,6 +448,9 @@ static int32 spi_nor_standard_ioctl(struct spi_nor_flash *flash, uint32_t cmd, u
         reg = (struct spi_nor_regval *)param2;
         spi_nor_standard_read_security_reg(flash, param1, reg->buff, reg->size);
         break;
+    case SPI_NOR_CMD_4B_ADDR:
+        spi_nor_standard_enter_4b_addr(flash);
+        break;
     default:
         break;
     }
@@ -445,19 +467,18 @@ static int32 spi_nor_standard_ioctl(struct spi_nor_flash *flash, uint32_t cmd, u
 //If flash supports DUAL, this function is also generally supported
 static void spi_nor_dual_fast_read_dual_output(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[5];
-
-    write_buf[0] = SPI_NOR_DUAL_FAST_READ_DUAL_OUTPUT;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0x00;    //dummy clock
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_DUAL_FAST_READ_DUAL_OUTPUT, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_DUAL_FAST_READ_DUAL_OUTPUT, addr);
+    }
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
 
     //instruction & address & dummy clock should tx in Standard SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
-    spi_write(flash->spidev, write_buf, 5);
+    spi_write(flash->spidev, &write_buf, 2+flash->bits_of_addr/8);
 
     //data rx in DUAL SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_DUAL_MODE, 0);
@@ -473,23 +494,22 @@ static void spi_nor_dual_fast_read_dual_output(struct spi_nor_flash *flash, uint
 //warning! You need to confirm that nor flash supports this function.
 static void spi_nor_dual_fast_read_dual_io(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[5];
-
-    write_buf[0] = SPI_NOR_DUAL_FAST_READ_DUAL_IO;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0x00;
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_DUAL_FAST_READ_DUAL_IO, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_DUAL_FAST_READ_DUAL_IO, addr);
+    }
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
 
     //instruction should tx in Standard SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
-    spi_write(flash->spidev, write_buf, 1);
+    spi_write(flash->spidev, &write_buf, 1);
 
     //address & dummy clock should tx in DUAL SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_DUAL_MODE, 0);
-    spi_write(flash->spidev, &write_buf[1], 4);
+    spi_write(flash->spidev, &write_buf.bytes[1], 1+flash->bits_of_addr/8);
 
     //data rx in DUAL SPI mode
     spi_read(flash->spidev, buf, buf_size);
@@ -525,19 +545,19 @@ static void spi_nor_quad_open(struct spi_nor_flash *flash)
 //fast read quad output
 static void spi_nor_quad_fast_read_quad_output(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[5];
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QUAD_FAST_READ_QUAD_OUTPUT, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QUAD_FAST_READ_QUAD_OUTPUT, addr);
+    }
 
-    write_buf[0] = SPI_NOR_QUAD_FAST_READ_QUAD_OUTPUT;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0x00;    //dummy clock
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
 
     //instruction & address & dummy clock should tx in Standard SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
-    spi_write(flash->spidev, write_buf, 5);
+    spi_write(flash->spidev, &write_buf, 1+1+flash->bits_of_addr/8);
 
     //data rx in QUAD SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
@@ -552,25 +572,22 @@ static void spi_nor_quad_fast_read_quad_output(struct spi_nor_flash *flash, uint
 //fast read quad IO
 static void spi_nor_quad_fast_read_quad_io(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[7];
-
-    write_buf[0] = SPI_NOR_QUAD_FAST_READ_QUAD_IO;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0x00;
-    write_buf[5] = 0x00;    //dummy clock
-    write_buf[6] = 0x00;    //dummy clock
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QUAD_FAST_READ_QUAD_IO, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QUAD_FAST_READ_QUAD_IO, addr);
+    }
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
 
     //instruction should tx in Standard SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
-    spi_write(flash->spidev, write_buf, 1);
+    spi_write(flash->spidev, &write_buf, 1);
 
     //address & dummy clock should tx in QUAD SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
-    spi_write(flash->spidev, &write_buf[1], 6);
+    spi_write(flash->spidev, &write_buf.bytes[1], 3+flash->bits_of_addr/8);
 
     //data rx in DUAL SPI mode
     spi_read(flash->spidev, buf, buf_size);
@@ -584,19 +601,19 @@ static void spi_nor_quad_fast_read_quad_io(struct spi_nor_flash *flash, uint32 a
 //quad input page program
 static void spi_nor_quad_page_program(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[4];
-
-    write_buf[0] = SPI_NOR_QUAD_PAGE_PROGRAM;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QUAD_PAGE_PROGRAM, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QUAD_PAGE_PROGRAM, addr);
+    }
 
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
 
     spi_nor_standard_write_enable(flash);
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     //data tx in QUAD SPI mode
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
     spi_write(flash->spidev, buf, buf_size);
@@ -703,18 +720,17 @@ static void spi_nor_qpi_write_status_register(struct spi_nor_flash *flash, uint1
 //fast read quad io
 static void spi_nor_qpi_fast_read_quad_io(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[5];
-
-    write_buf[0] = SPI_NOR_QPI_FAST_READ_QUAD_IO;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-    write_buf[4] = 0x00;
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QPI_FAST_READ_QUAD_IO, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QPI_FAST_READ_QUAD_IO, addr);
+    }
 
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 5);
+    spi_write(flash->spidev, &write_buf, 2+flash->bits_of_addr/8);
     spi_read(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
@@ -724,19 +740,16 @@ static void spi_nor_qpi_fast_read_quad_io(struct spi_nor_flash *flash, uint32 ad
 //page program
 static void spi_nor_qpi_page_program(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 buf_size)
 {
-    uint8 write_buf[4];
-
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QPI_PAGE_PROGRAM, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QPI_PAGE_PROGRAM, addr);
+    }
     spi_nor_qpi_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_QPI_PAGE_PROGRAM;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_write(flash->spidev, buf, buf_size);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
@@ -751,19 +764,17 @@ static void spi_nor_qpi_page_program(struct spi_nor_flash *flash, uint32 addr, u
 //sector erase
 static void spi_nor_qpi_sector_erase(struct spi_nor_flash *flash, uint32 addr)
 {
-    uint8 write_buf[4];
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QPI_SECTOR_ERASE, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QPI_SECTOR_ERASE, addr);
+    }
 
     spi_nor_qpi_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_QPI_SECTOR_ERASE;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
-
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
@@ -777,19 +788,18 @@ static void spi_nor_qpi_sector_erase(struct spi_nor_flash *flash, uint32 addr)
 //block erase
 static void spi_nor_qpi_block_erase(struct spi_nor_flash *flash, uint32 addr)
 {
-    uint8 write_buf[4];
+    struct spi_nor_opc_buf write_buf;
+    if (flash->bits_of_addr == 32) {
+        write_buf = SPI_NOR_OPC_ADDR32(SPI_NOR_QPI_BLOCK_ERASE, addr);
+    } else {
+        write_buf = SPI_NOR_OPC_ADDR24(SPI_NOR_QPI_BLOCK_ERASE, addr);
+    }
 
     spi_nor_qpi_write_enable(flash);
-
-    write_buf[0] = SPI_NOR_QPI_BLOCK_ERASE;
-    write_buf[1] = addr >> 16;
-    write_buf[2] = addr >> 8;
-    write_buf[3] = addr;
-
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_QUAD_MODE, 0);
 
     spi_set_cs(flash->spidev, flash->spi_config.cs, 0);
-    spi_write(flash->spidev, write_buf, 4);
+    spi_write(flash->spidev, &write_buf, 1+flash->bits_of_addr/8);
     spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
 
     spi_ioctl(flash->spidev, SPI_WIRE_MODE_SET, SPI_WIRE_NORMAL_MODE, 0);
@@ -922,6 +932,9 @@ static int32 spi_nor_qpi_ioctl(struct spi_nor_flash *flash, uint32_t cmd, uint32
     case SPI_NOR_CMD_SEC_READ:
         reg = (struct spi_nor_regval *)param2;
         spi_nor_standard_read_security_reg(flash, param1, reg->buff, reg->size);
+        break;
+    case SPI_NOR_CMD_4B_ADDR:
+        spi_nor_standard_enter_4b_addr(flash);
         break;
     default:
         break;
@@ -1102,8 +1115,8 @@ int xip_nor_flash_unbp_convert_tbl(struct spi_nor_flash *flash,
         for(int i = 0;i<flash->bpi->area_cnt;i++)
         {
             if ((REGION_EXCLU(flash->bpi->areas[i].area[0], 
-            flash->bpi->areas[i].area[1], addrl, addru-1)) && 
-            flash->bpi->areas[i].area[1]-flash->bpi->areas[i].area[0] > max) {
+                flash->bpi->areas[i].area[1], addrl, addru-1)) && 
+                flash->bpi->areas[i].area[1]-flash->bpi->areas[i].area[0] > max) {
                 max = flash->bpi->areas[i].area[1]-flash->bpi->areas[i].area[0];
                 area_idx = i;
             }
@@ -1443,12 +1456,14 @@ static int32 spi_nor_xip_ioctl(struct spi_nor_flash *flash, uint32_t cmd, uint32
         reg = (struct spi_nor_regval *)param2;
         spi_nor_xip_read_security_reg(flash, param1, reg->buff, reg->size);
         break;
+    case SPI_NOR_CMD_4B_ADDR:
+        flash->bits_of_addr = 32;
+        break;
     default:
         break;
     }
     return ret;
 }
-
 
 
 //SPI NOR function
@@ -1500,7 +1515,7 @@ static const struct spi_nor_bus spinor_bus_list[] = {
     },
 };
 
-const struct spi_nor_bus   *spi_nor_bus_get(enum spi_nor_mode mode)
+const struct spi_nor_bus *spi_nor_bus_get(enum spi_nor_mode mode)
 {
     ASSERT(mode < ARRAY_SIZE(spinor_bus_list));
     return &spinor_bus_list[mode];

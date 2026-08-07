@@ -76,22 +76,29 @@ int32_t client_remote_playback_deinit(void)
     return RET_OK;
 }
 
-#endif
-
-#ifdef SYS_APP_BBM_LCD
-
-int32_t server_remote_playback_init(void)
+static uint32_t playback = 0;
+static uint8_t playback_file_name[50] = {0};
+static void mp4_playback_thread(void *d)
 {
-    intercom_set_stream_type(intercom_playback_audio,intercom_live_audio);
-    intercom_reset_play();	
-	return RET_OK;    
+	if(playback == 1) {
+		os_printf("\n***playback:%s***\n",playback_file_name);
+		client_remote_playback_init((const char*)playback_file_name);		
+	}
+	else if(playback == 0) {
+		client_remote_playback_deinit();		
+	}
 }
 
-int32_t server_remote_playback_deinit(void)
+int32 atcmd_bbm_client_playback(const char *cmd, char *argv[], uint32 argc)
 {
-    intercom_set_stream_type(intercom_live_audio,intercom_live_audio);
-    intercom_reset_play();	   
-	return RET_OK; 
+	if(argc >= 2) {
+		playback = os_atoi(argv[1]);
+        os_memset(playback_file_name, 0, 50);
+        os_memcpy(playback_file_name,argv[0],strlen(argv[0]));
+		os_task_create("mp4_playback_thread", mp4_playback_thread, NULL, OS_TASK_PRIORITY_NORMAL, 0, NULL, 2048);
+	}
+    
+	return 0;
 }
 
 #endif

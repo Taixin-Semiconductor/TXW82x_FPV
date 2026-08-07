@@ -51,7 +51,11 @@ void ui_event_intercomPage(lv_event_t * e){
 				walkie_talkie_send_event(WT_EVT_VIEW_SWITCH, (uint32_t)camSetParam.view_swtichtype, (uint32_t)NULL, (uint32_t)NULL);
 
 				os_sleep_ms(100);
+#if USE_CALLING_DEMO
+				if(camera_gvar.calling_connect == 0)
+#else
 				if(0 == walkie_talkie_send_event(WT_EVT_DISP_NUM_GET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL))
+#endif
 				{
 					#if USE_90_DEGREE_LOGO
 					walkie_talkie_send_event(WT_EVT_JPG_DECODE_RUN, (uint32_t)ui_bgLogo, sizeof(ui_bgLogo), (uint32_t)NULL);
@@ -102,6 +106,18 @@ void ui_event_intercomPage(lv_event_t * e){
 	        case KEY_IPF_SWITCH:
 				os_printf("## KEY_IPF_SWITCH=\n");
 				walkie_talkie_send_event(WT_EVT_VPP_IPF_CTRL, (uint32_t)&camera_gvar.specialeffects_index, (uint32_t)NULL, (uint32_t)NULL);
+			break;
+
+			case KEY_CALLING_START:
+				if(walkie_talkie_send_event(WT_EVT_WIFI_CONNECT_GET, (uint32_t)NULL, (uint32_t)NULL, (uint32_t)NULL)) {
+					camera_gvar.calling_status = calling_start;
+					walkie_talkie_send_event(WT_EVT_CALLING_SET, (uint32_t)camera_gvar.calling_status, (uint32_t)NULL, (uint32_t)NULL);
+				}
+			break;
+
+			case KEY_CALLING_STOP:
+				camera_gvar.calling_status = calling_stop;
+				walkie_talkie_send_event(WT_EVT_CALLING_SET, (uint32_t)camera_gvar.calling_status, (uint32_t)NULL, (uint32_t)NULL);
 			break;
 
 			default:

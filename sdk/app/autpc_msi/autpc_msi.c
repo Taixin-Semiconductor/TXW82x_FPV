@@ -183,7 +183,7 @@ static int32_t autpc_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param
                         msi_output_fb(autpc_s->msi, send_frame_buf);    
                     }   
                     autpc_s->have_next_time = 0;  
-                    wsola_stream_clean(autpc_s->wsola_stream);
+                    wsolaStream_clean(autpc_s->wsola_stream);
                     ret = RET_OK;
                     break;            
                 }

@@ -64,7 +64,7 @@ int32 sys_atcmd_reset(const char *cmd, char *argv[], uint32 argc)
     return 0;
 }
 
-int32 sys_wifi_atcmd_reboot_test_mode(const char *cmd, char *argv[], uint32 argc)
+int32 sys_atcmd_reboot_test_mode(const char *cmd, char *argv[], uint32 argc)
 {
     if (argc == 1 && argv[0][0] == '1') {
         system_reboot_test_mode();

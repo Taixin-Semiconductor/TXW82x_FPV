@@ -126,8 +126,8 @@ int mmc_init(struct sdh_device * host, uint32_t clk)
 	uint8_t *ext_csd = NULL;
     
 
-    if(host->open)
-        host->open(host, 1, SD_MODE_TYPE);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->open)
+        ((const struct sdhc_hal_ops *)host->dev.ops)->open(host, 1, SD_MODE_TYPE);
     os_mutex_init(&host->lock);
 
     sdhost_io_func_init(host->flags);
@@ -171,7 +171,7 @@ int mmc_init(struct sdh_device * host, uint32_t clk)
     //de select
     host->rca = 0;
     send_select_card(host);
-    host->close(host);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->close(host);
     os_free(ext_csd);
 
 

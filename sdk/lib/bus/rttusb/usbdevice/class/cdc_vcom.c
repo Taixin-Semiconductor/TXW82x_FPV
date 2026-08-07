@@ -306,6 +306,7 @@ static rt_err_t _ep_in_handler(ufunction_t func, rt_size_t size)
     //os_printf("cdc _ep_in_handler %d\n", request_size);
     rt_sem_release(cdc_sem);
 #if ISP_TUNNING_EN
+	os_sleep_ms(1);
     os_sema_up(&isp_tunning->usb_write_sema);
 #else
     if ((request_size != 0) && ((request_size % EP_MAXPACKET(data->ep_in)) == 0))

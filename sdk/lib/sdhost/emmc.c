@@ -41,7 +41,7 @@ uint32_t send_op_cond(struct sdh_device *host,
     cmd.arg = ocr;
     cmd.flags = RESP_SPI_R1 | RESP_R3 | CMD_BCR;
 
-    ret = host->cmd(host, &cmd);
+    ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
     if(ret){
         EMMC_PRINTF("cmd%d err\r\n", cmd.cmd_code);
     }
@@ -62,8 +62,8 @@ int emmc_init(struct sdh_device * host, uint32 clk)
     uint8_t  bw  = 1;
 	uint8_t *ext_csd = NULL;
     
-    if(host->open)
-        host->open(host, 1, SD_MODE_TYPE);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->open)
+        ((const struct sdhc_hal_ops *)host->dev.ops)->open(host, 1, SD_MODE_TYPE);
     
     host->flags |= MMCSD_BUSWIDTH_4;
 	os_printf("host->flags:%x\r\n",host->flags);

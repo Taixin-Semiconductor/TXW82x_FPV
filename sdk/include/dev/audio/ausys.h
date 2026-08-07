@@ -105,12 +105,12 @@ struct ausys_ad_msg {
 typedef void (*type_ausys_ad_user_cb)(void* buf, uint32 bytes, uint32 res);
 
 
-int32 ausys_ad_record(enum ausys_da_platform platform);
-int32 ausys_ad_register_msg(enum ausys_da_platform platform, enum ausys_ad_msg_type msg_type);
-int32 ausys_ad_unregister_msg(enum ausys_da_platform platform, enum ausys_ad_msg_type msg_type);
-int32 ausys_ad_get_msg(enum ausys_da_platform platform, struct ausys_ad_msg *msg, uint32 tmo_ms);
-int32 ausys_ad_ioctl(enum ausys_da_platform platform, uint32 cmd, uint32 arg0, uint32 arg1);
-int32 ausys_ad_deinit(enum ausys_da_platform platform);
+int32 ausys_ad_record(enum ausys_ad_platform platform);
+int32 ausys_ad_register_msg(enum ausys_ad_platform platform, enum ausys_ad_msg_type msg_type);
+int32 ausys_ad_unregister_msg(enum ausys_ad_platform platform, enum ausys_ad_msg_type msg_type);
+int32 ausys_ad_get_msg(enum ausys_ad_platform platform, struct ausys_ad_msg *msg, uint32 tmo_ms);
+int32 ausys_ad_ioctl(enum ausys_ad_platform platform, uint32 cmd, uint32 arg0, uint32 arg1);
+int32 ausys_ad_deinit(enum ausys_ad_platform platform);
 int32 ausys_ad_init(
         enum ausys_ad_platform platform,
         uint32 sample_rate,

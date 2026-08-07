@@ -144,7 +144,7 @@ static int32_t sd_parse_scr(struct sdh_device *host)
     SDHC_WARN_PRINTF("sd_version : %d \t %d\r\n", scr->sd_version, scr->sd_bus_widths);
     return 0;
 }
-#if (defined (TXW81X) || defined (TXW82X))
+#if 1//(defined (TXW81X) || defined (TXW82X))
 static int32_t sd_switch(struct sdh_device *host)
 {
     int32_t ret;
@@ -159,9 +159,9 @@ static int32_t sd_switch(struct sdh_device *host)
     host->data.blksize = 64;
     host->data.blks    = 1;
     host->data.err     = 0;
-    if (host->read)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->read)
     {
-        ret = host->read(host, buf);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->read(host, buf);
         if (ret)
             return 1;
     }
@@ -171,16 +171,16 @@ static int32_t sd_switch(struct sdh_device *host)
     cmd.cmd_code = SD_SWITCH;
     cmd.arg = 0x00FFFFF1;
     cmd.flags = RESP_R1 | CMD_ADTC;
-    if (host->cmd)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
     {
-        ret = host->cmd(host, &cmd);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
         if (ret)
             return 1;
     }
 
-    if (host->complete)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->complete)
     {
-        ret = host->complete(host);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
         if (ret)
             return 1;
     }
@@ -201,25 +201,25 @@ static int32_t sd_switch(struct sdh_device *host)
     host->data.blksize = 64;
     host->data.blks    = 1;
     host->data.err     = 0;
-    if (host->read)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->read)
     {
-        ret = host->read(host, buf);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->read(host, buf);
         if (ret)
             return 1;
     }
     cmd.cmd_code = SD_SWITCH;
     cmd.arg = 0x80FFFFF1;
     cmd.flags = RESP_R1 | CMD_ADTC;
-    if (host->cmd)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
     {
-        ret = host->cmd(host, &cmd);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
         if (ret)
             return 1;
     }
 
-    if (host->complete)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->complete)
     {
-        ret = host->complete(host);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
         if (ret)
             return 1;
     }
@@ -378,8 +378,8 @@ uint32 select_voltage(struct sdh_device *host, uint32 ocr)
 
         host->io_cfg.vdd = bit;
         //mmcsd_set_iocfg(host);
-        if(host->iocfg)
-            host->iocfg(host,&host->io_cfg);
+        if(((const struct sdhc_hal_ops *)host->dev.ops)->iocfg)
+            ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host,&host->io_cfg);
     } 
     else 
     {
@@ -413,8 +413,8 @@ uint32 sd_power_up(struct sdh_device *host,uint8 bus_w)
      
      host->io_cfg.clock = 400000;
      
-     if(host->iocfg)
-          host->iocfg(host,&host->io_cfg);
+     if(((const struct sdhc_hal_ops *)host->dev.ops)->iocfg)
+          ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host,&host->io_cfg);
 
     
      /*
@@ -425,8 +425,8 @@ uint32 sd_power_up(struct sdh_device *host,uint8 bus_w)
     
      host->io_cfg.clock = host->freq_min;
      host->io_cfg.power_mode = MMCSD_POWER_ON;
-     if(host->iocfg)
-          host->iocfg(host,&host->io_cfg);
+     if(((const struct sdhc_hal_ops *)host->dev.ops)->iocfg)
+          ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host,&host->io_cfg);
 
     
      /*
@@ -441,14 +441,14 @@ void sd_set_clk(struct sdh_device * host,uint32 clk)
 {
     host->io_cfg.clock 		 = clk;
     host->io_cfg.ioctl_type = LL_SDHC_IOCTRL_SET_CLOCK;
-    host->iocfg(host,&host->io_cfg);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host,&host->io_cfg);
 }
 
 void sd_set_bus_width(struct sdh_device * host,uint32 width)
 {
     host->io_cfg.bus_width   = width;
     host->io_cfg.ioctl_type = LL_SDHC_IOCTRL_SET_BUS_WIDTH;
-    host->iocfg(host,&host->io_cfg);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host,&host->io_cfg);
 }
 
 #if (defined (TXW81X) || defined (TXW82X))
@@ -458,7 +458,7 @@ void sd_set_sample(struct sdh_device *host, TYPE_LL_SDHC_SMP_CFG type, uint8 cmd
     host->io_cfg.cmd_crc_sample = cmd_cmp;
     host->io_cfg.dat_crc_sample = dat_cmp;
     host->io_cfg.ioctl_type 	= LL_SDHC_IOCTRL_SET_SMP;
-    host->iocfg(host, &host->io_cfg);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host, &host->io_cfg);
 }
 
 void sd_delay_config(struct sdh_device *host, TYPE_LL_SDHC_DELAY_SYSCLK dly_cfg, uint8 chain)
@@ -472,14 +472,14 @@ void sd_delay_config(struct sdh_device *host, TYPE_LL_SDHC_DELAY_SYSCLK dly_cfg,
         host->io_cfg.delay_chain_cnt = chain;
     }
     host->io_cfg.ioctl_type 	 = LL_SDHC_IOCTRL_SET_DELAY_TYPE;
-    host->iocfg(host, &host->io_cfg);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host, &host->io_cfg);
 }
 
 void sd_dat_of_stop_clk_cfg(struct sdh_device *host, uint8 flag)
 {
     host->io_cfg.dat_overflow_stop_flag = flag;
     host->io_cfg.ioctl_type 		    = LL_SDHC_IOCTRL_SET_DAT_OF_STOP_CLK;
-    host->iocfg(host, &host->io_cfg);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->iocfg(host, &host->io_cfg);
 }
 #endif
 
@@ -493,8 +493,8 @@ uint32 send_idle(struct sdh_device * host)
     cmd.arg = 0;
     cmd.flags = RESP_SPI_R1 | RESP_NONE | CMD_BC;
 
-    if(host->cmd)
-        ret = host->cmd(host,&cmd);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
     else{
         SDHC_ERR_PRINTF("no cmd action register\r\n");
         return 0;
@@ -512,7 +512,7 @@ uint32 send_all_get_cid(struct sdh_device * host,uint32 *cid)
     cmd.cmd_code = ALL_SEND_CID;
     cmd.arg = 0;
     cmd.flags = RESP_R2 | CMD_BCR;
-    ret = host->cmd(host,&cmd);
+    ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
     if(ret==0)
         memcpy(cid, cmd.resp, sizeof(uint32) * 4);
@@ -528,28 +528,34 @@ uint32 send_get_card_addr(struct sdh_device * host,uint32 *rca)
     cmd.cmd_code = SD_SEND_RELATIVE_ADDR;
     cmd.arg = 0;
     cmd.flags = RESP_R6 | CMD_BCR;	
-    ret = host->cmd(host,&cmd);
+    ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
     *rca = cmd.resp[0] >> 16;
     return 0;
 }
 
-uint32 send_card_status(struct sdh_device * host){
+int32 sd_get_card_status(struct sdh_device * host, uint32 *status){
     struct rt_mmcsd_cmd cmd;
-    int ret = 0;
-    uint32  status = 0;
+    int ret = RET_OK;
+    
     memset(&cmd, 0, sizeof(struct rt_mmcsd_cmd));
-
     cmd.cmd_code = SEND_STATUS;
-
     cmd.arg = host->rca << 16;
     cmd.flags = RESP_R1 | CMD_AC;
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+       ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
+    *status = cmd.resp[0];
+    return ret;
+}
 
-    if(host->cmd)
-       ret = host->cmd(host,&cmd);
+uint32 send_card_status(struct sdh_device * host){
+    int ret = RET_OK;
+    uint32  status = 0;
 
-    status = (cmd.resp[0] >> 9) & 0xf;
+    sd_get_card_status(host, &status);
+    
+    status = (status >> 9) & 0xf;
     if (status != MMCSD_CARD_STATUS_TRAN)
     {
         // SDHC_WARN_PRINTF("card status : %d\r\n", status);
@@ -577,8 +583,8 @@ uint32 send_select_card(struct sdh_device * host)
         cmd.flags = RESP_NONE | CMD_AC;
     }
     
-    if(host->cmd)
-       ret = host->cmd(host,&cmd);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+       ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
     return ret;
 }
@@ -594,8 +600,8 @@ uint32 send_if_cond(struct sdh_device * host,uint32 ocr)
     cmd.arg = ((ocr & 0xFF8000) != 0) << 8 | 0xAA;
     cmd.flags = RESP_SPI_R7 | RESP_R7 | CMD_BCR;
 
-    if(host->cmd)
-       ret = host->cmd(host,&cmd);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+       ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
     //if (controller_is_spi(host))
     //   pattern = cmd.resp[1] & 0xFF;
@@ -618,7 +624,7 @@ uint32 send_get_csd(struct sdh_device * host,uint32 *csd)
     cmd.cmd_code = SEND_CSD;
     cmd.arg = host->rca << 16;
     cmd.flags = RESP_R2 | CMD_AC;
-    ret = host->cmd(host,&cmd);
+    ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
     
     memcpy(csd, cmd.resp, sizeof(uint32) * 4);
     return ret;
@@ -640,8 +646,8 @@ uint32 send_app_cmd(struct sdh_device *host,uint32 rca)
         cmd.arg = 0;
         cmd.flags = RESP_R1 | CMD_BCR;		
     }
-    if(host->cmd)
-       ret = host->cmd(host,&cmd);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+       ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
     return ret;
 }
 
@@ -670,8 +676,8 @@ uint32 sd_app_set_bus_width(struct sdh_device *host,int32_t width)
         return -EINVAL;
     }	
 
-    if(host->cmd)
-       ret = host->cmd(host,&cmd);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+       ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
     return ret;
 }
@@ -687,20 +693,20 @@ uint32 send_get_scr(struct sdh_device *host,uint32* scr)
     host->data.blksize = 8;
     host->data.blks    = 1;
     host->data.err     = 0;
-    if(host->read)
-        ret = host->read(host,(uint8*)scr);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->read)
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->read(host,(uint8*)scr);
 
     send_app_cmd(host,host->rca);
     memset(&cmd, 0, sizeof(struct rt_mmcsd_cmd));
     cmd.cmd_code = SD_APP_SEND_SCR;
     cmd.arg = 0;
     cmd.flags = RESP_SPI_R1 | RESP_R1 | CMD_ADTC;
-    if(host->cmd)
-       ret = host->cmd(host,&cmd);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)
+       ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
 
-    if (host->complete)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->complete)
     {
-        ret = host->complete(host);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
         if (ret)
             return 0;
     }
@@ -715,43 +721,65 @@ uint32 send_get_scr(struct sdh_device *host,uint32* scr)
     return 1;
 }
 
-
-uint32 sd_tran_stop(struct sdh_device * host)
+int32 sd_cmd_stop(struct sdh_device * host)
 {
-    int ret = 0;	
+    int ret = RET_OK;	
+
+    if (!(((const struct sdhc_hal_ops *)host->dev.ops)->cmd)) {
+        return RET_ERR;
+    }
+
     struct rt_mmcsd_cmd  cmd;
-
-    if (host->cmd == NULL)  return RET_ERR;
-    if (!host->sd_stop)     return RET_OK;
-
-    // os_printf("%s %d addr : %d\r\n", __func__, __LINE__, __builtin_return_address(0));
     memset(&cmd, 0, sizeof(struct rt_mmcsd_cmd));
     cmd.cmd_code = STOP_TRANSMISSION;
     cmd.arg = 0;
     cmd.flags = RESP_SPI_R1B | RESP_R1B | CMD_AC;
-
-    for (int i = 0; i < 10; i++)
-    {
-        ret  = host->cmd(host, &cmd);
-        if (!ret)
-        {
-            for (int j = 0; j < 10; j++)
-            {
-                ret = send_card_status(host);
-                if (!ret) 
-                {
-                    host->sd_opt  = SD_IDLE;
-                    host->sd_stop = 0;
-                    goto _succ;
-                }
-            }
+    for (int i = 0; i < 2; i++) {
+        ret  = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd (host, &cmd);
+        if (!ret) { 
+            return RET_OK;
         }
     }
-    ret = RET_ERR;
-    host->sd_opt = SD_OFF;
+    
+    return RET_ERR;
+}
 
-_succ:
-    return ret;
+uint32 sd_tran_stop(struct sdh_device * host)
+{
+    int ret = RET_OK;	
+
+    // os_printf("%s %d addr : %d\r\n", __func__, __LINE__, __builtin_return_address(0));
+    if ((host->sd_stop)) {
+        sd_cmd_stop(host);
+    }
+
+    uint32 sd_status = 0;
+    for (int i = 0; i < 5; i++) {
+        ret = sd_get_card_status(host, &sd_status);
+        if (RET_OK == ret) {
+            if (sd_status & 0xFFFF0000) {
+                /* sd err */
+                os_printf(KERN_ERR"sd-sta:%x\r\n", sd_status);
+            }
+            sd_status = (sd_status >> 9) & 0xF;
+            if (sd_status == MMCSD_CARD_STATUS_TRAN) {
+                host->sd_opt  = SD_IDLE;
+                host->sd_stop = 0;
+                return RET_OK;
+            } else if ((sd_status == MMCSD_CARD_STATUS_STBY) || (sd_status == MMCSD_CARD_STATUS_DIS)) {
+                /* need app reselect card */
+                send_select_card(host);
+            } else if (sd_status > MMCSD_CARD_STATUS_TRAN) {
+                sd_cmd_stop(host);
+            } else {
+                /* card not init ok，kick SD_OFF */
+                break;
+            }  
+        }
+    }
+
+    host->sd_opt = SD_OFF;
+    return RET_ERR;
 }
 
 //给外部接口专门用的停止命令,现在暂时是给文件系统
@@ -775,7 +803,8 @@ int sd_multiple_write(struct sdh_device * host,uint32 lba,uint32 len,uint8 *buf)
     struct rt_mmcsd_cmd  cmd;	
     uint8  retry_cnt  = 0;
     uint8  curr_index = 0;
-    uint8  sel_index  = 0;
+    uint8  retry_sample_cnt = 0;
+    uint8  sample_point_bak = 0;
     uint8  *kick_buf  = buf;
     os_mutex_lock(&host->lock,osWaitForever);
    
@@ -817,8 +846,8 @@ __retry:
         cmd.arg <<= 9;
     }	
     cmd.flags = RESP_SPI_R1 | RESP_R1 | CMD_ADTC;
-    if((host->cmd) && send_cmd){	
-        ret = host->cmd(host,&cmd);  
+    if((((const struct sdhc_hal_ops *)host->dev.ops)) && send_cmd){	
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);  
         if(ret){
 			sd_tran_stop(host);
             ret = -1;
@@ -842,78 +871,67 @@ __retry:
 		sys_dcache_clean_range_unaligned((void *)kick_buf, len); 
 	}
 
-    if(host->write)
-        ret = host->write(host,kick_buf);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->write)
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->write(host,kick_buf);
 
-    if (host->complete)
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->complete)
     {
-        ret = host->complete(host);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
 #if defined(TXW82X)
         if ((host->sd_write_retry_flag == 0) && (ret == MMCSD_CMP_DATERR) && (host->io_cfg.self_adaption_flag != MMCSD_SMP_EN))
         {
-            if (host->write_last_time_retry && ((os_jiffies() - host->write_last_time_retry ) < 1000))
-            {
-                host->sd_write_retry         = LL_SDHC_RETRY_SELECT_POINT;
-                host->write_last_time_retry  = 0;
-            }
-
-            switch (host->sd_write_retry)
-            {
-                case LL_SDHC_RETRY_DEFAULT:
-                    host->sd_write_retry = LL_SDHC_RETRY_SELECT_POINT;
-                    curr_lba  = host->new_lba - host->data.blks;
-                    block_num = host->data.blks;
-                    kick_buf  = kick_buf + (block_num - host->data.blks) * SECTOR_SIZE;
-                    if (host->write_last_time_retry  == 0)      host->write_last_time_retry  = os_jiffies();
-                    break;
-
-                case LL_SDHC_RETRY_SELECT_POINT:
-                    for (curr_index = 0; curr_index < host->sd_write_sample_num; curr_index++)
-                    {
-                        if ((host->sd_write_sample_value[curr_index] != 0xff) && (host->sd_write_sample_value[curr_index] == host->sd_write_sample))
-                        {
-                            sel_index = (curr_index + host->sd_write_sample_num - 1) % host->sd_write_sample_num;
-                            host->sd_write_sample_value[curr_index] = 0xff;
-                            break;
+            if (host->sd_write_retry == LL_SDHC_RETRY_SELECT_POINT) {
+				/* goto retry */
+				host->sd_write_retry = LL_SDHC_RETRY_DEFAULT;
+                /* find current pos & change sample point to next  */
+                for (curr_index = 0; curr_index < host->sd_write_sample_num; curr_index++) {
+                    if ((host->sd_write_sample_value[curr_index] == host->sd_write_sample)) {
+                        if (!retry_sample_cnt) {
+                            sample_point_bak = host->sd_write_sample;
                         }
+                        curr_index++;
+                        if (curr_index < host->sd_write_sample_num) {
+                            host->sd_write_sample = host->sd_write_sample_value[curr_index];
+                        } else {
+                            host->sd_write_sample = host->sd_write_sample_value[0];
+                        }
+                        retry_sample_cnt++;
+                        break;
                     }
-                    if ((curr_index < host->sd_write_sample_num) && ((host->sd_write_sample_value[sel_index] != 0xff)))
-                    {
-                        host->sd_write_sample = host->sd_write_sample_value[sel_index];
-                        host->sd_write_retry  = LL_SDHC_RETRY_CHECK;
-                        SDHC_WARN_PRINTF("%s %d sd_write select new point : %d\r\n", __func__, __LINE__, host->sd_write_sample);
-                    } else {
-                        host->sd_write_retry = LL_SDHC_RETRY_ERR;
-                        host->sd_write_retry_flag = 1;
-                        SDHC_ERR_PRINTF("%s %d sd_write select all point!\r\n", __func__, __LINE__);
-                    }
-                    break;
+                }
 
-                case LL_SDHC_RETRY_CHECK:
-                    host->sd_write_retry = (host->sd_write_retry_flag) ? (LL_SDHC_RETRY_ERR) : (LL_SDHC_RETRY_SELECT_POINT);
-                    break;
-
-                case LL_SDHC_RETRY_SUCC :
-                case LL_SDHC_RETRY_ERR  : 
-                    if (!host->sd_write_retry_flag)     host->sd_write_retry = LL_SDHC_RETRY_SELECT_POINT;
-                    break;
+                if (retry_sample_cnt >= host->sd_write_sample_num) {
+                    host->sd_write_sample = sample_point_bak;
+                    host->sd_write_retry = LL_SDHC_RETRY_ERR;
+                    /* disable retry */
+//                    host->sd_write_retry_flag = 1;
+                    SDHC_ERR_PRINTF("sd err: sel all wr point!\r\n");
+                } else {
+                    SDHC_WARN_PRINTF("sd sel wr point : %d\r\n", host->sd_write_sample);
+                }
             }
 
-            if (host->sd_write_retry < LL_SDHC_RETRY_SUCC)
-            {
+            if (host->sd_write_retry != LL_SDHC_RETRY_ERR) {
                 retry_cnt++;
+                /* retry 3 times @ every sample point */
+                if (0 == (retry_cnt % 3)) {
+                    host->sd_write_retry = (host->sd_write_retry == LL_SDHC_RETRY_DEFAULT) ? LL_SDHC_RETRY_SELECT_POINT : LL_SDHC_RETRY_DEFAULT;
+                }
+                
+                curr_lba  = host->new_lba - host->data.blks;
+                block_num = host->data.blks;
+                kick_buf  = kick_buf + (block_num - host->data.blks) * SECTOR_SIZE;
                 goto __retry;
             }   
-        } else if((ret == MMCSD_NO_ERR) && (host->io_cfg.self_adaption_flag != MMCSD_SMP_EN)) {
-            if (host->sd_write_retry <= LL_SDHC_RETRY_CHECK)
-            {
-                host->sd_write_retry = (host->sd_write_retry == LL_SDHC_RETRY_CHECK) ? (LL_SDHC_RETRY_SUCC) : (LL_SDHC_RETRY_DEFAULT);
-            }
+        } 
+
+        if (ret == MMCSD_NO_ERR) {
+            host->sd_write_retry = LL_SDHC_RETRY_DEFAULT;
         } 
 #endif
     }
 
-    if (ret && host->sd_stop) {
+    if (ret) {
         sd_tran_stop(host);
     }  
 __err:
@@ -931,10 +949,11 @@ int sd_multiple_read(struct sdh_device * host,uint32 lba, uint32 len, uint8* buf
     uint32 block_num   = len/SECTOR_SIZE;
     uint8  retry_cnt   = 0;
     uint8  curr_index  = 0;
-    uint8  sel_index   = 0;
+    uint8  retry_sample_cnt = 0;
+    uint8  sample_point_bak = 0;
     uint8  *kick_buf    = buf;
-    //uint8  data_rev = 0;
-	//uint8  *s = NULL;
+//    uint8  data_rev = 0;
+//	uint8  *s = NULL;
 
     os_mutex_lock(&host->lock,osWaitForever);
 
@@ -982,8 +1001,8 @@ __retry:
 	}
 
 
-    if(host->read != NULL){
-		ret = host->read(host,kick_buf);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->read != NULL){
+		ret = ((const struct sdhc_hal_ops *)host->dev.ops)->read(host,kick_buf);
 	}
 
     ///////////////////////////////////////////////////////
@@ -995,8 +1014,8 @@ __retry:
         cmd.arg <<= 9;
     }	
     cmd.flags = RESP_SPI_R1 | RESP_R1 | CMD_ADTC;
-    if((host->cmd) && send_cmd){
-        ret = host->cmd(host,&cmd);
+    if((((const struct sdhc_hal_ops *)host->dev.ops)) && send_cmd){
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
         if(ret){
 			sd_tran_stop(host);
             ret = MMCSD_CMD_ERR;
@@ -1004,73 +1023,64 @@ __retry:
         }
     }
 
-    if (host->complete != NULL){
-		ret = host->complete(host);
+    if (((const struct sdhc_hal_ops *)host->dev.ops)->complete != NULL){
+		ret = ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
 #if defined(TXW82X)
         if ((host->sd_read_retry_flag == 0) && (ret == MMCSD_CMP_DATERR) && (host->io_cfg.self_adaption_flag != MMCSD_SMP_EN))
         {
-            if (host->read_last_time_retry && ((os_jiffies() - host->read_last_time_retry ) < 1000))
-            {
-                host->sd_read_retry         = LL_SDHC_RETRY_SELECT_POINT;
-                host->read_last_time_retry  = 0;
-            }
-            
-            switch (host->sd_read_retry)
-            {
-                case LL_SDHC_RETRY_DEFAULT:
-                    host->sd_read_retry = LL_SDHC_RETRY_SELECT_POINT;
-                    curr_lba  = host->new_lba - host->data.blks;
-                    block_num = host->data.blks;
-                    kick_buf  = kick_buf + (block_num - host->data.blks) * SECTOR_SIZE;
-                    if (host->read_last_time_retry  == 0)   host->read_last_time_retry  = os_jiffies();
-                    break;
-
-                case LL_SDHC_RETRY_SELECT_POINT:
-                    for (curr_index = 0; curr_index < host->sd_read_sample_num; curr_index++)
-                    {
-                        if ((host->sd_read_sample_value[curr_index] != 0xff) && (host->sd_read_sample_value[curr_index] == host->sd_read_sample))
-                        {
-                            host->sd_read_sample_value[curr_index]  = 0xff;
-                            sel_index = (curr_index + host->sd_read_sample_num - 1) % host->sd_read_sample_num;
-                            break;
+            if (host->sd_read_retry == LL_SDHC_RETRY_SELECT_POINT) {
+                /* find current pos & change sample point to next  */
+                for (curr_index = 0; curr_index < host->sd_read_sample_num; curr_index++) {
+                    if ((host->sd_read_sample_value[curr_index] == host->sd_read_sample)) {
+                        if (!retry_sample_cnt) {
+                            sample_point_bak = host->sd_read_sample;
                         }
+                        curr_index++;
+                        if (curr_index < host->sd_read_sample_num) {
+                            host->sd_read_sample = host->sd_read_sample_value[curr_index];
+                        } else {
+                            host->sd_read_sample = host->sd_read_sample_value[0];
+                        }
+                        retry_sample_cnt++;
+                        break;
                     }
-                    if ((curr_index < host->sd_read_sample_num) && (host->sd_read_sample_value[sel_index] != 0xff))
-                    {
-                        host->sd_read_sample = host->sd_read_sample_value[sel_index];
-                        host->sd_read_retry  = LL_SDHC_RETRY_CHECK;
-                        SDHC_WARN_PRINTF("%s %d sd_read select new point : %d\r\n", __func__, __LINE__, host->sd_read_sample);
-                    } else {
-                        host->sd_read_retry = LL_SDHC_RETRY_ERR;
-                        host->sd_read_retry_flag = 1;
-                        SDHC_ERR_PRINTF("%s %d sd_read select all point!\r\n", __func__, __LINE__);
-                    }
-                    break;
+                }
 
-                case LL_SDHC_RETRY_CHECK:
-                    host->sd_read_retry = (host->sd_read_retry_flag) ? (LL_SDHC_RETRY_ERR) : (LL_SDHC_RETRY_SELECT_POINT);
-                    break;
-                    
-                case LL_SDHC_RETRY_SUCC:
-                case LL_SDHC_RETRY_ERR : 
-                    if (!host->sd_read_retry_flag)     host->sd_read_retry = LL_SDHC_RETRY_SELECT_POINT;
-                    break;
+                if (retry_sample_cnt >= host->sd_read_sample_num) {
+                    host->sd_read_sample = sample_point_bak;
+                    host->sd_write_retry = LL_SDHC_RETRY_ERR;
+                    /* disable retry */
+//                    host->sd_write_retry_flag = 1;
+                    SDHC_ERR_PRINTF("sd err: sel all rd point!\r\n");
+                } else {
+                    SDHC_WARN_PRINTF("sd sel rd point : %d\r\n", host->sd_read_sample);
+                }
             }
 
-            if (host->sd_read_retry < LL_SDHC_RETRY_SUCC)
-            {
+            if (host->sd_read_retry != LL_SDHC_RETRY_ERR) {
                 retry_cnt++;
+                /* retry 3 times @ every sample point */
+                if (0 == (retry_cnt % 3)) {
+                    host->sd_read_retry = (host->sd_read_retry == LL_SDHC_RETRY_DEFAULT) ? LL_SDHC_RETRY_SELECT_POINT : LL_SDHC_RETRY_DEFAULT;
+                }
+                
+                curr_lba  = host->new_lba - host->data.blks;
+                block_num = host->data.blks;
+                kick_buf  = kick_buf + (block_num - host->data.blks) * SECTOR_SIZE;
                 goto __retry;
             }   
-        } else if((ret == MMCSD_NO_ERR) && (host->io_cfg.self_adaption_flag != MMCSD_SMP_EN)) {
-            if (host->sd_read_retry <= LL_SDHC_RETRY_CHECK)
-            {
-                host->sd_read_retry = (host->sd_read_retry == LL_SDHC_RETRY_CHECK) ? (LL_SDHC_RETRY_SUCC) : (LL_SDHC_RETRY_DEFAULT);
-            }
+        } 
+
+        if((ret == MMCSD_NO_ERR)) {
+            host->sd_read_retry = LL_SDHC_RETRY_DEFAULT;
         }
 #endif
         // SDHC_WARN_PRINTF("%s %d status : %d flag : %d\r\n", __func__, __LINE__, host->sd_read_retry, host->sd_read_retry_flag);
 	} 
+    
+    if (ret) {
+        sd_tran_stop(host);
+    }  
 
 __err:
     os_mutex_unlock(&host->lock);
@@ -1098,7 +1108,7 @@ uint32 send_app_op_cond(struct sdh_device *host,
         }
         
 //        memset(cmd->resp, 0, sizeof(cmd->resp));		
-        ret = host->cmd(host,&cmd);
+        ret = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host,&cmd);
         if(ret){
             SDHC_ERR_PRINTF("cmd2 err\r\n");
             break;
@@ -1400,7 +1410,8 @@ __err:
 }
 #endif
 
-uint32 sd_init(struct sdh_device * host, uint32 clk, uint8 single_support)
+/* flags : TYPE_SDHC_INIT_FLAGS */
+uint32 sd_init(struct sdh_device * host, uint32 clk, uint32 flags)
 {
     uint32 ret;
     uint32 resp[4];
@@ -1409,13 +1420,16 @@ uint32 sd_init(struct sdh_device * host, uint32 clk, uint8 single_support)
     SDHC_WARN_PRINTF("open_width:%d\r\n",bw);
 
 
-    if(host->open)
-        host->open(host,bw, SD_MODE_TYPE);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->open)
+        ((const struct sdhc_hal_ops *)host->dev.ops)->open(host,bw, SD_MODE_TYPE);
 
 #if defined (TXW82X)
     host->sd_clk_io  = MACRO_PIN(PIN_SDH_CLK);
 #endif
-    host->single_support = single_support;
+    host->opt_timeout    = 2;
+    host->cmd12_timeout  = 5;
+    host->single_support = flags & SDHC_INIT_FLAGS_SINGLE_BLK_RW_EN;
+    host->busy_filter_cnt = (flags & SDHC_INIT_FLAGS_BUSY_FILTER_EN) ? 2 : 0;
 
     sdhost_io_func_init(host->flags&MMCSD_BUSWIDTH_4);
     SDHC_WARN_PRINTF("host->flags:%x\r\n",host->flags);
@@ -1433,11 +1447,6 @@ uint32 sd_init(struct sdh_device * host, uint32 clk, uint8 single_support)
     }
 	delay_us(100);
     ret = send_if_cond(host,host->valid_ocr);
-    if(ret)
-    {
-        SDHC_ERR_PRINTF("SEND_IF_COND cmd err\r\n");
-        return RET_ERR;
-    }
 
     ret = send_app_op_cond(host,0x40ff8000,&ocr);
     if(ret){
@@ -1553,22 +1562,6 @@ void sdhost_test()
 
 }
 
-uint32 sdhost_suspend(struct sdh_device * host){
-    uint32 ret = -1;
-    if(host->suspend){
-        ret = host->suspend(host);
-    }
-    return ret;
-}
-
-uint32 sdhost_resume(struct sdh_device * host){
-    uint32 ret = -1;
-    if(host->resume){
-        ret = host->resume(host);
-    }
-    return ret;
-
-}
 struct sdhost_hdl
 {
     struct os_work wk;
@@ -1644,6 +1637,15 @@ sdh_loop_end:
 	return 0;
 }
 
+uint32 sdhost_reinit_for_wakeup()
+{
+    if(sdhost_wk.wk.init == 0  && sdhost_wk.wk.running == 0)
+    {
+        sdhost_wk.isregister = 1;
+        OS_WORK_INIT(&sdhost_wk.wk, sdh_loop, 0);
+        os_run_work_delay(&sdhost_wk.wk, 500);
+    }
+}
 
 
 uint32 sdhost_deinit_for_sleep()
@@ -1656,7 +1658,7 @@ uint32 sdhost_deinit_for_sleep()
 }
 
 
-uint32 sdhost_init(uint32 clk, uint8 single_support)
+uint32 sdhost_init(uint32 clk, uint32 flags)
 {
     uint32 err = 1;
     struct sdh_device *sdh = NULL;
@@ -1668,7 +1670,7 @@ uint32 sdhost_init(uint32 clk, uint8 single_support)
 
     if(sdh)
     {
-        err = sd_init(sdh, clk, single_support);
+        err = sd_init(sdh, clk, flags);
         if(err)
             sdh->sd_opt = SD_OFF;
 

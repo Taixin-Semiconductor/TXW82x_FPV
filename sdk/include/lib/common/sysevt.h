@@ -27,7 +27,7 @@ enum SYSEVT_MAINID { /* uint16 */
     SYS_EVENT_LTE,
     SYS_EVENT_MEDIA,
     SYS_EVENT_USB,
-
+    
     ////////////////////////////////////
     SYSEVT_MAINID_ID,
 };

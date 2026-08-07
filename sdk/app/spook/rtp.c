@@ -36,7 +36,6 @@
 
 
 int rtcp_send( struct rtp_endpoint *ep, uint8_t *pbuf,uint16 len);
-extern int sendmsg2(int fd, struct msghdr *msg, unsigned flags);
 
 static int rtp_port_start = 50000, rtp_port_end = 60000;
 k_task_handle_t spook_rtcp_handle = NULL;
@@ -101,12 +100,6 @@ void del_rtp_endpoint( struct rtp_endpoint *ep )
 	free( ep );
 }
 
-void update_rtp_timestamp( struct rtp_endpoint *ep, int time_increment )
-{
-	ep->last_timestamp += time_increment;
-	ep->last_timestamp &= 0xFFFFFFFF;
-}
-
 static void udp_rtp_read( void *ei, void *d )
 {
 	struct rtp_endpoint *ep = (struct rtp_endpoint *)d;
@@ -122,6 +115,7 @@ static void udp_rtp_read( void *ei, void *d )
 		spook_log( SL_VERBOSE, "error on UDP RTP socket: %s",
 			strerror( get_errno() ) );
 	else spook_log( SL_VERBOSE, "UDP RTP socket closed" );
+	_os_printf("%s:%d\n",__FUNCTION__,__LINE__);
 	ep->session->select_close(ep->session, ep);
 }
 
@@ -161,6 +155,7 @@ static void udp_rtcp_read( void *ei, void *d )
 		spook_log( SL_VERBOSE, "error on UDP RTCP socket: %s",
 			strerror( get_errno() ) );
 	else spook_log( SL_VERBOSE, "UDP RTCP socket closed" );
+	_os_printf("%s:%d\n",__FUNCTION__,__LINE__);
 	ep->session->select_close(ep->session, ep);
 }
 
@@ -172,35 +167,33 @@ void interleave_recv_rtcp( struct rtp_endpoint *ep, unsigned char *d, int len )
 
 int g_timeout = 0;
 
-
 #define RECORDER_RTCP_NTP		0	// 使用录风者时可以开启，降低延时
 
 int new_rtcp_send( struct rtp_endpoint *ep, void *d )/*RFC3550*/
 {
-	//struct rtp_jpeg *out = (struct rtp_jpeg *)d;
-	struct rtp_media *rtp = (struct rtp_media*)d;
+//	struct rtp_media *rtp = (struct rtp_media*)d;
 	if(ep->trans_type == RTP_TRANS_UDP)
 	{
-	int res;
-//	unsigned char buf[16384];
-	unsigned char buf[128];
-	unsigned int ntp_sec, ntp_usec;
-	unsigned int rtp_timestamp;
-	uint16 len_send;
-	int len = 6;//字符串长度,"taixin"
-	if(ep == NULL || ep->session == NULL){
-		_os_printf("send rtcp no session!!\n");
-		return -1;
-	}
-	if(os_jiffies()-ep->rtcp_send_timestamp < 5000)
-	{
-		return -1;
-	}
+		int res;
+		unsigned char buf[64];
+		unsigned int ntp_sec, ntp_usec;
+		unsigned int rtp_timestamp;
+		uint16 len_send;
+		uint16 len = 6; //字符串长度,"taixin"
 
-		//ep->last_timestamp = ( ep->start_timestamp + timestamp )& 0xFFFFFFFF;
+		if(ep == NULL || ep->session == NULL){
+			_os_printf("send rtcp no session!!\n");
+			return -1;
+		}
+
+		if(os_jiffies()-ep->rtcp_send_timestamp < 5000)
+		{
+			return -1;
+		}
+
 		os_printf("%s:%d\n",__FUNCTION__,__LINE__);
 		ep->rtcp_send_timestamp = os_jiffies();
-		rtp_timestamp = ep->start_timestamp + ep->rtcp_send_timestamp * rtp->per_ms_incr;
+		rtp_timestamp = ep->last_timestamp;
 	#if RECORDER_RTCP_NTP
 		ntp_sec = 0;
 		ntp_usec = 0;
@@ -210,10 +203,7 @@ int new_rtcp_send( struct rtp_endpoint *ep, void *d )/*RFC3550*/
 		ntp_sec = now.tv_sec + 0x83AA7E80;
 		ntp_usec = (double)( (double)now.tv_usec * (double)0x4000000 ) / 15625.0;
 	#endif
-		
-		/*spook_log( SL_DEBUG, "ssrc=%u, ntp_sec=%u, ntp_usec=%u last_timestamp=%u packet_count=%d octet_count=%d",
-				x->ssrc, ntp_sec, ntp_usec, x->last_timestamp, x->packet_count, x->octet_count );*/
-		//_os_printf("ssrc:%X\ttime:%d\tstart:%d\n",ep->ssrc,ep->rtcp_send_timestamp,ep->start_timestamp);
+
 		buf[0] = 2 << 6; // version
 		buf[1] = 200; // packet type is Sender Report
 		PUT_16( buf + 2, 6 ); // length in words minus one
@@ -226,19 +216,14 @@ int new_rtcp_send( struct rtp_endpoint *ep, void *d )/*RFC3550*/
 		buf[28] = ( 2 << 6 ) | 1; // version; source count = 1
 		buf[29] = 202; // packet type is Source Description    SDES
 		PUT_16( buf + 30, (4+4+2+len)/4-1 ); // length in words minus one      sr = 5word   5-1 = 4    !!!!!!!
-	//	PUT_16( buf + 30, 4 ); // length in words minus one
 		PUT_32( buf + 32, ep->ssrc );
 		buf[36] = 0x01; // field type is CNAME    36/4=9   52/4 = 13
 		buf[37] = len; // text length
-	//	buf[37] = 16; // text length
 		memcpy( buf + 38, "taixin", len );
-	//	memcpy( buf + 38, pbuf, 16 );
 		len_send = (32+4+2+len);
-
 
 		res = send( ep->trans.udp.rtcp_fd, buf, len_send, 0 );
 	}
-
 
 	return -1;
 }
@@ -380,272 +365,256 @@ void connect_interleaved_endpoint( struct rtp_endpoint *ep,
 	ep->trans.inter.running = 1;
 }
 
-int send_rtp_packet( struct rtp_endpoint *ep, struct iovec *v, int count,
-			unsigned int timestamp, int marker )
+int rtp_get_packet_size_limit( const struct rtp_endpoint *ep )
 {
-	static unsigned int timestamp_start = 0;
-	unsigned char send_enable = 1;
-	static unsigned char send_drop = 0;
-	unsigned char rtphdr[12];
-	struct msghdr mh;
-	int i;
-	static int retrans = 0;
-	/*int send_count = 0;*/
-
-
-	if(timestamp_start != timestamp){
-		send_enable = 1;
-		send_drop = 0;
-		timestamp_start = timestamp;
+	if( ep && ep->trans_type == RTP_TRANS_INTER ) 
+	{
+		return RTP_TCP_MAX_PACKET_SIZE;
 	}
-
-
-	if(send_drop == 1){
-		send_enable = 0;
+	
+	if( ep && ep->max_data_size > 0 ) 
+	{
+		return ep->max_data_size;
 	}
+	
+	return MAX_DATA_PACKET_SIZE;
+}
 
+int rtp_get_payload_size_limit( const struct rtp_endpoint *ep, int packet_overhead )
+{
+	int packet_limit = rtp_get_packet_size_limit( ep );
 
-	ep->last_timestamp = ( ep->start_timestamp + timestamp )
-					& 0xFFFFFFFF;
+	if( packet_overhead < 0 )
+	{
+		return 0;
+	}
+	if( packet_limit <= packet_overhead )
+	{
+		return 0;
+	}
+	return packet_limit - packet_overhead;
+}
 
+static void rtp_build_header( struct rtp_endpoint *ep, uint32_t timestamp, uint8_t marker, uint8_t *rtphdr )
+{
+	ep->last_timestamp = ( ep->start_timestamp + timestamp ) & 0xFFFFFFFF;
 
-	/*
-	spook_log( SL_DEBUG, "RTP: payload %d, seq %u, time %u, marker %d",
-		ep->payload, ep->seqnum, ep->last_timestamp, marker );*/
-
-
-	rtphdr[0] = 2 << 6; /* version */
+	rtphdr[0] = 2 << 6;
 	rtphdr[1] = ep->payload;
-	if( marker ) rtphdr[1] |= 0x80;
+	if( marker ) 
+	{
+		rtphdr[1] |= 0x80;
+	}
+
 	PUT_16( rtphdr + 2, ep->seqnum );
 	PUT_32( rtphdr + 4, ep->last_timestamp );
 	PUT_32( rtphdr + 8, ep->ssrc );
+}
 
+static uint32_t rtp_get_payload_len( struct iovec *v, int count )
+{
+	uint32_t payload_len = 0;
 
+	for( int i = 1; i < count; ++i )
+	{
+		payload_len += v[i].iov_len;
+	}
+		
+	return payload_len;
+}
+
+static void rtp_advance_iov( struct iovec **iov, int *count, int bytes )
+{
+	while( bytes > 0 && *count > 0 )
+	{
+		if( bytes >= (int)(*iov)[0].iov_len )
+		{
+			bytes -= (*iov)[0].iov_len;
+			++(*iov);
+			--(*count);
+		}
+		else
+		{
+			(*iov)[0].iov_base = (unsigned char *)(*iov)[0].iov_base + bytes;
+			(*iov)[0].iov_len -= bytes;
+			bytes = 0;
+		}
+	}
+}
+
+static int rtp_send_udp( int fd, struct iovec *iov, int count, int retries )
+{
+	struct msghdr mh;
+	int retry_count = 0;
+	int total_len = 0;
+	int ret;
+
+	for( int i = 0; i < count; ++i )
+	{
+		total_len += iov[i].iov_len;
+	}
+
+	while( retry_count <= retries )
+	{
+		memset( &mh, 0, sizeof( mh ) );
+		mh.msg_iov = iov;
+		mh.msg_iovlen = count;
+		ret = sendmsg( fd, &mh, MSG_DONTWAIT );
+		if( ret == total_len )
+		{
+			return 0;
+		}
+		if( get_errno() == ENOMEM )
+		{
+			return -1;
+		}
+		if( ret >= 0 || get_errno() != EAGAIN )
+		{
+			_os_printf( "%s %d, err: %d\n", __FUNCTION__, __LINE__, get_errno() );
+			return -1;
+		}
+		++retry_count;
+		os_sleep_ms( 2 );
+	}
+
+	_os_printf( "%s %d, err: %d\n", __FUNCTION__, __LINE__, get_errno() );
+	return -1;
+}
+
+static int rtp_send_tcp( struct rtp_endpoint *ep, struct iovec *v, int count)
+{
+	struct conn *conn = ep->trans.inter.conn;
+	struct iovec local_iov[17];
+	struct iovec *send_iov = local_iov;
+	uint8_t interleave_hdr[4];
+	struct msghdr mh;
+	int payload_len = 0;
+	int send_count;
+	uint32_t start_time = os_jiffies();
+	int ret;
+
+	if( !conn || conn->fd <= 0 || !conn->running )
+	{
+		return -1;
+	}
+
+	if( count + 1 > (int)( sizeof( local_iov ) / sizeof( local_iov[0] ) ) )
+	{
+		_os_printf( "too many interleaved iov entries: %d", count + 1 );
+		return -1;
+	}
+
+	for( int i = 0; i < count; ++i ) payload_len += v[i].iov_len;
+	if( payload_len > RTP_TCP_MAX_PACKET_SIZE )
+	{
+		_os_printf( "interleaved RTP packet too large: %d", payload_len );
+		return -1;
+	}
+	interleave_hdr[0] = '$';
+	interleave_hdr[1] = ep->trans.inter.rtp_chan;
+	PUT_16( interleave_hdr + 2, payload_len );
+
+	local_iov[0].iov_base = interleave_hdr;
+	local_iov[0].iov_len = sizeof( interleave_hdr );
+	memcpy( &local_iov[1], v, sizeof( v[0] ) * count );
+	send_count = count + 1;
+
+	os_event_wait( &conn->evt, RTSP_TCP_WRITE_MUTEX, NULL, OS_EVENT_WMODE_AND | OS_EVENT_WMODE_CLEAR, -1 );
+
+	while( send_count > 0 )
+	{
+		memset( &mh, 0, sizeof( mh ) );
+		mh.msg_iov = send_iov;
+		mh.msg_iovlen = send_count;
+		os_event_wait( &conn->evt, RTSP_TCP_READ_MUTEX, NULL, OS_EVENT_WMODE_AND | OS_EVENT_WMODE_CLEAR, -1 );
+		ret = sendmsg( conn->fd, &mh, MSG_DONTWAIT );
+		os_event_set( &conn->evt, RTSP_TCP_READ_MUTEX, NULL );
+
+		if( ret > 0 )
+		{
+			rtp_advance_iov( &send_iov, &send_count, ret );
+			continue;
+		}
+
+		if( ret == 0 || get_errno() != EAGAIN )
+		{
+			ret = -1;
+			break;
+		}
+
+		if( os_jiffies() - start_time >= 4000 )
+		{
+			ret = -1;
+			break;
+		}
+
+		os_sleep_ms( 1 );
+	}
+
+	os_event_set( &conn->evt, RTSP_TCP_WRITE_MUTEX, NULL );
+	if( send_count <= 0 )
+	{
+		return 0;
+	}
+	if( ret < 0 )
+	{
+		ep->sendEnable = 0;
+		if( ep->session && ep->session->closed )
+		{
+			ep->session->closed( ep->session, ep );
+		}
+		_os_printf( "%s %d, err: %d\n", __FUNCTION__, __LINE__, get_errno() );
+	}
+
+	return ret;
+}
+
+int rtp_sendmsg( struct rtp_endpoint *ep, struct iovec *v, int count, uint32_t timestamp, uint8_t marker, int retries )
+{
+	uint8_t rtphdr[12];
+	uint32_t payload_len;
+	int ret = -1;
+
+	if( !ep || !v || count <= 0 )
+	{
+		_os_printf("%s %d\n", __FUNCTION__, __LINE__);
+		return -1;
+	}
+
+	if( !ep->sendEnable )
+	{
+		return -1;
+	}
+
+	rtp_build_header( ep, timestamp, marker, rtphdr );
 	v[0].iov_base = rtphdr;
-	v[0].iov_len = 12;
+	v[0].iov_len = sizeof( rtphdr );
+	payload_len = rtp_get_payload_len( v, count );
 
 	switch( ep->trans_type )
 	{
 	case RTP_TRANS_UDP:
-		memset( &mh, 0, sizeof( mh ) );
-		mh.msg_iov = v;
-		mh.msg_iovlen = count;
-retry:	
-		if(send_enable){
-			if( sendmsg2( ep->trans.udp.rtp_fd, &mh, 0 ) < 0 )
-			{
-				if(0 && (get_errno() != ENOMEM) && (get_errno() != EBADF) && (get_errno() != EAGAIN))
-				{
-					_os_printf("get_errno():%d\n",get_errno());
-					#if 0
-					spook_log( SL_VERBOSE, "error sending UDP RTP frame: %s %d	 %d",
-						strerror( get_errno() ),get_errno() ,ep->trans.udp.rtp_fd);
-					ep->session->closed( ep->session, ep );
-					#endif
-					return -1;
-				}
-				else
-				{
-					csi_kernel_delay(5);
-					retrans++;
-					if(retrans < 5)
-						goto retry;
-					else
-						send_drop = 1;
-				}
-			}
-			else
-			{
-				retrans = 0;
-			}
-		}	
-		break;
-	case RTP_TRANS_INTER:
-		if( interleave_send( ep->trans.inter.conn,
-				ep->trans.inter.rtp_chan, v, count ) < 0 )
-		{
-			if((get_errno() != 12) && (get_errno() != 9))
-			{
-				spook_log( SL_VERBOSE, "error sending interleaved RTP frame" );			
-				ep->session->closed( ep->session, ep );
-				return -1;
-			}
-		}
-		break;
-	}
-
-
-
-	for( i = 0; i < count; ++i ) ep->octet_count += v[i].iov_len;
-	++ep->packet_count;
-	ep->seqnum = ( ep->seqnum + 1 ) & 0xFFFF;
-
-
-	return 0;
-}
-
-
-extern int fd_send_data(int fd,unsigned char *sendbuf,int sendLen,int times);
-extern int set_send_data_head(unsigned char *send_buf,struct msghdr *msg);
-extern unsigned char *get_send_real_data(struct msghdr *msg,char *sendtobuf);
-
-extern uint8_t rtsp_send_audio;
-//数据发送
-void rtsp_tcp_send_event(void *ei, void *d)
-{
-	struct rtp_endpoint *ep = (struct rtp_endpoint *)d;
-	struct conn *conn = (struct conn *)ep->session->conn;
-	int offset = 0;
-	int send_len;
-	uint32_t start_time = os_jiffies();
-	if(conn->fd > 0 && conn->running)
-	{
-		int len;
-		//给到eloop去发送数据吧
-		uint8_t *tcp_head = conn->sendbuf - SPOOK_CACHE_BUF_HEAD_LEN;
-		tcp_head[0] = 0x24; // 0x24 = 00100100
-		//通过payload去识别音频
-		if(ep->payload == 97)
-			tcp_head[1] = 0x02; // 0x00 = 00000000;
-		else
-			tcp_head[1] = 0x00;
-		tcp_head[2] = (conn->send_buf_len >> 8) & 0xFF; // 高字节
-		tcp_head[3] = conn->send_buf_len & 0xFF; // 低字节
-		send_len = conn->send_buf_len+SPOOK_CACHE_BUF_HEAD_LEN;
-		again:
-		os_event_wait(&conn->evt, RTSP_TCP_READ_MUTEX, NULL, OS_EVENT_WMODE_AND | OS_EVENT_WMODE_CLEAR, -1);
-		len = lwip_send( conn->fd, tcp_head+offset, send_len,0);
-		os_event_set(&conn->evt, RTSP_TCP_READ_MUTEX, NULL);
-		if(len == 0)
-		{
-			goto rtsp_tcp_send_event_end;
-		}
-		if(len < 0)
-		{
-			if(get_errno() == EAGAIN)
-			{
-				if(os_jiffies() - start_time >= 3000)
-				{
-					ep->sendEnable = 0;
-					ep->session->closed( ep->session, ep );
-					os_printf("%s:%d\ttimeout\n",__FUNCTION__,__LINE__);
-					goto rtsp_tcp_send_event_end;
-				}
-				os_sleep_ms(1);
-				goto again;
-			}
-			else
-			{
-				ep->sendEnable = 0;
-				ep->session->closed( ep->session, ep );
-				goto rtsp_tcp_send_event_end;
-			}
-
-		}
-		if(len != send_len)
-		{
-			//os_printf("send len:%d\tconn->send_buf_len:%d\n",len,conn->send_buf_len);
-			offset += len;
-			send_len -= len;
-			if(send_len > 0)
-			{
-				goto again;
-			}
-		}
-
-		//os_printf("conn->send_buf_len:%d\tlen:%d\n",conn->send_buf_len,len);
-	}
-rtsp_tcp_send_event_end:
-	os_event_set(&conn->evt, RTSP_TCP_SEND_FINISH, NULL);
-} 
-int send_rtp_packet_more( struct rtp_endpoint *ep, unsigned char *sendbuf, int sendLen,int times )
-{
-	int res = -1;
-	if(ep->trans_type == RTP_TRANS_UDP)
-	{
-		res = fd_send_data(ep->trans.udp.rtp_fd,sendbuf,sendLen,times);
-		//有一次发送失败,则这张图片不完整,设置标志位,等待下一张图
-		if(res != 0)
+		ret = rtp_send_udp( ep->trans.udp.rtp_fd, v, count, retries > 0 ? retries : 10 );
+		if( ret < 0 ) 
 		{
 			ep->sendEnable = 0;
 		}
+		break;
+	case RTP_TRANS_INTER:
+		ret = rtp_send_tcp( ep, v, count );
+		break;
+	default:
+		ret = -1;
+		break;
 	}
-	else
+
+	if( ret < 0 ) 
 	{
-		if(ep->session->conn->fd > 0 && ep->session->conn->running)
-		{
-			ep->session->conn->sendbuf = sendbuf; //发送数据的buf
-			ep->session->conn->send_buf_len = sendLen; //发送数据的长度
-			//RTSP_TCP_SEND_FINISH
-			#if 0
-			eloop_add_alarm(os_jiffies(),EVENT_F_ENABLED,rtsp_tcp_send_event,(void*)ep);
-			os_event_wait(&ep->session->conn->evt, RTSP_TCP_SEND_FINISH, NULL, OS_EVENT_WMODE_CLEAR, -1);
-			#else
-			//需要可写
-			os_event_wait(&ep->session->conn->evt, RTSP_TCP_WRITE_MUTEX, NULL, OS_EVENT_WMODE_AND|OS_EVENT_WMODE_CLEAR, -1);
-			rtsp_tcp_send_event(NULL,(void*)ep);
-			os_event_set(&ep->session->conn->evt, RTSP_TCP_WRITE_MUTEX, NULL);
-			#endif
-		}
-		
-		//os_printf("%s:%d\n",__FUNCTION__,__LINE__);
-
+		return -1;
 	}
-
-	return 0;
-}
-
-//设置数据头部
-int set_send_rtp_packet_head( struct rtp_endpoint *ep, struct iovec *v, int count,unsigned int timestamp, int marker,unsigned char *send_buf )
-{
-	unsigned char rtphdr[12];
-	struct msghdr mh;
-	int i;
-	int total_len = 0;
-	/*int send_count = 0;*/
-
-	ep->last_timestamp = ( ep->start_timestamp + timestamp )& 0xFFFFFFFF;
-
-	/*
-	spook_log( SL_DEBUG, "RTP: payload %d, seq %u, time %u, marker %d",
-		ep->payload, ep->seqnum, ep->last_timestamp, marker );*/
-	if(ep->sendEnable)
-	{
-		rtphdr[0] = 2 << 6; /* version */
-		rtphdr[1] = ep->payload;
-		if( marker ) rtphdr[1] |= 0x80;
-		PUT_16( rtphdr + 2, ep->seqnum );
-		PUT_32( rtphdr + 4, ep->last_timestamp );
-		PUT_32( rtphdr + 8, ep->ssrc );
-
-		v[0].iov_base = rtphdr;
-		v[0].iov_len = 12;
-
-		memset( &mh, 0, sizeof( mh ) );
-		mh.msg_iov = v;
-		mh.msg_iovlen = count;	
-		total_len = set_send_data_head(send_buf,&mh);
-	}
-	for( i = 0; i < count; ++i ) ep->octet_count += v[i].iov_len;
+	
+	ep->octet_count += payload_len;
 	++ep->packet_count;
 	ep->seqnum = ( ep->seqnum + 1 ) & 0xFFFF;
-	return total_len;
+	return 0;
 }
-
-
-
-//获取需要发送数据buf头
-unsigned char * get_send_rtp_packet_head(struct iovec *v ,int count,char *sendtobuf)
-{
-	unsigned char rtphdr[12];
-	struct msghdr mh;
-	//无效
-	v[0].iov_base = rtphdr;
-	v[0].iov_len = 12;
-	memset( &mh, 0, sizeof( mh ) );
-	mh.msg_iov = v;
-	mh.msg_iovlen = count;	
-	return get_send_real_data(&mh,sendtobuf); //返回发送数据的buf地址
-}
-

@@ -4,6 +4,7 @@
 #include "lib/heap/av_psram_heap.h"
 #include "lib/multimedia/msi.h"
 #include "stream_define.h"
+#include "app/video_app/file_thumb.h"
 #include "app/recorder/file_process.h"
 
 void    *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int gop, int h265, int sampnum);
@@ -43,13 +44,14 @@ enum
 
 struct avi_encode_msi_s
 {
-    struct msi     *msi;
-    struct os_event evt;
+    struct msi          *msi;
+    struct os_event     evt;
     struct file_process file_process;
-    uint16_t        filter_type;
-    uint8_t         rec_time;
-    uint16_t        rec_second;
-    uint32_t        audio_encode;
+    uint8_t             filter_type;
+    uint8_t             rec_time;
+    uint16_t            rec_second;
+    uint32_t            file_size;
+    uint32_t            audio_encode;
 };
 
 static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, const char *avi_filename, uint32_t filesize)
@@ -150,12 +152,12 @@ static int avi_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             goto avi_encode_thread_end;
         }
 
-        if (os_jiffies() - last_syn_time > 1000)
+        if (fbtime - last_syn_time > 1000)
         {
             // avimuxer_sync(ctx);
-            last_syn_time = os_jiffies();
-            already_save_time++;
-            avi_encode->rec_second = already_save_time;
+            last_syn_time = fbtime;
+            already_save_time = fbtime - write_start_time;
+            avi_encode->rec_second = already_save_time / 1000;
             os_printf(KERN_INFO"sync:%d %d %d\n", already_save_time, count_fps, audio_fps);
         }
 
@@ -212,14 +214,14 @@ static void avi_encode_thread(void *d)
 
     while(msi)
     {
-        filesize = avi_encode->rec_time * MAX_SINGLE_AVI_SIZE;
+        filesize = avi_encode->rec_time * avi_encode->file_size;
         if(file_process->create_file)
         {
             fp = file_process->create_file(file_process, filename, filepath, filesize);
         }
         ret         = avi_encode_running(msi, avi_encode->rec_time * 60 * 1000, fp, filename, filesize);
         msi->enable = 0;
-        if(file_process->lock_file)
+        if(file_process->lock_file && ret != 2)
         {
             file_process->lock_file(filename, filepath);
         }
@@ -287,7 +289,7 @@ static int32_t avi_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
         {
             struct framebuff *fb = (struct framebuff *) param1;
 
-            if (fb->mtype == F_JPG && avi_encode->filter_type != (uint16_t) ~0)
+            if (fb->mtype == F_JPG && avi_encode->filter_type != (uint8_t) ~0)
             {
                 ret = RET_ERR;
                 if (avi_encode->filter_type == fb->stype)
@@ -311,13 +313,17 @@ static int32_t avi_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
         case MSI_CMD_MEDIA_CTRL:
         {
             uint32_t cmd_self = (uint32_t) param1;
+            uint32_t arg = (uint32_t) param2;
             switch(cmd_self)
             {
                 case MSI_MEDIA_CTRL_GET_RECTIME:
-                    *(uint32_t *) param2 = avi_encode->rec_second;
+                    *(uint32_t *) arg = avi_encode->rec_second;
                     break;
                 case MSI_MEDIA_CTRL_RECORD_START:
                     os_event_set(&avi_encode->evt, MSI_AVI_START, NULL);
+                    break;
+                case MSI_MEDIA_CTRL_SET_RECORD_SIZE:
+                    avi_encode->file_size = arg;
                     break;
             }
         }
@@ -326,18 +332,36 @@ static int32_t avi_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
     return ret;
 }
 
-struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint16_t filter_type, uint8_t rec_time, 
+struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time, 
                                 uint32_t audio_encode, struct file_process *file_process, uint8_t mode)
 {
+    uint8_t is_new = 0;
     struct avi_encode_msi_s *avi_encode = NULL;
-    struct msi              *msi        = msi_new(avi_msi_name, 64, NULL);
-    if (msi && !msi->priv)
+    struct msi              *msi        = msi_new(avi_msi_name, 64, &is_new);
+    (void) srcID;
+    (void) mode;
+    if (is_new)
     {
         avi_encode = (struct avi_encode_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct avi_encode_msi_s));
         ASSERT(avi_encode);
         avi_encode->filter_type  = filter_type;
         avi_encode->rec_time     = rec_time;
-        os_memcpy(&avi_encode->file_process, file_process, sizeof(struct file_process));
+        avi_encode->file_size    = MAX_SINGLE_AVI_SIZE;
+        if(file_process == NULL)
+        {
+            // 配置默认值
+            avi_encode->file_process.loop = NULL;
+            avi_encode->file_process.rec_path = REC_PATH;
+            avi_encode->file_process.ext_name = AVI_EXTENSION_NAME;
+            avi_encode->file_process.create_file = rec_create_file;
+            avi_encode->file_process.loop_free = rec_loop_free;
+            avi_encode->file_process.lock_file = NULL;
+        }
+        else
+        {
+            os_memcpy(&avi_encode->file_process, file_process, sizeof(struct file_process));
+        }
+        
         avi_encode->audio_encode = audio_encode;
         msi->priv                = avi_encode;
         os_event_init(&avi_encode->evt);
@@ -353,8 +377,8 @@ struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint16_t filter_type,
         {
             msi_destroy(msi);
             msi = NULL;
-            goto avi_encode_msi_init_end;
         }
+        goto avi_encode_msi_init_end;
     }
 
     void *avi_hdl = os_task_create("avi_encode", avi_encode_thread, msi, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 2048);

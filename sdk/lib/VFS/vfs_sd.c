@@ -32,7 +32,7 @@ static int init(blockdevice_t *device)
     {
         return BD_ERROR_OK;
     }
-    uint32_t err = sdhost_init(48*1000*1000, SDHC_SINGLE_CODE_SUPPORT_DIS);
+    uint32_t err = sdhost_init(48*1000*1000, 0);
     if (err != 0)
     {
         return BD_ERROR_DEVICE_ERROR;

@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2026 ChuangDian, Xu
+ *
+ * Author: ChuangDian, Xu <xcdanswer@gmail.com>
+ */
+
 #ifndef __NAND_CHIP_H__
 #define __NAND_CHIP_H__
 
@@ -92,5 +98,5 @@ int sn_erase(struct spi_nand *sn, uint32 blk);
 
 int sn_init(struct spi_nand *sn);
 
-int spi_nand_attach(struct spi_nand *sn);
+int spi_nand_init(struct nand_dev *nd);
 #endif

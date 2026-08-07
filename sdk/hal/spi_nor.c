@@ -32,26 +32,26 @@ int32 spi_nor_open(struct spi_nor_flash *flash)
 void spi_nor_close(struct spi_nor_flash *flash)
 {
     if (flash) {
-    ASSERT(flash->bus);
+        ASSERT(flash->bus);
 
-    if (atomic_dec_and_test(&flash->ref)) {
-        if (flash->bus->close) {
-            flash->bus->close(flash);
+        if (atomic_dec_and_test(&flash->ref)) {
+            if (flash->bus->close) {
+                flash->bus->close(flash);
+            }
+            spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
+            spi_close(flash->spidev);
         }
-        spi_set_cs(flash->spidev, flash->spi_config.cs, 1);
-        spi_close(flash->spidev);
     }
-}
 }
 
 void spi_nor_read(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 len)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->read(flash, addr, buf, len);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->read(flash, addr, buf, len);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_write(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 len)
@@ -86,122 +86,121 @@ void spi_nor_write(struct spi_nor_flash *flash, uint32 addr, uint8 *buf, uint32 
 void spi_nor_sector_erase(struct spi_nor_flash *flash, uint32 sector_addr)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->erase(flash, SPI_NOR_ERASE_SECTOR, sector_addr);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->erase(flash, SPI_NOR_ERASE_SECTOR, sector_addr);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_block_erase(struct spi_nor_flash *flash, uint32 block_addr)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->erase(flash, SPI_NOR_ERASE_BLOCK, block_addr);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->erase(flash, SPI_NOR_ERASE_BLOCK, block_addr);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_chip_erase(struct spi_nor_flash *flash)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->erase(flash, SPI_NOR_ERASE_CHIP, 0);
-    os_mutex_unlock(&flash->lock);
-  
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->erase(flash, SPI_NOR_ERASE_CHIP, 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_sec_erase(struct spi_nor_flash *flash, uint32 addr)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_SEC_ERASE, addr, 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_SEC_ERASE, addr, 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_sec_program(struct spi_nor_flash *flash, uint32 addr, struct spi_nor_regval *values)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_SEC_PROGRAM, addr, (uint32)values);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_SEC_PROGRAM, addr, (uint32)values);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_sec_read(struct spi_nor_flash *flash, uint32 addr, struct spi_nor_regval *values)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_SEC_READ, addr, (uint32)values);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_SEC_READ, addr, (uint32)values);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_custom_read(struct spi_nor_flash *flash, void *param)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_COSTUM_READ, (uint32)(param), 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_COSTUM_READ, (uint32)(param), 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_custom_write(struct spi_nor_flash *flash, void *param)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_COSTUM_WRITE, (uint32)(param), 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_COSTUM_WRITE, (uint32)(param), 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_custom_erase(struct spi_nor_flash *flash, void *param)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_COSTUM_ERASE, (uint32)(param), 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_COSTUM_ERASE, (uint32)(param), 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_power_down(struct spi_nor_flash *flash)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_POWER_DOWN, 0, 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_POWER_DOWN, 0, 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_power_up(struct spi_nor_flash *flash)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_POWER_UP, 0, 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_POWER_UP, 0, 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 void spi_nor_read_jedec_id(struct spi_nor_flash *flash, uint8 *buff)
 {
     if (flash) {
-    ASSERT(flash->bus);
-    os_mutex_lock(&flash->lock, osWaitForever);
-    flash->bus->ioctl(flash, SPI_NOR_CMD_READ_JEDEC_ID, (uint32)buff, 0);
-    os_mutex_unlock(&flash->lock);
-}
+        ASSERT(flash->bus);
+        os_mutex_lock(&flash->lock, osWaitForever);
+        flash->bus->ioctl(flash, SPI_NOR_CMD_READ_JEDEC_ID, (uint32)buff, 0);
+        os_mutex_unlock(&flash->lock);
+    }
 }
 
 __init int32 spi_nor_attach(struct spi_nor_flash *flash, uint32 dev_id)
@@ -212,12 +211,18 @@ __init int32 spi_nor_attach(struct spi_nor_flash *flash, uint32 dev_id)
         uint32_t addrl, uint32_t addru, struct bpreg_cfg *bp);    
     extern int xip_nor_flash_unbp_convert_tbl(struct spi_nor_flash *flash, 
         uint32_t addrl, uint32_t addru, struct bpreg_cfg *bp);
+    extern int xip_nor_flash_unbp_update(struct spi_nor_flash *flash, 
+    struct bpreg_cfg *bp, int size);
 
     ASSERT(flash->size && flash->sector_size);
     os_mutex_init(&flash->lock);
+    
+    if (flash->bits_of_addr == 0) {
+        flash->bits_of_addr = 24;
+    }
     flash->bus = spi_nor_bus_get(flash->mode);
     flash->bpi = &bp_info;
-    flash->bp_conv = xip_nor_flash_unbp_convert;
+    flash->bp_conv = NULL;//xip_nor_flash_unbp_convert;
 
     for (int i = 0;i<bp_info.area_cnt;i++)
     {
@@ -228,14 +233,20 @@ __init int32 spi_nor_attach(struct spi_nor_flash *flash, uint32 dev_id)
 
     spi_nor_open(flash);
     flash->bus->ioctl(flash, SPI_NOR_CMD_READ_JEDEC_ID, (uint32_t)id, 0);
-    spi_nor_close(flash);
-
     if ((id[0] | id[1] | id[2]) == 0 || ((id[0] & id[1] & id[2]) == 0xff)) {
         return -EIO;
     }
 
     flash->vendor_id  = id[0];
     flash->product_id = (id[1] << 8) | id[2];
+
+    if (flash->bp_conv) {
+        struct bpreg_cfg bp;
+        flash->bp_conv(flash, 0, flash->size, &bp);
+        xip_nor_flash_unbp_update(flash, &bp, 0);
+    }
+
+    spi_nor_close(flash);
     return dev_register(dev_id, (struct dev_obj *)flash);
 }
 

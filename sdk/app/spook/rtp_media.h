@@ -27,7 +27,7 @@ typedef int (*rtp_media_get_payload_func)( int payload, void *d );
 typedef int (*rtp_media_frame_func)( struct frame *f, void *d );
 typedef int (*rtp_media_send_func)( struct rtp_endpoint *ep, void *d );
 typedef void* (*rtp_loop_search_ep)( void *head,void *track,void **ep );
-typedef int (*rtp_media_send_more_func)( rtp_loop_search_ep search,void *ls, void *track, void *d,void *cache_buf,int len);	//track是live那边的结构体
+typedef int (*rtp_media_send_more_func)( rtp_loop_search_ep search,void *ls, void *track, void *d);	//track是live那边的结构体
 
 
 

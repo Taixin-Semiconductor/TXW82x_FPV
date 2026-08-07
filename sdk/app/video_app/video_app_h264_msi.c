@@ -13,11 +13,14 @@
 #include "lib/heap/av_psram_heap.h"
 #include "gen420_hardware_msi.h"
 #include "user_work/user_work.h"
+#include "hal/scale.h"
 
 extern uint32  get_h264_srcID(void *d);
 extern uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
 extern uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
 extern uint32  get_h264_w_h(void *d, uint16_t *w, uint16_t *h);
+extern uint8_t get_vpp_scale_w_h(uint16_t *w, uint16_t *h);
+extern void    set_vpp_scale_w_h(uint8_t en, uint16_t w, uint16_t h);
 #ifndef SAVE_COUNT
 #define SAVE_COUNT 4
 #endif
@@ -284,7 +287,7 @@ void h264_sps_gen_test(BitBuffer *buffer, uint16_t wrap_w, uint16_t wrap_h, uint
     }
     // byte align
     bit_buffer_append(buffer, 0x0001, 1, 1);
-    //bit_buffer_print_hex(buffer);
+    // bit_buffer_print_hex(buffer);
 }
 #endif
 enum video_app_h264_enum
@@ -739,6 +742,7 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint32_t drv1_w, uint32_
             h264_set_oe_select(video_h264->h264_dev, 0, 0);
             h264_enc(drv1_from, drv1_w, drv1_h, drv2_from, drv2_w, drv2_h);
             h264_open(video_h264->h264_dev);
+            h264_set_sw_ready(video_h264->h264_dev);
         }
         // 启动workqueue
         // 创建一个任务去做h264的工作
@@ -822,14 +826,17 @@ struct video_h264_msi_s
     struct h264_device *h264_dev;
     uint16_t            filter_type;
     uint16_t            sub_stream_en;
-    struct fbpool       tx_pool;
+
+    uint8_t       drv1_from;
+    uint8_t       drv2_from;
+    struct fbpool tx_pool;
 };
 
 #if VIDEO_YUV_RANGE_TYPE
 uint8_t h264_dec_sps_src_param(uint32 w, uint32 h, uint8_t *buf)
 {
     BitBuffer buffer;
-    //uint32    itk;
+    // uint32    itk;
     buffer.current_bit_pos = 0;
     h264_sps_gen_test(&buffer, w, h, 0);
     memcpy(buf, buffer.data, buffer.current_bit_pos / 8);
@@ -1092,6 +1099,24 @@ static int32_t h264_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1
             {
                 unregister_gen420_queue(GEN420_QUEUE_H264);
             }
+
+            uint8_t scale1 = 0;
+            // 把检查数据源是否为scale1,如果是scale1,同时把scale1一起关闭了
+            if (video_h264->drv1_from == SCALER_DATA)
+            {
+                scale1 = 1;
+            }
+
+            if (video_h264->drv2_from == SCALER_DATA)
+            {
+                scale1 = 1;
+            }
+            if (scale1)
+            {
+                struct scale_device *scale_dev = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
+                // 关闭scale1
+                scale_close(scale_dev);
+            }
         }
         break;
 
@@ -1127,7 +1152,7 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
     struct msi              *msi = msi_new(S_H264, 0, &isnew);
     struct video_h264_msi_s *video_h264;
 
-    if (isnew)
+    if (msi && isnew)
     {
         video_h264 = (struct video_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct video_h264_msi_s));
         ASSERT(video_h264);
@@ -1137,6 +1162,7 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
         video_h264->h264_dev = (struct h264_device *) dev_get(HG_H264_DEVID);
         if (video_h264->h264_dev)
         {
+
             if (drv1_from == GEN420_DATA || drv2_from == GEN420_DATA)
             {
                 extern int32_t h264_gen420_kick();
@@ -1166,7 +1192,6 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
                     }
                 }
             }
-
             // 自己适应w和h
             if (drv1_from == VPP_DATA0)
             {
@@ -1175,6 +1200,18 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
             else if (drv1_from == VPP_DATA1)
             {
                 get_vpp1_w_h(&drv1_w, &drv1_h);
+            }
+            else if (drv1_from == SCALER_DATA)
+            {
+                ret = get_vpp_scale_w_h(&drv1_w, &drv1_h);
+                if (!ret)
+                {
+                    set_vpp_scale_w_h(1, drv1_w, drv1_h);
+                }
+                else
+                {
+                    drv1_from = ~0;
+                }
             }
 
             if (drv2_from == VPP_DATA0)
@@ -1185,7 +1222,21 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
             {
                 get_vpp1_w_h(&drv2_w, &drv2_h);
             }
+            else if (drv2_from == SCALER_DATA)
+            {
+                ret = get_vpp_scale_w_h(&drv2_w, &drv2_h);
+                if (!ret)
+                {
+                    set_vpp_scale_w_h(1, drv2_w, drv2_h);
+                }
+                else
+                {
+                    drv2_from = ~0;
+                }
+            }
 
+            video_h264->drv1_from = drv1_from;
+            video_h264->drv2_from = drv2_from;
             h264_set_oe_select(video_h264->h264_dev, 0, 0);
             ret = h264_enc(drv1_from, drv1_w, drv1_h, drv2_from, drv2_w, drv2_h);
 
@@ -1202,6 +1253,81 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
             else
             {
                 h264_open(video_h264->h264_dev);
+                h264_set_sw_ready(video_h264->h264_dev);
+                msi->action     = h264_msi_action;
+                video_h264->msi = msi;
+                fbpool_init(&video_h264->tx_pool, MAX_VIDEO_APP_264);
+                os_event_init(&video_h264->evt);
+            }
+        }
+        // 启动workqueue
+        // 创建一个任务去做h264的工作
+        // OS_TASK_INIT("video_h264", &video_h264->task, h264_msi_thread, (void*)video_h264, OS_TASK_PRIORITY_ABOVE_NORMAL, NULL, 1024);
+        OS_WORK_INIT(&video_h264->work, h264_msi_work, 0);
+        os_run_work_delay(&video_h264->work, 1);
+    }
+h264_msi_init_with_mode_end:
+    return msi;
+}
+
+struct msi *h264_msi_init_with_timeLapse(uint32_t drv1_from, uint16_t drv1_w, uint16_t drv1_h, uint32_t timer)
+{
+    int                      ret   = 0;
+    uint8_t                  isnew = 0;
+    struct msi              *msi   = msi_new(S_H264, 0, &isnew);
+    struct video_h264_msi_s *video_h264;
+
+    if (msi && isnew)
+    {
+        video_h264 = (struct video_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct video_h264_msi_s));
+        ASSERT(video_h264);
+        msi->priv   = (void *) video_h264;
+        msi->enable = 1;
+
+        video_h264->h264_dev = (struct h264_device *) dev_get(HG_H264_DEVID);
+        if (video_h264->h264_dev)
+        {
+            // 自己适应w和h
+            if (drv1_from == VPP_DATA0)
+            {
+                get_vpp_w_h(&drv1_w, &drv1_h);
+            }
+            else if (drv1_from == VPP_DATA1)
+            {
+                get_vpp1_w_h(&drv1_w, &drv1_h);
+            }
+            else if (drv1_from == SCALER_DATA)
+            {
+                ret = get_vpp_scale_w_h(&drv1_w, &drv1_h);
+                if (!ret)
+                {
+                    set_vpp_scale_w_h(1, drv1_w, drv1_h);
+                }
+                else
+                {
+                    drv1_from = ~0;
+                }
+            }
+
+            video_h264->drv1_from = drv1_from;
+            video_h264->drv2_from = ~0;
+            h264_set_oe_select(video_h264->h264_dev, 0, 0);
+            ret = h264_enc_with_timeLapse(drv1_from, drv1_w, drv1_h, timer);
+
+            if (ret)
+            {
+                if (video_h264)
+                {
+                    STREAM_LIBC_FREE(video_h264);
+                }
+                msi_destroy(msi);
+                msi = NULL;
+                goto h264_msi_init_with_mode_end;
+            }
+            else
+            {
+                h264_open(video_h264->h264_dev);
+                h264_set_sw_ready(video_h264->h264_dev);
                 msi->action     = h264_msi_action;
                 video_h264->msi = msi;
                 fbpool_init(&video_h264->tx_pool, MAX_VIDEO_APP_264);
@@ -1225,7 +1351,7 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint16_t drv1_
     struct msi              *msi = msi_new(S_H264, 0, &isnew);
     struct video_h264_msi_s *video_h264;
 
-    if (isnew)
+    if (msi && isnew)
     {
         video_h264 = (struct video_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct video_h264_msi_s));
         ASSERT(video_h264);

@@ -8,6 +8,7 @@
 #include "lwip/api.h"
 #include "lwip/sockets.h"
 #include "lwip/etharp.h"
+#include "netif/ethernetif.h"
 #include "utlist.h"
 #include "jpgdef.h"
 #include "lib/lcd/lcd.h"
@@ -19,6 +20,9 @@
 #include "lib/multimedia/msi.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "lib/umac/ieee80211.h"
+#include "lib/video/h264/h264_drv.h"
+#include "scale_msi/scale_msi.h"
 
 #ifdef SYS_APP_WALKIE_TALKIE
 
@@ -36,6 +40,9 @@
 extern volatile uint8_t *psram_user_ptr;
 
 walkie_msg walkmsg;
+
+extern uint8_t set_vpp_bu1_shrink(uint16_t w, uint16_t shrink_w);
+extern int change_gen420dev_w_h(uint8_t devid,uint16_t w,uint16_t h);
 
 static int net_video_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 param2)
 {
@@ -73,24 +80,43 @@ in_addr_t send_addr = 0;
 uint8_t   apsta_mode = 0;   //1:ap   2:sta
 void h264_enc_dec_thread(){
 	uint8_t * ptr;
-	uint32_t fcnt;
+	uint32_t fcnt = 0;
 	uint8_t  oldspeed = 0;
 	uint16_t w,h;
 	uint8_t dropcnt = 0;
 	uint8_t runh264 = 1;
 	uint8_t make_h264 = 1;
-	ptr = psram_user_ptr;
+	ptr = (uint8_t *)psram_user_ptr;
 	uint32_t time_debug = 0;
 	uint32_t ipaddr;
 	int32 isstaconnect;
+
+	user_protocol_task_increase();
+
 	os_sleep_ms(100);
 	//must open SYS_WIFI_PAIR
 //	sys_wifi_pair_start(sys_cfgs.wifi_mode,1);     //run after pair init
 	w = 320;
 	h = 240;
 	while(1){
+
+		if(walkmsg.run_state == 0) {
+			user_protocol_task_decrease();
+			return;
+		}
+
 		if(ieee80211_conf_get_stacnt(WIFI_MODE_STA) == 1){
 			os_printf("STA mode connect\r\n");
+			do{
+				if(walkmsg.run_state == 0) {
+					user_protocol_task_decrease();
+					return;
+				}
+				if(sys_cfgs.wifi_mode == WIFI_MODE_AP)
+					break;
+				ipaddr = lwip_netif_get_ip2("w0").addr;
+				os_sleep_ms(100);
+			}while((ipaddr&0xff000000) == 0x1000000);		
 			apsta_mode = 2;
 			break;
 		}
@@ -108,7 +134,11 @@ void h264_enc_dec_thread(){
 	if(apsta_mode == 2)	       //STA
 	{
 		while(1){
-			ipaddr = lwip_netif_get_ip2("w0");		
+			if(walkmsg.run_state == 0) {
+				user_protocol_task_decrease();
+				return;
+			}
+			// ipaddr = lwip_netif_get_ip2("w0");		
 			isstaconnect = ieee80211_conf_get_stacnt(WIFI_MODE_STA);
 			
 			if(isstaconnect == 0){
@@ -124,7 +154,11 @@ void h264_enc_dec_thread(){
 	}
 	else{						//AP
 		while(1){
-			ipaddr = lwip_netif_get_ip2("w0");		
+			if(walkmsg.run_state == 0) {
+				user_protocol_task_decrease();
+				return;
+			}
+			// ipaddr = lwip_netif_get_ip2("w0");		
 			isstaconnect = ieee80211_conf_get_stacnt(WIFI_MODE_AP);
 			
 			if(isstaconnect == 0){
@@ -140,9 +174,14 @@ void h264_enc_dec_thread(){
 	}						
 	
 	while(1){
-		
+
+		if(walkmsg.run_state == 0) {
+			user_protocol_task_decrease();
+			return;
+		}
+
 		if(ptr != psram_user_ptr){
-			ptr = psram_user_ptr;
+			ptr = (uint8_t *)psram_user_ptr;
 			fcnt++;
 
 #if 0			
@@ -170,7 +209,7 @@ void h264_enc_dec_thread(){
 				h264_reflash_new_gop(1,1);
 				set_vpp_bu1_shrink(640,320);
 				change_gen420dev_w_h(1,320,240);
-				h264_recfg_bsp(1,200);
+				h264_recfg_bsp(1,200,200);
 				runh264 = 0;
 				dropcnt = 3;   
 				w = 320;
@@ -180,7 +219,7 @@ void h264_enc_dec_thread(){
 				h264_reflash_new_gop(1,1);
 				set_vpp_bu1_shrink(640,160);
 				change_gen420dev_w_h(1,160,120);
-				h264_recfg_bsp(1,50);
+				h264_recfg_bsp(1,50,50);
 				runh264 = 0;
 				dropcnt = 3;
 				w = 160;
@@ -199,7 +238,7 @@ void h264_enc_dec_thread(){
 					h264_reflash_new_gop(1,1);
 					set_vpp_bu1_shrink(640,320);
 					change_gen420dev_w_h(1,320,240);
-					h264_recfg_bsp(1,200);	
+					h264_recfg_bsp(1,200,200);	
 					h264_recfg_rate(1,25);
 					h264_recfg_frm_gop(1,25);
 					h264_recfg_ini_qp(1,26);
@@ -214,7 +253,7 @@ void h264_enc_dec_thread(){
 					h264_reflash_new_gop(1,1);
 					set_vpp_bu1_shrink(640,320);
 					change_gen420dev_w_h(1,320,240);
-					h264_recfg_bsp(1,150);	
+					h264_recfg_bsp(1,150,150);	
 					h264_recfg_rate(1,12);
 					h264_recfg_frm_gop(1,12);
 					h264_recfg_ini_qp(1,31);
@@ -229,7 +268,7 @@ void h264_enc_dec_thread(){
 					h264_reflash_new_gop(1,1);
 					set_vpp_bu1_shrink(640,160);
 					change_gen420dev_w_h(1,160,120);
-					h264_recfg_bsp(1,100);	
+					h264_recfg_bsp(1,100,100);	
 					h264_recfg_rate(1,12);
 					h264_recfg_frm_gop(1,12);
 					h264_recfg_ini_qp(1,31);
@@ -244,7 +283,7 @@ void h264_enc_dec_thread(){
 					h264_reflash_new_gop(1,1);
 					set_vpp_bu1_shrink(640,160);
 					change_gen420dev_w_h(1,160,120);
-					h264_recfg_bsp(1,50);	
+					h264_recfg_bsp(1,50,50);	
 					h264_recfg_rate(1,6);
 					h264_recfg_frm_gop(1,6);
 					h264_recfg_ini_qp(1,31);
@@ -272,7 +311,7 @@ void h264_enc_dec_thread(){
 			
 #endif
 			if(runh264 == 1){
-				put_h264msg_to_queue(0,w,h,ptr,0);
+				put_h264msg_to_queue(0,w,h,(uint32_t)ptr,0);
 			}
 			
 			
@@ -305,8 +344,30 @@ void walkie_msg_init(){
 	walkmsg.frame_rx_success = 0;
 }
 
+void user_protocol_task_state_init(void)
+{
+	walkmsg.run_state = 1;
+	walkmsg.run_task = 0;
+	os_mutex_init(&walkmsg.run_state_mutex);
+}
+
+void user_protocol_task_increase(void)
+{
+	os_mutex_lock(&walkmsg.run_state_mutex, osWaitForever);
+	walkmsg.run_task++;
+	os_mutex_unlock(&walkmsg.run_state_mutex);
+}
+
+void user_protocol_task_decrease(void)
+{
+	os_mutex_lock(&walkmsg.run_state_mutex, osWaitForever);
+	walkmsg.run_task--;
+	os_mutex_unlock(&walkmsg.run_state_mutex);
+}
+
 void user_protocol()
 {
+	walkmsg.have_init = 1;
 	struct msi *scale2 = scale2_msi("scale2", NET_W, NET_H, 320, 240, FSTYPE_YUV_P0, 10);
     if (scale2)
     {
@@ -315,8 +376,26 @@ void user_protocol()
 		//os_printf("%s  %d\r\n",__func__,__LINE__);
     }
 	walkie_msg_init();
-	scale2_output_size_local_change(0,0,0,0,160,120);
+	// scale2_output_size_local_change(0,0,0,0,160,120);
 	h264wq_queue_init(NET_W,NET_H);
+	user_protocol_task_state_init();
+	os_task_create("h264_enc_dec_thread", h264_enc_dec_thread, NULL, OS_TASK_PRIORITY_HIGH, 0, NULL, 1024);
+}
+
+
+void user_protocol_deinit(void)
+{
+	walkmsg.run_state = 0;
+	user_protocol2_deinit();
+	user_protocol3_deinit();
+}
+
+void user_protocol_reinit(void)
+{
+	if(walkmsg.have_init == 0) {
+		return user_protocol();
+	}
+	walkmsg.run_state = 1;
 	os_task_create("h264_enc_dec_thread", h264_enc_dec_thread, NULL, OS_TASK_PRIORITY_HIGH, 0, NULL, 1024);
 }
 

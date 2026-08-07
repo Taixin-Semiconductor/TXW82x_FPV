@@ -79,6 +79,7 @@ int32_t audio_code_pause(struct msi *msi);
 int32_t audio_code_clear(struct msi *msi);
 int32_t audio_code_add_output(struct msi *msi, const char *msi_name);
 int32_t audio_code_del_output(struct msi *msi, const char *msi_name);
+int32_t audio_code_direct_to_dac(struct msi *msi, uint32_t direct_to_dac);
 int32_t audio_code_get_status(struct msi *msi);
  
 #endif

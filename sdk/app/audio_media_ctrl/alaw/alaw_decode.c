@@ -126,6 +126,7 @@ alaw_decode_frame_end:
         }
 
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             goto alaw_decode_end;
         }
     }
@@ -255,6 +256,32 @@ static int32_t alaw_decode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t
                         ret = msi_add_output((struct msi*)param2, NULL, msi->name);
                         if(ret == RET_OK) {
                             alaw_decode_s->src_msi = (struct msi*)param2;
+                        }
+                        break;
+                    }
+                    case MSI_AUCODER_DIRECT_TO_DAC:
+                    {
+                        uint32_t direct_to_dac = param2;
+                        if(direct_to_dac && alaw_decode_s->direct_to_dac == 0) {
+                            alaw_decode_s->direct_to_dac = 1;
+                            if(alaw_decode_s->use_tpc == 0) {
+                                msi_add_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(alaw_decode_s->autpc_msi) {
+                                msi_add_output(alaw_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(alaw_decode_s->audio_track)));
+                        }
+                        else if(alaw_decode_s->direct_to_dac == 1) {
+                            alaw_decode_s->direct_to_dac = 0;
+                            if(alaw_decode_s->use_tpc == 0) {
+                                msi_del_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(alaw_decode_s->autpc_msi) {
+                                msi_del_output(alaw_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            alaw_decode_s->audio_track.priority &= 0x3F;
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(alaw_decode_s->audio_track)));
                         }
                         break;
                     }

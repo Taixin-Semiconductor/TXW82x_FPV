@@ -200,8 +200,8 @@ void sd_set_bus_width(struct sdh_device * host, uint32 width);
 void sd_set_sample(struct sdh_device *host, TYPE_LL_SDHC_SMP_CFG type, uint8 cmd_cmp, uint8 dat_cmp);
 void sd_delay_config(struct sdh_device *host, TYPE_LL_SDHC_DELAY_SYSCLK dly_cfg, uint8 chain);
 
-
-uint32 sd_init(struct sdh_device * host, uint32 clk, uint8 single_support);
+/* flags : TYPE_SDHC_INIT_FLAGS */
+uint32 sd_init(struct sdh_device * host, uint32 clk, uint32 flags);
 int emmc_init(struct sdh_device * host, uint32 clk);
 
 #ifdef __cplusplus

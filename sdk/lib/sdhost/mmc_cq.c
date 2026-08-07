@@ -98,8 +98,8 @@ int mmc_enqueue_task(struct sdh_device *host, uint32 lba, TASK_ARG arg)
     cmd45.arg = lba;
     cmd45.flags = RESP_R1 | CMD_AC;
 
-    err = host->cmd(host, &cmd44);
-    err |= host->cmd(host, &cmd45);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd44);
+    err |= ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd45);
     if(err) {
         printf("task enqueue fail\r\n");
     }
@@ -115,15 +115,15 @@ int mmc_rtask_exe(struct sdh_device *host, uint8 *buf, TASK_ARG arg)
     cmd46.arg = arg.w;
     cmd46.flags = RESP_R1 | CMD_ADTC;
 
-    err = host->cmd(host, &cmd46);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd46);
 
     host->data.blksize = SECTOR_SIZE;
     host->data.buf = buf;
     host->data.blks = arg.field.blks;
-    host->read(host, buf);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->read(host, buf);
 
-    if(host->complete) {
-        host->complete(host);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->complete) {
+        ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
     }
     return err;
 }
@@ -137,15 +137,15 @@ int mmc_wtask_exe(struct sdh_device *host, uint8 *buf, TASK_ARG arg)
     cmd47.arg = arg.w;
     cmd47.flags = RESP_R1 | CMD_ADTC;
 
-    err = host->cmd(host, &cmd47);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd47);
 
     host->data.blksize = SECTOR_SIZE;
     host->data.buf = buf;
     host->data.blks = arg.field.blks;
-    host->write(host, buf);
+    ((const struct sdhc_hal_ops *)host->dev.ops)->write(host, buf);
 
-    if(host->complete) {
-        host->complete(host);
+    if(((const struct sdhc_hal_ops *)host->dev.ops)->complete) {
+        ((const struct sdhc_hal_ops *)host->dev.ops)->complete(host);
     }
     return err;
 }
@@ -170,7 +170,7 @@ int mmc_send_qsr(struct sdh_device *host, uint32* qsr)
     cmd.cmd_code = SEND_STATUS;
     cmd.arg = host->rca << 16 | (1<<15);
     cmd.flags = RESP_R1 | CMD_AC;
-    err = host->cmd(host, &cmd);
+    err = ((const struct sdhc_hal_ops *)host->dev.ops)->cmd(host, &cmd);
     
     if (err)
         return err;

@@ -8,7 +8,7 @@
 
 
 #if DEV_SENSOR_GC1084
-#define SLAVE_MODE      1
+#define SLAVE_MODE      0
 
 SENSOR_INIT_SECTION const unsigned char GC1084InitTable[CMOS_INIT_LEN]=
 {
@@ -719,7 +719,7 @@ const _Sensor_ISP_Init gc1084_isp_init =
     .p_bv2nr      = (_Sensor_BV2NR  *)gc1084_bv2nr_init,
     .p_lsc        = (_Sensor_LSC    *)&gc1084_lsc_init,
 	.p_lhs        = (_Sensor_LHS    *)gc1084_lhs_map,
-    // .p_ygamma     = (_Sensor_YGAMMA *)gc1084_ygamma_tbl,
+	.p_ygamma     = (_Sensor_YGAMMA *)gc1084_ygamma_tbl,
 	.p_wdr        = (_Sensor_WDR    *)&gc1084_wdr_init,
     .img_opt      = (sensor_img_opt  )gc1084_img_opt,
     .fps_opt      = (sensor_fps_opt  )gc1084_fps_opt,

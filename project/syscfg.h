@@ -74,6 +74,6 @@ void syscfg_default(void);
 int32 wificfg_flush(uint8 ifidx);
 void syscfg_check(void);
 void syscfg_dump(void);
-
+void netcfg_flush(void);
 #endif
 

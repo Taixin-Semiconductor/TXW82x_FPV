@@ -81,7 +81,7 @@ static void usb_takephoto_thumb_init(const char *thumb_msi_name)
         msi_add_output(decode_msg_msi, NULL, decode_msi->name);
     }
 
-    struct msi *thumb_msi = usb_thumb_over_dpi_msi_init(thumb_msi_name, FSTYPE_NORMAL_THUMB_JPG, magic);
+    struct msi *thumb_msi = usb_thumb_over_dpi_msi_init(thumb_msi_name, FSTYPE_NORMAL_THUMB_JPG_USB, magic);
     if (thumb_msi)
     {
         // 处理原图,然后给到解码后生成缩略图
@@ -92,7 +92,7 @@ static void usb_takephoto_thumb_init(const char *thumb_msi_name)
     }
 
     // 启动一个专门用yuv->gen420->mjpg的模块,这个模块会接收mjpg图片,并且通过filter函数决定是否转发
-    struct msi *gen420_jpg_msi = gen420_jpg_msi_init(R_GEN420_THUMB_JPG_USB, JPGID0, FSTYPE_NORMAL_THUMB_JPG,JPG_LOCK_GEN420_THUBM_ENCODE, GEN420_QUEUE_THUMB_JPEG, NULL, filter);
+    struct msi *gen420_jpg_msi = gen420_jpg_msi_init(R_GEN420_THUMB_JPG_USB, JPGID0, FSTYPE_NORMAL_THUMB_JPG_USB, JPG_LOCK_GEN420_THUBM_ENCODE_USB, GEN420_QUEUE_THUMB_JPEG_USB, NULL, filter);
     if (gen420_jpg_msi && thumb_msi)
     {
         // 设置magic

@@ -80,17 +80,6 @@ static int rtsp_setup( struct session *s, int t )
 	{
 		if(ls->source->creat)
 		{
-			//为source申请cache_buf的空间
-			ls->source->cache_buf = (char *)os_malloc( ls->source->cache_buf_len+ls->source->head_len );
-			if( ! ls->source->cache_buf )
-			{
-				os_printf("rtsp source cache_buf malloc failed\n");
-				return -1;
-			}
-			else
-			{
-				os_printf("malloc rtsp source cache_buf:%X\n",ls->source->cache_buf);
-			}
 			ls->source->creat(ls->source,ls->path);
 		}
 	}
@@ -120,11 +109,11 @@ static void rtsp_play( struct session *s, double *start )
 	ls->playing = 1;
 	for( t = 0; t < MAX_TRACKS && ls->source->track[t].rtp; ++t )
 	{
-			//对应位置位,然后就线程会自动发送数据
-			struct rtsp_track *track = &ls->source->track[t];
-			track->ready = 1;
-			//clear_init_done(track->rtp->private);
-			if( s->ep[t] ) set_waiting( ls->source->track[t].stream, 1 );
+		//对应位置位,然后就线程会自动发送数据
+		struct rtsp_track *track = &ls->source->track[t];
+		track->ready = 1;
+		//clear_init_done(track->rtp->private);
+		if( s->ep[t] ) set_waiting( ls->source->track[t].stream, 1 );
 	}
 	if(ls->source->play)
 	{
@@ -162,9 +151,9 @@ static void rtsp_teardown( struct session *s, struct rtp_endpoint *ep )
 	_os_printf("%s:%d\n",__FUNCTION__,__LINE__);
 	struct rtsp_session *ls = (struct rtsp_session *)s->private;
 	//struct rtsp_source *source = ls->source;
-	int i, remaining = 0;
+	int remaining = 0;
 
-	for( i = 0; i < MAX_TRACKS && ls->source->track[i].rtp; ++i )
+	for( int i = 0; i < MAX_TRACKS && ls->source->track[i].rtp; ++i )
 	{
 		if( ! s->ep[i] ) continue;
 		if( ! ep || s->ep[i] == ep )
@@ -269,8 +258,6 @@ static void rtsp_common_send( struct frame *f, void *d )
 		return;
 	}
 
-
-
 	if(!track->ready)
 	{
 		return;
@@ -289,7 +276,7 @@ static void rtsp_common_send( struct frame *f, void *d )
 	{
 		ls = track->source->sess_list;
 		if(!ls->closed){
-			track->rtp->send_more( loop_search_ep,ls, track,track->rtp->private,track->source->cache_buf+track->source->head_len,track->source->cache_buf_len );
+			track->rtp->send_more( loop_search_ep,ls, track,track->rtp->private);
 		}
 		
 	}
@@ -335,13 +322,6 @@ static void rtsp_frame_end( struct frame *f, void *d ){
 				//因为所有的东西被释放,所以就要将线程和资源释放
 				if(source->release)
 				{
-					if(source->cache_buf)
-					{
-						os_printf("free rtsp source cache_buf:%X\n",source->cache_buf);
-						os_free(source->cache_buf);
-						source->cache_buf = NULL;
-						
-					}
 					source->release(source);
 				}
 				break;
@@ -361,7 +341,6 @@ void *rtsp_start_block(void)
 	source = (struct rtsp_source *)os_malloc( sizeof( struct rtsp_source ) );
 	//初始化source
 	memset(source,0,sizeof( struct rtsp_source ));
-	source->cache_buf_len = SPOOK_CACHE_BUF_LEN;
 	source->head_len = SPOOK_CACHE_BUF_HEAD_LEN;
 	//配置默认值
 	for( i = 0; i < MAX_TRACKS; ++i )

@@ -38,6 +38,8 @@ extern "C" {
 struct __audio_adc_ana_cfg {
     uint16 sample_rate;
     uint16 mic_type;
+	uint8  set_rfb;
+	uint8  set_rin;
 };
 
 struct __audio_dac_ana_cfg {

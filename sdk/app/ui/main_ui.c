@@ -81,6 +81,7 @@ lv_obj_t *main_ui(lv_obj_t *base_ui)
         case IPC_UI:
         break;
         case BBM_UI:
+			lv_obj_add_style(ui,&g_style,0);
         break;
         case CHILDREN_UI:
         break;

@@ -786,7 +786,7 @@ const FuncEntry func_table[] = {
         {"auto_jpg_run", auto_jpg_run}, // 硬件mjpeg启动,支持自动停止和切换到gen420去编码
 };
 
-void lcd_demo_thread(void *d)
+void lcd_demo_thread(int32_t d)
 {
     uint32_t demo = (uint32_t) d;
     os_printf("%s:%d\tdemo:%s\n", __FUNCTION__, __LINE__, func_table[demo].name);

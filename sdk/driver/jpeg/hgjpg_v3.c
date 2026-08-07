@@ -251,7 +251,7 @@ int32 hgjpg_open(struct jpg_device *p_jpg){
 
 	if(hw == (void *)MJPEG1_BASE){
 		jpg_chose = 1;
-		hw->CSR1 = 0;
+		//hw->CSR1 = 0;
 		uint32_t jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
 		(void)jpgr;
 	}
@@ -362,7 +362,7 @@ int32 hgjpg_close(struct jpg_device *p_jpg){
 
 		if(hw == (void *)MJPEG1_BASE){
 			jpg_chose = 1;
-			hw->CSR1 = 0;
+			//hw->CSR1 = 0;
 			uint32_t jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
 			(void)jpgr;
 		}
@@ -414,6 +414,28 @@ int32 hgjpg_resume(struct dev_obj *obj){
 	struct hgjpg_table_hw *thw  = (struct hgjpg_table_hw *)jpg_hw->thw;
 	struct hgjpg_huff_hw *hufhw  = (struct hgjpg_huff_hw *)jpg_hw->huf_hw;
 	//memcpy((uint8 *)jpg_hw->hw,(uint8 *)p_jpg->cfg_backup,sizeof(struct hgjpg_hw));	
+
+
+	//	SCHED->BW_STA_CYCLE = SYS_CLK;
+	SYSCTRL->CPU1_CON1 &= ~BIT(17);
+	//	SCHED->CTRL_CON 	 |=BIT(1);
+	SYSCTRL->SYS_CON8 |= BIT(8);	 //960M enable
+	SYSCTRL->SYS_CON14 &= ~(7<<29);
+	SYSCTRL->SYS_CON14 |= (6<<29);	 //mjpeg_pll2x_divnp5 div 3
+	SYSCTRL->SYS_CON14 |= BIT(28);	 //mjpeg_pll2x_divnp5 en
+	SYSCTRL->CLK_CON6 &= ~(3<<30);
+	SYSCTRL->CLK_CON6 |= (1<<30);	 //select mjpeg_pll2x_divnp5
+	SYSCTRL->CLK_CON6 &= (~(7<<0));    //mjpeg 1div
+	SYSCTRL->CPU1_CON0 |= BIT(0);
+	SYSCTRL->CLK_CON3 |= BIT(14);	 //mjpg0 clk en 
+	SYSCTRL->CLK_CON4 |= BIT(0);	//mjpg1 clk en
+	SYSCTRL->SYS_CON7 &= ~BIT(10);
+	SYSCTRL->SYS_CON7 |= BIT(10);	//JPG0
+	SYSCTRL->SYS_CON7 &= ~BIT(20);
+	SYSCTRL->SYS_CON7 |= BIT(20);	 //JPG1 
+	jpgr = *(volatile uint32_t*)0x40005200; 	//fix jpg reg error bug,imp
+
+
 	hw_cfg = (struct hgjpg_hw*)jpg_hw->cfg_backup;
 	jpg_table_init(hw,thw,hufhw,0x01);
 	hw->CSR0 	= hw_cfg->CSR0;
@@ -518,7 +540,8 @@ int32 hgjpg_decode(struct jpg_device *p_jpg,uint32 photo,uint32_t len){
 		len = len + 4;
 	}
 
-	if(len != 0){
+	//寄存器检查仅仅支持1M以下
+	if(len != 0 && len < 0x100000){
 		hw->DMA_DLEN = len;		//需要word对齐
 		hw->DMA_CON1 |= BIT(1);
 	}	
@@ -529,6 +552,7 @@ int32 hgjpg_decode(struct jpg_device *p_jpg,uint32 photo,uint32_t len){
 	hw->DMA_CON &= ~(0xf<<1);	
 	hw->DMA_CON |= BIT(4);	
 	hw->DMA_CON |= BIT(0);	
+	irq_enable(jpg_hw->irq_num);
 	return 0;
 }
 

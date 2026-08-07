@@ -168,6 +168,7 @@ aac_encode_frame_end:
         }
 
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             goto aac_encode_thread_end;
         }
     }

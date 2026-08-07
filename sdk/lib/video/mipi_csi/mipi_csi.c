@@ -543,11 +543,13 @@ static _Sensor_Adpt_ * sensorAutoCheck(uint8_t devid,uint8 *init_buf)
 
 static _Sensor_Adpt_ * sensor2AutoCheck(uint8_t devid,uint8 *init_buf)
 {
+#if MIPI_CSI_EN
 	uint8 i = 0;
+#endif
 	_Sensor_Adpt_ * devSensor_Struct=NULL;
 	//for(i=0;devSensorInitTable[i] != NULL;i++)
 	{		
-		#if 0
+		#if MIPI_CSI_EN
 		//mipi2_sensor_reset();
 		if(sensor2CheckId(devid,&gc1084_init2,&gc1084_cmd2)>=0)
 		{
@@ -913,13 +915,12 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 	struct mipi_csi_device *mipi_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI_CSI_DEVID);
 	struct mipi_csi_device *mipi1_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI1_CSI_DEVID);
 
-	#if DUAL_EN
-	gpio_set_mode(PC_14, GPIO_PULL_DOWN, GPIO_PULL_LEVEL_100K);
-	gpio_iomap_output(PC_14,GPIO_IOMAP_OUT_DUAL_ORG_FSYNC);
-	#endif
-	
+	if(dual_en)
+	{
+		gpio_set_mode(MACRO_PIN(PIN_MIPI_FSYNC), GPIO_PULL_DOWN, GPIO_PULL_LEVEL_100K);
+		gpio_iomap_output(MACRO_PIN(PIN_MIPI_FSYNC),GPIO_IOMAP_OUT_DUAL_ORG_FSYNC);
+	}
 	os_printf("mipi_csi_dev:%08x  mipi1_csi_dev:%08x\r\n",mipi_csi_dev,mipi1_csi_dev);
-
 	if(!init_en){
 		return 0;
 	}
@@ -989,7 +990,7 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 			os_printf("mipi csi1 unsupport\n");
 			return FALSE;
 		}
-
+		csi_data_lane_num = g_mipi_csi_priv.mipi_csi0_data_lane_num;
 		uint8_t mipi_csi1_iic = register_iic_queue(iic_dev,MACRO_PIN(PIN_MIPI1_IIC_CLK),MACRO_PIN(PIN_MIPI1_IIC_SDA),0);	
 		os_printf("set mipi sensor finish ,Auto Check sensor id\r\n");
 		p_sensor_cmd =  sensor2AutoCheck(mipi_csi1_iic,NULL);
@@ -1017,6 +1018,8 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 		mipi_csi_sensor_init(p_sensor_cmd, mipi_csi1_iic);
 	}
 
+
+	
     if (mipi_csi_check(csi_data_lane_num, csi_dev_id, p_sensor_cmd) != TRUE)
     {
         mipi_csi_debug_config(p_debug, csi_dev_id);
@@ -1054,6 +1057,18 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t no_us
 	return TRUE;
 }
 
+void mipi_csi_hardware_deconfig()
+{
+	struct mipi_csi_device *mipi_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI_CSI_DEVID);
+	struct mipi_csi_device *mipi1_csi_dev = (struct mipi_csi_device *)dev_get(HG_MIPI1_CSI_DEVID);
+	if(mipi_csi_dev){
+		mipi_csi_close(mipi_csi_dev);
+	}
+	if(mipi1_csi_dev){
+		mipi_csi_close(mipi1_csi_dev);
+	}
+	os_memset(&g_mipi_csi_priv, 0, sizeof(g_mipi_csi_priv));
+}
 
 void get_single_mipi(uint32_t csi_dev_id,uint16_t *w,uint16_t *h)
 {

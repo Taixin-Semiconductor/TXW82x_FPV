@@ -183,22 +183,36 @@ uint8_t flash_reg_opt_demo(void)
 	
     // os_mutex_lock(mutex, osWaitForever);
     spi_nor_open(flash);
+
+    //SR = 0
+    //buf[0] = 0;
+    //opt_param.buf = buf;
+    //opt_param.cmd = 0x1;
+    //opt_param.pre_cmd = 0x06; 
+    //opt_param.len = 1;
+    //spi_ioctl(flash->spidev, SPI_XIP_REG_OPT, (uint32)&opt_param, 0);
+
     //read flash status reg
     opt_param.buf = buf;
     opt_param.cmd = 0x5;
     opt_param.pre_cmd = 0xFF; 
     opt_param.len = 4;
     spi_ioctl(flash->spidev, SPI_XIP_REG_OPT, (uint32)&opt_param, 0);
+	os_printf("0x05 0x%x\r\n", buf[0]);
 
-    
-    //write flash status reg : write protect
-    buf[0] |= 0x1c;
     opt_param.buf = buf;
-    opt_param.cmd = 0x01;
-    opt_param.pre_cmd = 0x50; 
-    opt_param.len = 1;
+    opt_param.cmd = 0x35;
+    opt_param.pre_cmd = 0xFF; 
+    opt_param.len = 4;
     spi_ioctl(flash->spidev, SPI_XIP_REG_OPT, (uint32)&opt_param, 0);
+	os_printf("0x35 0x%x\r\n", buf[0]);
 
+    opt_param.buf = buf;
+    opt_param.cmd = 0x15;
+    opt_param.pre_cmd = 0xFF; 
+    opt_param.len = 4;
+    spi_ioctl(flash->spidev, SPI_XIP_REG_OPT, (uint32)&opt_param, 0);
+	os_printf("0x15 0x%x\r\n", buf[0]);
     spi_nor_close(flash);
     // os_mutex_unlock(mutex);
     return 0;

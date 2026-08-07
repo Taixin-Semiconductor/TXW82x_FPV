@@ -27,18 +27,35 @@ void aucode_mutex_init(void)
 void *aucode_stack_alloc(uint32_t size)
 {
     void *return_addr = NULL;
-aucode_stack_alloc_again:
-    return_addr = aucode_malloc(size);
-    if(return_addr == NULL) {
-        os_sleep_ms(10);
-        goto aucode_stack_alloc_again;
+	if((size%32)!=0) {
+		size = (size+32)/32*32;
+	}
+//	os_printf("%s %d %d %x\n",__FUNCTION__,g_aucode_manage->used_size,size,RETURN_ADDR());
+    if((g_aucode_manage->used_size+sizeof(uint32_t)+size)>g_aucode_manage->total_size) {
+        while(1) {
+            _os_printf("aucode_stack_alloc fail\n");
+            os_sleep_ms(1000);
+        }
     }
+    *((uint32_t*)(g_aucode_manage->stack_priv+g_aucode_manage->used_size+size)) = size;
+    return_addr = g_aucode_manage->stack_priv+g_aucode_manage->used_size;
+//	os_printf("%s %p %p\n",__FUNCTION__,return_addr,(g_aucode_manage->stack_priv+g_aucode_manage->used_size+size));
+    g_aucode_manage->used_size += (sizeof(uint32_t)+size);
     return return_addr;
 }
 
 void aucode_stack_free(void *ptr)
 {
-    aucode_free(ptr);
+    uint32_t last_size = *((uint32_t*)(g_aucode_manage->stack_priv+g_aucode_manage->used_size-4));
+//	os_printf("%s %p %p %d\n",__FUNCTION__,ptr,(g_aucode_manage->stack_priv+g_aucode_manage->used_size-4),last_size);
+    if(ptr != (g_aucode_manage->stack_priv+g_aucode_manage->used_size-last_size-4)) {
+        while(1) {
+            _os_printf("aucode_stack_free fail\n");
+            os_sleep_ms(1000);
+        }
+    }
+    g_aucode_manage->used_size -= (sizeof(uint32_t)+last_size);
+//	os_printf("%s %d\n",__FUNCTION__,g_aucode_manage->used_size);
 }
 
 AUCODE_HDL *audio_coder_open(uint32_t coder, uint32_t samplerate, uint32_t channel)
@@ -334,6 +351,19 @@ else
                 AUCODE_INFO("opus encoder open fail!\n");
                 goto audio_coder_open_err;                
             }
+            if(g_aucode_manage->stack_priv == NULL) {
+                g_aucode_manage->total_size = AUCODE_STACK_SIZE;
+                g_aucode_manage->used_size = 0;
+                g_aucode_manage->stack_priv = (int8_t*)aucode_malloc(sizeof(int8_t) * g_aucode_manage->total_size);
+                if(g_aucode_manage->stack_priv == NULL) {
+#if OPUS_ENC_CTRL == AUCODER_RUN_IN_CPU1
+                    g_aucode_manage->rpc_coder_num--;
+                    g_aucode_manage->rpc_aucode_s[g_aucode_manage->rpc_coder_num] = NULL;
+#endif
+                    goto audio_coder_open_err;
+                }  
+            }
+            g_aucode_manage->stack_used_num++;
             g_aucode_manage->coder_num++;
             aucode_hdl->coder = opus_enc;
             aucode_hdl->coder_type = OPUS_ENC;
@@ -363,6 +393,19 @@ else
                 AUCODE_INFO("opus decoder open fail!\n");
                 goto audio_coder_open_err;
             }
+            if(g_aucode_manage->stack_priv == NULL) {
+                g_aucode_manage->total_size = AUCODE_STACK_SIZE;
+                g_aucode_manage->used_size = 0;
+                g_aucode_manage->stack_priv = (int8_t*)aucode_malloc(sizeof(int8_t) * g_aucode_manage->total_size);
+                if(g_aucode_manage->stack_priv == NULL) {
+#if OPUS_DEC_CTRL == AUCODER_RUN_IN_CPU1
+                    g_aucode_manage->rpc_coder_num--;
+                    g_aucode_manage->rpc_aucode_s[g_aucode_manage->rpc_coder_num] = NULL;
+#endif
+                    goto audio_coder_open_err;
+                }  
+            }
+            g_aucode_manage->stack_used_num++;
             g_aucode_manage->coder_num++;
             aucode_hdl->coder = opus_dec;
             aucode_hdl->coder_type = OPUS_DEC;
@@ -377,6 +420,10 @@ else
     return aucode_hdl;
 audio_coder_open_err:
     if(g_aucode_manage) {
+        if(g_aucode_manage->stack_priv && (g_aucode_manage->stack_used_num == 0)) {
+           aucode_free(g_aucode_manage->stack_priv);
+           g_aucode_manage->stack_priv = NULL;
+        }
         if(g_aucode_manage->rpc_coder_num == 0) {
             if(g_aucode_manage->task_hdl) {
                 g_aucode_manage->state = coder_close;
@@ -422,7 +469,7 @@ int32_t audio_encoder_set_bitrate(AUCODE_HDL *aucode_hdl, uint32_t bitrate)
 int32_t audio_encode_data(AUCODE_HDL *aucode_hdl, int16_t *in_data, uint32_t samples, uint8_t *out_data)
 {
     int32_t encode_bytes = 0;
-    os_mutex_lock(&g_aucode_mutex, osWaitForever);
+    
     switch(aucode_hdl->coder_type) {
 #if AAC_ENC_CTRL
         case AAC_ENC:
@@ -430,7 +477,9 @@ int32_t audio_encode_data(AUCODE_HDL *aucode_hdl, int16_t *in_data, uint32_t sam
 #if AAC_ENC_CTRL == AUCODER_RUN_IN_CPU0
             encode_bytes = aac_encode_data(aucode_hdl->coder, in_data, samples, out_data);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_encode_data_rpc(aucode_hdl->coder, in_data, samples, out_data, &encode_bytes);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -441,7 +490,9 @@ int32_t audio_encode_data(AUCODE_HDL *aucode_hdl, int16_t *in_data, uint32_t sam
 #if ALAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
             encode_bytes = alaw_encode_data(aucode_hdl->coder, in_data, samples, out_data);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_encode_data_rpc(aucode_hdl->coder, in_data, samples, out_data, &encode_bytes);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -452,7 +503,9 @@ int32_t audio_encode_data(AUCODE_HDL *aucode_hdl, int16_t *in_data, uint32_t sam
 #if ALAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
             encode_bytes = ulaw_encode_data(aucode_hdl->coder, in_data, samples, out_data);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_encode_data_rpc(aucode_hdl->coder, in_data, samples, out_data, &encode_bytes);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -460,11 +513,13 @@ int32_t audio_encode_data(AUCODE_HDL *aucode_hdl, int16_t *in_data, uint32_t sam
 #if OPUS_ENC_CTRL
         case OPUS_ENC:
         {
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
 #if OPUS_ENC_CTRL == AUCODER_RUN_IN_CPU0
             encode_bytes = opus_encode_data(aucode_hdl->coder, in_data, samples, out_data);
 #else
             audio_encode_data_rpc(aucode_hdl->coder, in_data, samples, out_data, &encode_bytes);
 #endif
+            os_mutex_unlock(&g_aucode_mutex);
 	        break;
         }
 #endif
@@ -493,7 +548,7 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
     int32_t decode_samples = 0;
     float fade_init = 0.0001f;
     float fade_speed = 0.0001f;
-    os_mutex_lock(&g_aucode_mutex, osWaitForever);
+
     switch(aucode_hdl->coder_type) {
 #if AAC_DEC_CTRL
         case AAC_DEC:
@@ -501,7 +556,9 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
 #if AAC_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = aac_decode_data(aucode_hdl->coder, in_data, bytes, out_data, frame_info);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_decode_data_rpc(aucode_hdl->coder, in_data, bytes, out_data, frame_info, &decode_samples);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -512,7 +569,9 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
 #if AMRNB_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = amrnb_decode_data(aucode_hdl->coder, in_data, bytes, out_data, frame_info);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_decode_data_rpc(aucode_hdl->coder, in_data, bytes, out_data, frame_info, &decode_samples);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -523,7 +582,9 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
 #if AMRWB_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = amrwb_decode_data(aucode_hdl->coder, in_data, bytes, out_data, frame_info);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_decode_data_rpc(aucode_hdl->coder, in_data, bytes, out_data, frame_info, &decode_samples);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -541,7 +602,9 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
 #if ALAW_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = alaw_decode_data(aucode_hdl->coder, in_data, bytes, out_data, frame_info);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_decode_data_rpc(aucode_hdl->coder, in_data, bytes, out_data, frame_info, &decode_samples);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -552,7 +615,9 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
 #if ULAW_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = ulaw_decode_data(aucode_hdl->coder, in_data, bytes, out_data, frame_info);
 #else
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
             audio_decode_data_rpc(aucode_hdl->coder, in_data, bytes, out_data, frame_info, &decode_samples);
+            os_mutex_unlock(&g_aucode_mutex);
 #endif
             break;
         }
@@ -560,11 +625,13 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
 #if OPUS_DEC_CTRL
         case OPUS_DEC:
         {
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
 #if OPUS_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = opus_decode_data(aucode_hdl->coder, in_data, bytes, out_data, frame_info);
 #else
             audio_decode_data_rpc(aucode_hdl->coder, in_data, bytes, out_data, frame_info, &decode_samples);
 #endif
+            os_mutex_unlock(&g_aucode_mutex);
 	        break;
         }
 #endif
@@ -572,7 +639,6 @@ int32_t audio_decode_data(AUCODE_HDL *aucode_hdl, uint8_t *in_data, uint32_t byt
             AUCODE_INFO("audio decode data fail,unknow coder type!\r\n");
             break;
     }
-    os_mutex_unlock(&g_aucode_mutex);
     if(aucode_hdl->fade_type == 1) {
         fade_init = 0.0001f;
         fade_speed = 1.0f / decode_samples;
@@ -605,16 +671,17 @@ int32_t audio_decode_output_mute(AUCODE_HDL *aucode_hdl, int16_t *out_data)
 int32_t audio_decode_do_plc(AUCODE_HDL *aucode_hdl, int16_t *out_data)
 {
     int32_t decode_samples = 0;
-    os_mutex_lock(&g_aucode_mutex, osWaitForever);
     switch(aucode_hdl->coder_type) {
 #if OPUS_DEC_CTRL
         case OPUS_DEC:
         {
+            os_mutex_lock(&g_aucode_mutex, osWaitForever);
 #if OPUS_DEC_CTRL == AUCODER_RUN_IN_CPU0
             decode_samples = opus_decode_plc(aucode_hdl->coder, out_data, aucode_hdl->frame_nsamples);
 #else
             audio_decode_plc_rpc(aucode_hdl->coder, out_data, aucode_hdl->frame_nsamples, &decode_samples);
 #endif
+            os_mutex_unlock(&g_aucode_mutex);
             break;
         }
 #endif
@@ -622,7 +689,6 @@ int32_t audio_decode_do_plc(AUCODE_HDL *aucode_hdl, int16_t *out_data)
             AUCODE_INFO("audio decoder unsupport do plc!\r\n");
             break;
     }
-    os_mutex_unlock(&g_aucode_mutex);
     return decode_samples;
 }
 
@@ -657,7 +723,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if AAC_DEC_CTRL
         case AAC_DEC:
         {
-#if AAC_DEC_CTRL
+#if AAC_DEC_CTRL == AUCODER_RUN_IN_CPU0
             aac_decoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -670,7 +736,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if AMRNB_DEC_CTRL
         case AMRNB_DEC:
         {
-#if AMRNB_DEC_CTRL
+#if AMRNB_DEC_CTRL == AUCODER_RUN_IN_CPU0
             amrnb_decoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -683,7 +749,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if AMRWB_DEC_CTRL
         case AMRWB_DEC:
         {
-#if AMRWB_DEC_CTRL
+#if AMRWB_DEC_CTRL == AUCODER_RUN_IN_CPU0
             amrwb_decoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -704,7 +770,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if ALAW_ENC_CTRL
         case ALAW_ENC:
         {
-#if ALAW_ENC_CTRL
+#if ALAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
             alaw_encoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -717,7 +783,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if ALAW_DEC_CTRL
         case ALAW_DEC: 
         {
-#if ALAW_DEC_CTRL
+#if ALAW_DEC_CTRL == AUCODER_RUN_IN_CPU0
             alaw_decoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -730,7 +796,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if ULAW_ENC_CTRL
         case ULAW_ENC:  
         {
-#if ULAW_ENC_CTRL
+#if ULAW_ENC_CTRL == AUCODER_RUN_IN_CPU0
             ulaw_encoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -743,7 +809,7 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if ULAW_DEC_CTRL
         case ULAW_DEC:
         {
-#if ULAW_DEC_CTRL
+#if ULAW_DEC_CTRL == AUCODER_RUN_IN_CPU0
             ulaw_decoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
@@ -756,26 +822,28 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
 #if OPUS_ENC_CTRL
         case OPUS_ENC:
         {
-#if OPUS_ENC_CTRL
+#if OPUS_ENC_CTRL == AUCODER_RUN_IN_CPU0
             opus_encoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
             g_aucode_manage->rpc_coder_num--;
 #endif
             g_aucode_manage->coder_num--;
+            g_aucode_manage->stack_used_num--;
             break;
         }
 #endif
 #if OPUS_DEC_CTRL
         case OPUS_DEC:
         {
-#if OPUS_DEC_CTRL
+#if OPUS_DEC_CTRL == AUCODER_RUN_IN_CPU0
             opus_decoder_close(aucode_hdl->coder);
 #else
             audio_coder_close_rpc(aucode_hdl->coder);
             g_aucode_manage->rpc_coder_num--;
 #endif
             g_aucode_manage->coder_num--;
+            g_aucode_manage->stack_used_num--;
             break;
         }
 #endif
@@ -784,6 +852,10 @@ void audio_coder_close(AUCODE_HDL *aucode_hdl)
             break;
     }
     aucode_free(aucode_hdl);
+    if(g_aucode_manage->stack_priv && (g_aucode_manage->stack_used_num == 0)) {
+        aucode_free(g_aucode_manage->stack_priv);
+        g_aucode_manage->stack_priv = NULL;
+    }
     if(g_aucode_manage->rpc_coder_num == 0) {
         if(g_aucode_manage->task_hdl) {
             g_aucode_manage->state = coder_close;

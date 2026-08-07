@@ -107,6 +107,7 @@ enum CPU1_RPC_FUNCID {
     RPC_FUNC_ID(ieee80211_conf_set_pair_channel),
     RPC_FUNC_ID(ieee80211_conf_get_tx_mcs),
     RPC_FUNC_ID(ieee80211_conf_set_tx_mcs),
+    RPC_FUNC_ID(cpu1_new_task),
 
     /////////////////////////////////
     CPU1_RPC_FUNCID_NUM,

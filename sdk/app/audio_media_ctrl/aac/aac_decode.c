@@ -75,6 +75,7 @@ static void aac_file_decode(struct aac_decode_struct *s)
         }
 
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             goto aac_decode_end;
         }
         s->current_status = AUCODEC_RUN;
@@ -256,6 +257,7 @@ aac_decode_frame_end:
         }
 
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             goto aac_decode_end;
         }
     }    
@@ -288,6 +290,9 @@ static void aac_decode_thread(void *d)
         do {
             osal_fseek(s->aac_fp, 0);
             aac_file_decode(s);
+            if(s->current_status == AUCODEC_EXIT) {
+                break;
+            }
         }while(s->loop_mode);
     }
     else
@@ -391,6 +396,32 @@ static int32_t aac_decode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
                         ret = msi_add_output((struct msi*)param2, NULL, msi->name);
                         if(ret == RET_OK) {
                             aac_decode_s->src_msi = (struct msi*)param2;
+                        }
+                        break;
+                    }
+                    case MSI_AUCODER_DIRECT_TO_DAC:
+                    {
+                        uint32_t direct_to_dac = param2;
+                        if(direct_to_dac && aac_decode_s->direct_to_dac == 0) {
+                            aac_decode_s->direct_to_dac = 1;
+                            if(aac_decode_s->use_tpc == 0) {
+                                msi_add_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(aac_decode_s->autpc_msi) {
+                                msi_add_output(aac_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(aac_decode_s->audio_track)));
+                        }
+                        else if(aac_decode_s->direct_to_dac == 1) {
+                            aac_decode_s->direct_to_dac = 0;
+                            if(aac_decode_s->use_tpc == 0) {
+                                msi_del_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(aac_decode_s->autpc_msi) {
+                                msi_del_output(aac_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            aac_decode_s->audio_track.priority &= 0x3F;
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(aac_decode_s->audio_track)));
                         }
                         break;
                     }

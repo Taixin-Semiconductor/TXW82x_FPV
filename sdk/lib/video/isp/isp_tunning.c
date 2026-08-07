@@ -376,7 +376,7 @@ void isp_tunning_thread(void *dev)
                 break;
 
             case ISP_IOCTL_CMD_AE_LOCK_PARAM:
-                isp_ae_lock_param(p_dev->p_isp, p_dev->p_data[0], p_dev->p_data[1], p_dev->cmd_channel);
+                isp_ae_lock_param(p_dev->p_isp, p_dev->p_data[0], p_dev->p_data[1], p_dev->p_data[2], p_dev->cmd_channel);
                 break;
 
             case ISP_IOCTL_CMD_AE_REDUCE_FPS:
@@ -573,6 +573,7 @@ void isp_tunning_thread(void *dev)
                 break;
 
             case ISP_IOCTL_CMD_GET_Y_GAMMA:
+            case ISP_IOCTL_CMD_GET_SENSOR_YGAMMA:
             case ISP_IOCTL_CMD_GET_RGB_GAMMA:
             case ISP_IOCTL_CMD_GET_LSC:
             case ISP_IOCTL_CMD_DUMP_SRAM_PARAM:
@@ -617,6 +618,10 @@ void isp_tunning_thread(void *dev)
                     float value = *(float *)p_dev->p_data;
                     isp_sensor_fps_opt(p_dev->p_isp, value, p_dev->cmd_channel);
                 }
+                break;
+
+            case ISP_IOCTL_CMD_DYN_YGAMMA_OPT:
+                isp_dyn_gamma_param(p_dev->p_isp, p_dev->p_data[0], p_dev->p_data[1], p_dev->cmd_channel);
                 break;
 
             default:

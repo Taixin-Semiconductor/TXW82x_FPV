@@ -694,7 +694,15 @@ static int32 hgspi_v3_open(struct spi_device *p_spi, uint32 clk_freq, uint32 wor
     /* only master mode need config clk */
     if (work_mode_to_reg == 0) {
         /* set spi clk */
-        clk_div_cnt = peripheral_clock_get(HG_APB0_PT_SPI0) / 2 / clk_freq - 1;
+        int temp = 0;
+        if (SPI0_BASE == (uint32)hw) {
+            temp = HG_APB0_PT_SPI0;
+        } else if (SPI1_BASE == (uint32)hw) {
+            temp = HG_APB0_PT_SPI1;
+        } else if (SPI2_BASE == (uint32)hw) {
+            temp = HG_APB0_PT_SPI2;
+        }
+        clk_div_cnt = peripheral_clock_get(temp) / 2 / clk_freq - 1;
         ASSERT((clk_div_cnt >= 0) && (clk_div_cnt <= 65535));
         hw->TIMECON = (hw->TIMECON &~ (LL_SPI_TIMECON_BAUD(0xFFFF))) | LL_SPI_TIMECON_BAUD(clk_div_cnt);
     }

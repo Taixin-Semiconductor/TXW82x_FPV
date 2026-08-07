@@ -35,7 +35,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 	if(source->priv)
 	{	
 		r->live_node = &source->live_node;
-		r->video_msi = msi_find(AUTO_JPG,1);//jpg_concat_msi_init_start(JPGID0,1280, 720, NULL, VPP_DATA0,1);
+		r->video_msi = msi_find(AUTO_JPG, 1); //jpg_concat_msi_init_start(JPGID0,1280, 720, NULL, VPP_DATA0,1);
 		if(r->video_msi)
 		{
 			r->v_msi = rtsp_msi_init(R_RTP_JPEG,~0,0);
@@ -52,7 +52,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 			if(r->v_msi)
 			{
 				msi_add_output(r->video_msi, NULL, R_RTP_JPEG);
-				OS_TASK_INIT("live_rtsp", &source->handle, self_thread	, r, OS_TASK_PRIORITY_NORMAL, NULL,1024);
+				OS_TASK_INIT("live_rtsp_mjpeg", &source->handle, self_thread, r, OS_TASK_PRIORITY_NORMAL + 2, NULL, 1024);
 			}
 		}
 		//这里没有增加容错

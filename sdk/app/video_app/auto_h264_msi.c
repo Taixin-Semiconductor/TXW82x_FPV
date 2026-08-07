@@ -6,7 +6,7 @@
 #include "user_work/user_work.h"
 
 struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_t drv1_h, uint16_t drv2_from, uint16_t drv2_w, uint16_t drv2_h);
-
+struct msi *h264_msi_init_with_timeLapse(uint32_t drv1_from, uint16_t drv1_w, uint16_t drv1_h, uint32_t timer);
 // data申请空间函数
 #define STREAM_MALLOC av_psram_malloc
 #define STREAM_FREE   av_psram_free
@@ -22,10 +22,12 @@ struct auto_h264_msi_s
     struct os_work work;
     struct msi    *msi;
     struct msi    *register_h264_msi;
+    uint32_t       timeLapse_timer;
+    uint16_t       w0, w1, h0, h1;
     uint8_t        src_from0;
     uint8_t        src_from1;
-    uint8_t        stop;
-    uint16_t       w0, w1, h0, h1;
+    // mode: 0:默认  1:缩时录影模式,其他:默认模式
+    uint8_t        stop : 1, mode : 1, current_mode : 1;
 };
 
 static int32 auto_h264_work(struct os_work *work)
@@ -37,6 +39,14 @@ static int32 auto_h264_work(struct os_work *work)
     uint32_t                send_count    = msi_output_fb(auto_h264->msi, NULL);
     if (send_count)
     {
+        // 如果模式不一样,则将stop置位1,重新启动
+        uint8_t mode = auto_h264->mode;
+        if (mode != auto_h264->current_mode)
+        {
+            auto_h264->current_mode = mode;
+            auto_h264->stop         = 1;
+        }
+
         if (auto_h264->stop == 1)
         {
             // 启动h264
@@ -48,7 +58,15 @@ static int32 auto_h264_work(struct os_work *work)
             }
 
             // 尝试重新创建,如果创建失败,下一次再继续创建
-            auto_h264->register_h264_msi = h264_msi_init_with_mode(auto_h264->src_from0, auto_h264->w0, auto_h264->h0, auto_h264->src_from1, auto_h264->w1, auto_h264->h1);
+            if (auto_h264->current_mode == 1)
+            {
+                auto_h264->register_h264_msi = h264_msi_init_with_timeLapse(auto_h264->src_from0, auto_h264->w0, auto_h264->h0, auto_h264->timeLapse_timer);
+            }
+            else
+            {
+                auto_h264->register_h264_msi = h264_msi_init_with_mode(auto_h264->src_from0, auto_h264->w0, auto_h264->h0, auto_h264->src_from1, auto_h264->w1, auto_h264->h1);
+            }
+
             if (auto_h264->register_h264_msi)
             {
                 msi_add_output(auto_h264->register_h264_msi, NULL, auto_h264_msi->name);
@@ -116,6 +134,20 @@ static int32_t auto_h264_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
             }
         }
         break;
+        case MSI_CMD_AUTO_H264:
+        {
+            uint32_t cmd_self = (uint32_t) param1;
+            switch (cmd_self)
+            {
+                case MSI_AUTO_H264_MODE:
+                    auto_h264->mode = param2;
+                    break;
+                case MSI_AUTO_H264_TIMELAPSE_TIME:
+                    auto_h264->timeLapse_timer = param2;
+                    break;
+            }
+            break;
+        }
 
         default:
             break;
@@ -123,8 +155,8 @@ static int32_t auto_h264_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
     return ret;
 }
 
-//如果不使能,src_from0设置最大值,其他设置为0
-//src_from为VPP_DATA0或者VPP_DATA1,是支持自动设置w和h
+// 如果不使能,src_from0设置最大值,其他设置为0
+// src_from为VPP_DATA0或者VPP_DATA1,是支持自动设置w和h
 struct msi *auto_h264_msi_init(const char *auto_h264_name, uint8_t src_from0, uint16_t w0, uint16_t h0, uint8_t src_from1, uint16_t w1, uint16_t h1)
 {
     uint8_t                 isnew;
@@ -132,18 +164,19 @@ struct msi *auto_h264_msi_init(const char *auto_h264_name, uint8_t src_from0, ui
     struct auto_h264_msi_s *auto_h264 = (struct auto_h264_msi_s *) msi->priv;
     if (isnew)
     {
-        auto_h264            = (struct auto_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct auto_h264_msi_s));
-        msi->priv            = (void *) auto_h264;
-        msi->action          = auto_h264_msi_action;
-        auto_h264->msi       = msi;
-        auto_h264->stop      = 1;
-        auto_h264->src_from0 = src_from0;
-        auto_h264->src_from1 = src_from1;
-        auto_h264->w0        = w0;
-        auto_h264->w1        = w1;
-        auto_h264->h0        = h0;
-        auto_h264->h1        = h1;
-        msi->enable          = 1;
+        auto_h264                  = (struct auto_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct auto_h264_msi_s));
+        msi->priv                  = (void *) auto_h264;
+        msi->action                = auto_h264_msi_action;
+        auto_h264->msi             = msi;
+        auto_h264->stop            = 1;
+        auto_h264->src_from0       = src_from0;
+        auto_h264->src_from1       = src_from1;
+        auto_h264->w0              = w0;
+        auto_h264->w1              = w1;
+        auto_h264->h0              = h0;
+        auto_h264->h1              = h1;
+        auto_h264->timeLapse_timer = 1000;
+        msi->enable                = 1;
         // 启动workqueue
         OS_WORK_INIT(&auto_h264->work, auto_h264_work, 0);
         os_run_work(&auto_h264->work);

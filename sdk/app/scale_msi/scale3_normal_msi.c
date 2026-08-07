@@ -8,7 +8,7 @@
 #include "user_work/user_work.h"
 #include "scale3_normal_msi.h"
 
-extern int32_t takephoto_name_no_dir2(char *filename, int filename_size,struct timeval *t);
+extern int32_t takephoto_name_no_dir_time(char *filename, int filename_size,struct timeval *t);
 #define EXTERN_RB_COUNT 50
 
 uint32_t yuv_buf_line(uint8_t which);
@@ -276,7 +276,8 @@ static int32 scale3_normal_msi_work(struct os_work *work)
     struct framebuff           *fb         = NULL;
     struct framebuff           *e_fb       = NULL;
     struct takephoto_yuv_arg_s *arg        = NULL;
-    uint16_t                    ow, oh;
+    uint16_t                    ow = 0;
+	uint16_t                    oh = 0;
     uint32_t                    magic = 0;
     int32_t                     err   = -1;
     // 先去检查是否有需要生成额外的yuv数据没
@@ -319,7 +320,7 @@ static int32 scale3_normal_msi_work(struct os_work *work)
                 arg->yuv_arg.magic  = scale3->normal_cmd->magic;
                 arg->yuv_arg.type   = scale3->normal_cmd->force_type;
 
-                takephoto_name_no_dir2(arg->name, sizeof(arg->name), &scale3->normal_cmd->t);
+                takephoto_name_no_dir_time(arg->name, sizeof(arg->name), &scale3->normal_cmd->t);
                 scale3->extern_fb_ready = 0;
                 scale3->extern_fb       = e_fb;
 

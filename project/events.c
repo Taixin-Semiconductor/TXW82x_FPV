@@ -22,6 +22,9 @@
 extern int32 sys_wifi_event_hdl_wifi_pair(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2);
 extern int32 sys_wifi_event_hdl_pairled(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2);
 extern int32 sys_wifi_event_hdl_pairled(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2);
+extern int32 sys_wifi_event_hdl_walkietalkie(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2);
+extern void sys_event_hdl_wifi_pair(uint32 event_id, uint32 data, uint32 priv);
+extern void sys_event_hdl_walkie_talkie(uint32 event_id, uint32 data, uint32 priv);
 
 //更新 sys_status 信息
 static void sys_event_hdl_dhcp(uint32 event_id, uint32 data, uint32 priv)
@@ -33,12 +36,12 @@ static void sys_event_hdl_dhcp(uint32 event_id, uint32 data, uint32 priv)
                 lwip_netif_set_dhcp2("w0", 1);
                 os_printf(KERN_NOTICE"wifi connected, start dhcp client ...\r\n");
             }
-			if(sys_cfgs.wifi_mode == WIFI_MODE_STA) {
-				ieee80211_conf_get_ssid(sys_cfgs.wifi_mode, sys_cfgs.ssid);
-				ieee80211_conf_get_psk(sys_cfgs.wifi_mode, sys_cfgs.psk);
-				sys_cfgs.key_mgmt = ieee80211_conf_get_keymgmt(sys_cfgs.wifi_mode);
-				syscfg_save();				
-			}
+            if(sys_cfgs.wifi_mode == WIFI_MODE_STA) {
+                ieee80211_conf_get_ssid(sys_cfgs.wifi_mode, sys_cfgs.ssid);
+                ieee80211_conf_get_psk(sys_cfgs.wifi_mode, sys_cfgs.psk);
+                sys_cfgs.key_mgmt = ieee80211_conf_get_keymgmt(sys_cfgs.wifi_mode);
+                syscfg_save();
+            }
             break;
 
         case SYS_EVENT(SYS_EVENT_NETWORK, SYSEVT_LWIP_DHCPC_DONE): {
@@ -57,6 +60,32 @@ static void sys_event_hdl_dhcp(uint32 event_id, uint32 data, uint32 priv)
     }
 }
 
+void sys_event_hdl_lte(uint32 event_id, uint32 data, uint32 priv)
+{
+#if defined(RT_USBH_WIRELESS_RNDIS) && !defined(STATIC_RNDIS_NETDEV)
+    // 只在启用了RNDIS功能且是动态申请网口时才需要事件进行切换
+    switch (event_id) {
+        case SYS_EVENT(SYS_EVENT_LTE, SYSEVT_LTE_CONNECTED):
+            os_printf("lte connected\r\n");
+            if (sys_status.wifi_connected == 0) {
+                lwip_netif_set_default2("l0");
+                lwip_netif_set_dhcp2("l0", 1);
+                os_printf("start dhcp client on l0 ...\r\n");
+            }
+            break;
+        case SYS_EVENT(SYS_EVENT_WIFI, SYSEVT_WIFI_CONNECTTED):
+            lwip_netif_updown2("l0", 0);
+            lwip_netif_set_default2("w0");
+            os_printf("wifi connected, down lte netif ...\r\n");
+            break;
+        case SYS_EVENT(SYS_EVENT_WIFI, SYSEVT_WIFI_DISCONNECT):
+            lwip_netif_updown2("l0", 1);
+            lwip_netif_set_default2("l0");
+            os_printf("wifi disconnected, up lte netif ...\r\n");
+            break; 
+    }
+#endif
+}
 
 sysevt_hdl_res sys_event_hdl(uint32 event_id, uint32 data, uint32 priv)
 {
@@ -64,14 +93,21 @@ sysevt_hdl_res sys_event_hdl(uint32 event_id, uint32 data, uint32 priv)
     sys_event_hdl_wifi_pair(event_id, data, priv);
 #endif
 
+#ifdef SYS_APP_WALKIE_TALKIE
+    sys_event_hdl_walkie_talkie(event_id, data, priv);
+#endif
     /*
      * 继续添加其他模块的处理函数 ...
      * 一些小功能的事件处理没必要使用 sys_event_take，在此添加API调用即可。
      * 复杂功能的事件处理，可以使用 sys_event_take API 注册事件处理函数。
      * 使用 sys_event_take 注册，每次会消耗16byte heap memory
      */
+#if SYS_APP_BLENC
+    sys_event_ble_netconfig(event_id, data, priv);
+#endif
 
     sys_event_hdl_dhcp(event_id, data, priv);
+    sys_event_hdl_lte(event_id, data, priv);
 
     system_event_usbh_video_hdl(event_id, data, priv);
 
@@ -109,12 +145,6 @@ static int32 sys_wifi_event_hdl_default(uint8 ifidx, uint16 evt, uint32 param1, 
             sys_status.channel = param2;
             sys_cfgs.channel = param2;
             break;
-        case IEEE80211_EVENT_PAIR_SUCCESS:
-            if(WIFI_MODE_STA == ifidx)
-            {
-                ieee80211_pairing(sys_cfgs.wifi_mode, 0);
-            }  
-            break;
         default:
             break;
     }
@@ -137,6 +167,9 @@ int32 sys_wifi_event_cb(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2)
     ret |= sys_wifi_event_hdl_pairled(ifidx, evt, param1, param2);
 #endif
 
+#ifdef SYS_APP_WALKIE_TALKIE
+    ret |= sys_wifi_event_hdl_walkietalkie(ifidx, evt, param1, param2);
+#endif
     /*
      * 继续添加其他模块的处理函数 ...
      */

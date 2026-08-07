@@ -104,8 +104,10 @@ static void wave_decode(struct wave_decode_struct *s)
                 os_sleep_ms(1);
             }
         }
-        if(s->next_status == AUCODEC_EXIT)            
+        if(s->next_status == AUCODEC_EXIT) {   
+			s->current_status = AUCODEC_EXIT;        
             break;
+		}
         s->current_status = AUCODEC_RUN;
 		frame_buf = fbpool_get(&s->tx_pool, 0, s->msi);
 		if(frame_buf) {
@@ -205,6 +207,9 @@ static void wave_decode_thread(void *d)
 	do {
 		osal_fseek(s->wave_fp, sizeof(TYPE_WAVE_HEAD));
     	wave_decode(s);
+		if(s->current_status == AUCODEC_EXIT) {
+			break;
+		}
 	}while(s->loop_mode);
 
 	if(s->direct_to_dac) {
@@ -283,6 +288,32 @@ static int32_t wave_decode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t
                         ret = RET_OK;
 						break;
 					}
+                    case MSI_AUCODER_DIRECT_TO_DAC:
+                    {
+                        uint32_t direct_to_dac = param2;
+                        if(direct_to_dac && wave_decode_s->direct_to_dac == 0) {
+                            wave_decode_s->direct_to_dac = 1;
+                            if(wave_decode_s->use_tpc == 0) {
+                                msi_add_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(wave_decode_s->autpc_msi) {
+                                msi_add_output(wave_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(wave_decode_s->audio_track)));
+                        }
+                        else if(wave_decode_s->direct_to_dac == 1) {
+                            wave_decode_s->direct_to_dac = 0;
+                            if(wave_decode_s->use_tpc == 0) {
+                                msi_del_output(msi, NULL, "R_AUDAC");
+                            }
+                            else if(wave_decode_s->autpc_msi) {
+                                msi_del_output(wave_decode_s->autpc_msi, NULL, "R_AUDAC");
+                            }
+                            wave_decode_s->audio_track.priority &= 0x3F;
+                            msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TRACK,(uint32_t)(&(wave_decode_s->audio_track)));
+                        }
+						break;
+                    }
 					case MSI_AUCODER_DEINIT:
 					{
 						msi_destroy(msi);

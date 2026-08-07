@@ -240,7 +240,6 @@ __init static void sys_app_init(void)
 #ifdef SYS_APP_ISP_TUNNING
     sys_app_isp_tunning_init();
 #endif
-
 }
 
 __init static void usr_app_init(void)

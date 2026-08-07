@@ -44,7 +44,9 @@ union __comm_dat{
                 ana_power_adc_on    :1,
                 ana_power_dac_on    :1,
                 ana_rc_cali_ok      :1,
-                ana_driver_version  :2;
+                ana_driver_version  :2,
+                ana_rfb_level       :2,
+                ana_rin_level       :2;
     } comm_bits;
 };
 

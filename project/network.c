@@ -49,6 +49,14 @@ __init void sys_network_init(void)
 
     sys_network_add_netif(HG_WIFI0_DEVID, "w0", sys_cfgs.dhcpc_en, 1);
     lwip_netif_set_default2("w0");
+#if GMAC_EN
+    uint8_t mac[6];
+    sysctrl_efuse_mac_addr_calc(mac);
+    mac[5] |= 3;
+    netdev_set_macaddr((struct netdev *)dev_get(HG_GMAC_DEVID), mac);
+    sys_network_add_netif(HG_GMAC_DEVID, "e0", sys_cfgs.dhcpc_en, 1);
+    lwip_netif_set_default2("e0");
+#endif
 
     sys_status.dhcpc_result.ipaddr  = sys_cfgs.ipaddr;
     sys_status.dhcpc_result.netmask = sys_cfgs.netmask;
@@ -56,7 +64,7 @@ __init void sys_network_init(void)
 }
 
 //启动DHCP服务器
-__init void sys_dhcpd_start()
+void sys_dhcpd_start()
 {
     struct dhcpd_param param;
 

@@ -330,10 +330,8 @@ void spook_send_thread_stream(struct rtsp_priv *r)
 	int cnt_num = 0;
 	uint32_t time_for_count;
 	uint32_t time = 0;
-
 	time_for_count = os_jiffies();
-	uint8_t *scan_data;
-	//这里while用是否图传标志去判断
+
 	while(1) 
 	{
 		if(audio_rtsp) {
@@ -359,42 +357,24 @@ void spook_send_thread_stream(struct rtsp_priv *r)
 		}
 		if (fb)
 		{
-				//_os_printf(KERN_INFO"time:%d\n",fb->time);
-				jpeg = ex->jf;//ex->slave_cur->f;
-				//指针赋值
+				jpeg = ex->jf;
 				jpeg->get_f = (void*)fb;
 				jpeg->node_len = fb->len;
-				//主要是扫描用scan_buf
-				scan_data = (uint8_t*)fb->data;
 				jpeg->d = (uint8_t*)fb->data;
 				jpeg->first_length = fb->len;
-
-
+				jpeg->length = fb->len;
+				jpeg->timestamp = fb->time;
+				jpeg->format = FORMAT_JPEG;
+				
 				cnt_num++;
-
 				if((os_jiffies() - time_for_count) > 1000){
 						time_for_count = os_jiffies();
 						_os_printf(KERN_INFO"cnt_num:%d\r\n",cnt_num);
 						cnt_num = 0;
 				}
-				jpeg->length = fb->len;
 
-				
-
-				jpeg->format = FORMAT_JPEG;
-
-				jpeg->timestamp = fb->time;
-				//_os_printf("jpeg time:%d\n",jpeg->timestamp);
-				/*
-				* callback: get_back_frame( struct frame *f, void *d )
-				* d: (jpeg_encoder *)en
-				*/
-				//_os_printf("#####");
-				//_os_printf("ex:%X\tf:%X\n",ex,ex->f);
 				_os_printf("#");
-				//os_printf("ex->f:%X\n",ex->f);
 				ex->f( jpeg, ex->d );
-
 		}
 
 		if(fb)
@@ -403,7 +383,7 @@ void spook_send_thread_stream(struct rtsp_priv *r)
 			count_times++;
 			if(count_times>25)
 			{
-				_os_printf("time:%lld\n",os_jiffies()-time);
+				_os_printf("time:%lld\n", os_jiffies() - time);
 				count_times = 0;
 				time = os_jiffies();
 			}
@@ -425,7 +405,5 @@ void spook_send_thread_stream(struct rtsp_priv *r)
 		}
 
 		fb = NULL;
-
-
 	}
 }

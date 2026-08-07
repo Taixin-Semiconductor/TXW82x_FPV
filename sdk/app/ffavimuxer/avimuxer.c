@@ -24,6 +24,17 @@ static uint32_t avi_tell(F_FILE *fp)
     return osal_ftell(fp);
 }
 
+static void pre_avi_seek(F_FILE *fp, uint32_t offset)
+{
+    uint32_t filesize  = osal_fsize(fp);
+    if(filesize != offset)
+    {
+        osal_fseek(fp, offset);
+        osal_ftruncate(fp);
+        _os_printf("avi size: %d\n", osal_fsize(fp));
+    }
+}
+
 static uint32_t avi_seek(F_FILE *fp, int32_t offset, int seek_mode)
 {
     uint32_t fp_offset = 0;
@@ -272,7 +283,7 @@ void *avimuxer_init2(void *fp, uint32_t max_size, int w, int h, int frate, int g
     }
 
     //预先分配空间
-    avi_seek(avi->fp, max_size, SEEK_SET);
+    pre_avi_seek(avi->fp, max_size);
 
     //开始写入数据头
     avi_seek(avi->fp, 0, SEEK_SET);

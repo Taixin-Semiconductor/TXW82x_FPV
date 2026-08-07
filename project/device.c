@@ -57,7 +57,10 @@
 #include "dev/para_in/hgpara_in.h"
 #include "dev/sha/hgsha_v1.h"
 #include "dev/xspi/hg_xspi_psram.h"
-
+#include "lib/net/ethphy/eth_mdio_bus.h"
+#include "lib/net/ethphy/eth_phy.h"
+#include "lib/net/ethphy/phy/ip101g.h"
+#include "dev/emac/hg_gmac_eva_v2.h"
 
 
 #define DEV_SENSOR_MASTER_IIC_DEVID     (ISP_CSI0_ID)
@@ -326,6 +329,7 @@ struct hgspi_v3 spi2 = {
 struct hgspi_xip spi7 = {
     .hw      = QSPI_BASE,
     .ddr     = 0,
+    .xip     = 1,
 };
 
 struct hgcqspi cqspi = {
@@ -380,6 +384,8 @@ struct hg_audio_v0 auadc = {
     .hw       = AUDIO_BASE,
     .irq_num  = AUDIO_SUBSYS1_IRQn,
     .p_comm   = (void *)&auadc.comm_dat,
+    .comm_dat.comm_bits.ana_rfb_level = 0,  //set_rfb = (1 << ana_rfb_level)
+    .comm_dat.comm_bits.ana_rin_level = 1,  //set_rin = (1 << ana_rin_level)
 //    .comm_dat.comm_bits.ana_driver_version = 1,
     .dev_type = AUDIO_TYPE_AUADC,
 };
@@ -420,8 +426,27 @@ struct hgi2s_v0 i2s1 = {
 };
 
 struct hgsha_v1 sha = {
-	.hw = (void *)SHA_BASE,
-	.irq_num = SHA_IRQn,
+    .hw = (void *)SHA_BASE,
+    .irq_num = SHA_IRQn,
+};
+
+struct ethernet_mdio_bus mdio_bus0;
+
+struct ethernet_phy_device ethernet_phy0 = {
+    .addr = 0x01,
+    .drv  = &ip101g_driver,
+};
+
+struct hg_gmac_eva_v2 gmac = {
+    .hw            = GMAC_BASE,
+    .irq_num       = GMAC_IRQn,
+    .tx_buf_size   = 4 * 1024,
+    .rx_buf_size   = 8 * 1024,
+    .modbus_devid  = HG_ETH_MDIOBUS0_DEVID,
+    .phy_devid     = HG_ETHPHY0_DEVID,
+    .mdio_pin      = PB_6,
+    .mdc_pin       = PB_7,
+    .rgmii_en      = 0,
 };
 
 static void core_vdd_voltage()
@@ -450,6 +475,7 @@ void device_init(void)
     hgadc_v1_attach(HG_ADC0_DEVID, &adc0);
     hguart_v2_attach(HG_UART0_DEVID, &uart0);
     hguart_v2_attach(HG_UART1_DEVID, &uart1);
+	hguart_v4_attach(HG_UART4_DEVID, &uart4);
     hgtimer_v4_attach(HG_TIMER0_DEVID, &timer0);
     hgtimer_v4_attach(HG_TIMER1_DEVID, &timer1);
     hgtimer_v4_attach(HG_TIMER2_DEVID, &timer2);
@@ -503,8 +529,6 @@ void device_init(void)
 #if VPP_EN
     hgvpp_attach(HG_VPP_DEVID,&vpp);
 #endif
-    
-
 
 #if H264_EN
     hg264_attach(HG_H264_DEVID, &h264);
@@ -528,6 +552,12 @@ void device_init(void)
 hgpara_in_attach(HG_PARA_IN_DEVID, &para_in);
 #endif
 
+#if GMAC_EN
+    eth_mdio_bus_attach(HG_ETH_MDIOBUS0_DEVID, &mdio_bus0);
+    eth_phy_attach(HG_ETHPHY0_DEVID, &ethernet_phy0);
+    hg_gmac_v2_attach(HG_GMAC_DEVID, &gmac);
+#endif
+
     hgpwm_v0_attach(HG_PWM0_DEVID, &pwm);
 
     hgdual_attach(HG_DUALORG_DEVID,&dual);
@@ -544,12 +574,15 @@ hgpara_in_attach(HG_PARA_IN_DEVID, &para_in);
     hgspi_v3_attach(HG_SPI0_DEVID, &spi0);
 #endif
 
+    hgspi_v3_attach(HG_SPI1_DEVID, &spi1);  
+    hgspi_v3_attach(HG_SPI2_DEVID, &spi2);  
+
     hgspi_xip_attach(HG_SPI7_DEVID, &spi7);
 
     spi_nor_attach(&flash0, HG_FLASH0_DEVID);
     
 
-//  hgspi_v3_attach(HG_SPI1_DEVID, &spi1);  
+ 
     hgi2c_v1_attach(HG_I2C1_DEVID, &iic1);
 #if SD_MODE_TYPE != 3
     hgi2c_v1_attach(HG_I2C2_DEVID, &iic2);
@@ -561,7 +594,7 @@ hgpara_in_attach(HG_PARA_IN_DEVID, &para_in);
     hg_audio_v0_attach(HG_AUFADE_DEVID, &aufade);
 
     hgsha_v1_attach(HG_SHA_DEVID, &sha);
-	
+
     hg_m2m_dma_dev_attach(HG_M2MDMA_DEVID, &mem_dma);
 
     m2mdma = (struct dma_device *)&mem_dma;
@@ -603,7 +636,7 @@ void device_burst_set(void)
     ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_SDHOST1_WR, DMA2AHB_BURST_SIZE_256);
     ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_M2M2_RD, DMA2AHB_BURST_SIZE_256); 
 
-	//ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_SCALE3_Y_WR, DMA2AHB_BURST_SIZE_256);
+    //ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_SCALE3_Y_WR, DMA2AHB_BURST_SIZE_256);
     //ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_SCALE3_U_WR, DMA2AHB_BURST_SIZE_256);
     //ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_SCALE3_V_WR, DMA2AHB_BURST_SIZE_256);
     ll_sysctrl_dma2ahb_burst_set(DMA2AHB_BURST_CH_VPP_Y_WR, DMA2AHB_BURST_SIZE_256);

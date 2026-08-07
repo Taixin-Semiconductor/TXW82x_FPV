@@ -48,7 +48,7 @@ const uint16_t samples_table[4][4] = {
 	{0,1152,1152,384}			/*MPEG Version 1 {reserve,layerIII,layerII,layerI}*/
 };
 
-uint32_t get_curmp3_size(uint32_t s)
+uint32_t get_curmp3_size(CUR_MP3_INFO *cur_mp3_info, uint32_t s)
 {
     if(!cur_mp3_info) 
 		return 0;     
@@ -56,273 +56,273 @@ uint32_t get_curmp3_size(uint32_t s)
 	return cur_mp3_info->total_size;
 }
 
-void curmp3_info_init(uint8_t *mp3_filename)
+void curmp3_info_init(CUR_MP3_INFO **cur_mp3_info, uint8_t *mp3_filename)
 {
 #if MP3_SAVE_INFO
 	char dirname_len = strlen("0:mp3/");
 	char extension_len = strlen("mp3");
 	char filename_temp[50] = {0};
 #endif
-    if(!cur_mp3_info)
-        cur_mp3_info = (CUR_MP3_INFO*)MP3_DECODE_ZALLOC(sizeof(CUR_MP3_INFO)); 
+    if(!(*cur_mp3_info))
+        (*cur_mp3_info) = (CUR_MP3_INFO*)MP3_DECODE_ZALLOC(sizeof(CUR_MP3_INFO)); 
     else
-        os_memset(cur_mp3_info, 0, sizeof(cur_mp3_info)); 
+        os_memset((*cur_mp3_info), 0, sizeof(CUR_MP3_INFO)); 
 #if MP3_SAVE_INFO
 	os_memcpy(filename_temp, mp3_filename+dirname_len, strlen(mp3_filename)-dirname_len-extension_len);
 	filename_temp[strlen(mp3_filename)-dirname_len-extension_len] = '\0';
-	os_sprintf(cur_mp3_info->mp3_st_filename, "0:MP3_SEEK/%s%s", filename_temp, "st");
-	os_printf("mp3_st_filename:%s\n",cur_mp3_info->mp3_st_filename);
+	os_sprintf((*cur_mp3_info)->mp3_st_filename, "0:MP3_SEEK/%s%s", filename_temp, "st");
+	os_printf("mp3_st_filename:%s\n",(*cur_mp3_info)->mp3_st_filename);
 #endif
 }       
 
-void get_curmp3_totaltime_ergodic(void *fp, uint32_t first_frame_offset)
-{
+// void get_curmp3_totaltime_ergodic(void *fp, uint32_t first_frame_offset)
+// {
 	
-	uint8_t bitrate_index = 0;
-	uint8_t padding = 0;
-	uint8_t frame_head[4];
-	int32_t read_len = 0;
-	uint32_t bitrate = 0;
-	uint32_t frame_len = 0;
-	uint32_t offset = 0;
-	uint32_t current_seek = 0;
-	uint32_t read_frame_cnt = 0;
-	uint32_t read_second_cnt = 0;
+// 	uint8_t bitrate_index = 0;
+// 	uint8_t padding = 0;
+// 	uint8_t frame_head[4];
+// 	int32_t read_len = 0;
+// 	uint32_t bitrate = 0;
+// 	uint32_t frame_len = 0;
+// 	uint32_t offset = 0;
+// 	uint32_t current_seek = 0;
+// 	uint32_t read_frame_cnt = 0;
+// 	uint32_t read_second_cnt = 0;
 
-    if(!cur_mp3_info)
-		return;
+//     if(!cur_mp3_info)
+// 		return;
         
-	current_seek = osal_ftell(fp);
-	osal_fseek(fp, first_frame_offset);
-	osal_fread(frame_head, 1, 4, fp);
-	offset = first_frame_offset;
+// 	current_seek = osal_ftell(fp);
+// 	osal_fseek(fp, first_frame_offset);
+// 	osal_fread(frame_head, 1, 4, fp);
+// 	offset = first_frame_offset;
 
-	bitrate_index = (frame_head[2]>>4)&0xf;
-	bitrate = bitrate_table[cur_mp3_info->bitrate_table_index][bitrate_index];
-	padding = ((frame_head[2]>>1)&0x1) * cur_mp3_info->padding_mul;
-	frame_len = cur_mp3_info->samples/8*bitrate/cur_mp3_info->samplingrate + padding;
+// 	bitrate_index = (frame_head[2]>>4)&0xf;
+// 	bitrate = bitrate_table[cur_mp3_info->bitrate_table_index][bitrate_index];
+// 	padding = ((frame_head[2]>>1)&0x1) * cur_mp3_info->padding_mul;
+// 	frame_len = cur_mp3_info->samples/8*bitrate/cur_mp3_info->samplingrate + padding;
 
-	offset = first_frame_offset+4;
-	// printf("samples:%d samplingrate:%d bitrate:%d\n",cur_mp3_info->samples,cur_mp3_info->samplingrate,bitrate);
-	INIT_LIST_HEAD((struct list_head *)&cur_mp3_info->seek_table_head);
-	MP3_SEEK_TABLE *sub_seek_table = MP3_DECODE_ZALLOC(sizeof(MP3_SEEK_TABLE));
-	list_add_tail((struct list_head *)&sub_seek_table->sub_table_list,(struct list_head *)&cur_mp3_info->seek_table_head);
-	sub_seek_table->sub_table[0] = first_frame_offset;
-	while(1) {
-		osal_fseek(fp, offset+frame_len-4);
-		offset += frame_len;
-		read_len = osal_fread(frame_head, 1, 4, fp);
-		if(((cur_mp3_info->total_size-offset)==124) && (strncmp((const char*)frame_head, "TAG", 3)==0)) {   //ID3V1
-			break;
-		}
-		if(((frame_head[0]<<8) | (frame_head[1]&0xE0)) != 0xFFE0) {
-			break;
-		}
-		if((offset+frame_len-4) >= cur_mp3_info->total_size )  { //end
-			break;
-		}
-		cur_mp3_info->total_frame++;
-		bitrate_index = (frame_head[2]>>4)&0xf;
-		bitrate = bitrate_table[cur_mp3_info->bitrate_table_index][bitrate_index];			
-		padding = ((frame_head[2]>>1)&0x1) * cur_mp3_info->padding_mul;
-		frame_len = cur_mp3_info->samples/8*bitrate/cur_mp3_info->samplingrate + padding;
-		read_frame_cnt++;
-		if(read_frame_cnt >= (cur_mp3_info->one_second_frame)) {
-			read_second_cnt++;
-			if(read_second_cnt >= 100) {
-				sub_seek_table = (MP3_SEEK_TABLE*)MP3_DECODE_ZALLOC(sizeof(MP3_SEEK_TABLE));
-				list_add_tail((struct list_head *)&sub_seek_table->sub_table_list,(struct list_head *)&cur_mp3_info->seek_table_head);
-				read_second_cnt -= 100;
-			}
-			sub_seek_table->sub_table[read_second_cnt] = offset-4;
-			read_frame_cnt -= (cur_mp3_info->one_second_frame);
-		}	
-	}
-	cur_mp3_info->totaltime = cur_mp3_info->total_frame * cur_mp3_info->samples / cur_mp3_info->samplingrate;
-	cur_mp3_info->once_move_time = (cur_mp3_info->totaltime%100)?(cur_mp3_info->totaltime/100+1):(cur_mp3_info->totaltime/100);
-	MP3_INFO("total_frame:%d total_time:%d once_move_time:%d\n",cur_mp3_info->total_frame, cur_mp3_info->totaltime,cur_mp3_info->once_move_time);
-	cur_mp3_info->get_totaltime = 1;
-	osal_fseek(fp, current_seek);
-}
+// 	offset = first_frame_offset+4;
+// 	// printf("samples:%d samplingrate:%d bitrate:%d\n",cur_mp3_info->samples,cur_mp3_info->samplingrate,bitrate);
+// 	INIT_LIST_HEAD((struct list_head *)&cur_mp3_info->seek_table_head);
+// 	MP3_SEEK_TABLE *sub_seek_table = MP3_DECODE_ZALLOC(sizeof(MP3_SEEK_TABLE));
+// 	list_add_tail((struct list_head *)&sub_seek_table->sub_table_list,(struct list_head *)&cur_mp3_info->seek_table_head);
+// 	sub_seek_table->sub_table[0] = first_frame_offset;
+// 	while(1) {
+// 		osal_fseek(fp, offset+frame_len-4);
+// 		offset += frame_len;
+// 		read_len = osal_fread(frame_head, 1, 4, fp);
+// 		if(((cur_mp3_info->total_size-offset)==124) && (strncmp((const char*)frame_head, "TAG", 3)==0)) {   //ID3V1
+// 			break;
+// 		}
+// 		if(((frame_head[0]<<8) | (frame_head[1]&0xE0)) != 0xFFE0) {
+// 			break;
+// 		}
+// 		if((offset+frame_len-4) >= cur_mp3_info->total_size )  { //end
+// 			break;
+// 		}
+// 		cur_mp3_info->total_frame++;
+// 		bitrate_index = (frame_head[2]>>4)&0xf;
+// 		bitrate = bitrate_table[cur_mp3_info->bitrate_table_index][bitrate_index];			
+// 		padding = ((frame_head[2]>>1)&0x1) * cur_mp3_info->padding_mul;
+// 		frame_len = cur_mp3_info->samples/8*bitrate/cur_mp3_info->samplingrate + padding;
+// 		read_frame_cnt++;
+// 		if(read_frame_cnt >= (cur_mp3_info->one_second_frame)) {
+// 			read_second_cnt++;
+// 			if(read_second_cnt >= 100) {
+// 				sub_seek_table = (MP3_SEEK_TABLE*)MP3_DECODE_ZALLOC(sizeof(MP3_SEEK_TABLE));
+// 				list_add_tail((struct list_head *)&sub_seek_table->sub_table_list,(struct list_head *)&cur_mp3_info->seek_table_head);
+// 				read_second_cnt -= 100;
+// 			}
+// 			sub_seek_table->sub_table[read_second_cnt] = offset-4;
+// 			read_frame_cnt -= (cur_mp3_info->one_second_frame);
+// 		}	
+// 	}
+// 	cur_mp3_info->totaltime = cur_mp3_info->total_frame * cur_mp3_info->samples / cur_mp3_info->samplingrate;
+// 	cur_mp3_info->once_move_time = (cur_mp3_info->totaltime%100)?(cur_mp3_info->totaltime/100+1):(cur_mp3_info->totaltime/100);
+// 	MP3_INFO("total_frame:%d total_time:%d once_move_time:%d\n",cur_mp3_info->total_frame, cur_mp3_info->totaltime,cur_mp3_info->once_move_time);
+// 	cur_mp3_info->get_totaltime = 1;
+// 	osal_fseek(fp, current_seek);
+// }
 
-uint32_t get_mp3_seek(void)
-{
-    if(!cur_mp3_info)
-		return 0;
+// uint32_t get_mp3_seek(void)
+// {
+//     if(!cur_mp3_info)
+// 		return 0;
         
-	return cur_mp3_info->offset_seek;
-}
+// 	return cur_mp3_info->offset_seek;
+// }
 
-uint32_t get_curmp3_playtime(void)
-{
-    if(!cur_mp3_info)
-		return 0;
+// uint32_t get_curmp3_playtime(void)
+// {
+//     if(!cur_mp3_info)
+// 		return 0;
         
-    cur_mp3_info->playtime = cur_mp3_info->play_frame * cur_mp3_info->samples / cur_mp3_info->samplingrate;
-	// printf("record:%d %d\n",cur_mp3_info->playtime,cur_mp3_info->play_frame);
-	return cur_mp3_info->playtime;
-}
-uint32_t get_curmp3_playframe(void)
-{
-    if(!cur_mp3_info)
-		return 0;
+//     cur_mp3_info->playtime = cur_mp3_info->play_frame * cur_mp3_info->samples / cur_mp3_info->samplingrate;
+// 	// printf("record:%d %d\n",cur_mp3_info->playtime,cur_mp3_info->play_frame);
+// 	return cur_mp3_info->playtime;
+// }
+// uint32_t get_curmp3_playframe(void)
+// {
+//     if(!cur_mp3_info)
+// 		return 0;
         
-	cur_mp3_info->play_frame++;
-	return cur_mp3_info->play_frame;
-}
-void update_curmp3_playtime(uint32_t update_time)
-{
-    if(!cur_mp3_info)
-		return;
+// 	cur_mp3_info->play_frame++;
+// 	return cur_mp3_info->play_frame;
+// }
+// void update_curmp3_playtime(uint32_t update_time)
+// {
+//     if(!cur_mp3_info)
+// 		return;
 
-	cur_mp3_info->playtime = update_time;
-}
-void update_curmp3_playframe(uint32_t update_frame)
-{
-    if(!cur_mp3_info)
-		return;
+// 	cur_mp3_info->playtime = update_time;
+// }
+// void update_curmp3_playframe(uint32_t update_frame)
+// {
+//     if(!cur_mp3_info)
+// 		return;
 
-	cur_mp3_info->play_frame = update_frame;
-}
+// 	cur_mp3_info->play_frame = update_frame;
+// }
 
-void set_mp3_seek(int16_t move_time)
-{
-	uint8_t table_pos = 0;
-	uint32_t offset_seek = 0;
-	uint32_t target_time = 0;
-	uint32_t target_frame = 0;
-	uint32_t table_index = 0;
-	struct list_head *seek_table_list = NULL;
-	MP3_SEEK_TABLE *seek_table = NULL;
+// void set_mp3_seek(int16_t move_time)
+// {
+// 	uint8_t table_pos = 0;
+// 	uint32_t offset_seek = 0;
+// 	uint32_t target_time = 0;
+// 	uint32_t target_frame = 0;
+// 	uint32_t table_index = 0;
+// 	struct list_head *seek_table_list = NULL;
+// 	MP3_SEEK_TABLE *seek_table = NULL;
 	
-	target_time = ((cur_mp3_info->playtime + move_time)<0)?0:(cur_mp3_info->playtime + move_time);
-	target_time = (target_time>cur_mp3_info->totaltime)?cur_mp3_info->totaltime:target_time;
-	target_frame = cur_mp3_info->one_second_frame*target_time;
-	table_index = target_time/100;
-	table_pos = target_time%100;
-	seek_table_list = cur_mp3_info->seek_table_head.next;
-	while(table_index>0) {
-		seek_table_list = seek_table_list->next;
-		table_index--;
-	}
-	seek_table = list_entry((struct list_head *)seek_table_list,MP3_SEEK_TABLE,sub_table_list);
-	offset_seek =  seek_table->sub_table[table_pos];
-	osal_fseek(cur_mp3_info->mp3_fp,offset_seek);
-	update_curmp3_playtime(target_time);
-	update_curmp3_playframe(target_frame);
-    cur_mp3_info->offset_seek = offset_seek;
-    MP3_INFO("**file pos:%x time:%d frame:%d**\n",offset_seek,cur_mp3_info->playtime,cur_mp3_info->play_frame);
-}
-//
-//uint32_t key_seek_callback(struct key_callback_list_s *callback_list,uint32_t keyvalue,uint32_t extern_value)
-//{
-//	uint32 key_val = 0;
-//	
-//    if(!cur_mp3_info)
-//		return 0;
-//        
-//	if(((keyvalue>>8) != AD_A) && ((keyvalue>>8) != AD_B))
-//		return 0;  
-//    if(get_mp3_decode_status() == MP3_STOP) {
-//		_os_printf("mp3 stop\n");
-//        return 0;
-//	}
-//    key_val = (keyvalue & 0xff); 
-//    if((keyvalue>>8) == AD_A) {
-//        if(key_val == KEY_EVENT_DOWN) {
-//            os_sema_down(&seek_sema,5000);
-//			set_mp3_seek(-cur_mp3_info->once_move_time);
-//        }
-//        else if((key_val == KEY_EVENT_LDOWN) || (key_val == KEY_EVENT_REPEAT)) {
-//			set_mp3_seek(-cur_mp3_info->once_move_time);            
-//        }
-//        else if((key_val == KEY_EVENT_SUP) || (key_val == KEY_EVENT_LUP)) {
-//			cur_mp3_info->update_fops = 1;
-//            os_sema_up(&seek_sema);
-//        }        
-//    }
-//    else if((keyvalue>>8) == AD_B) {
-//        if(key_val == KEY_EVENT_DOWN) {			
-//            os_sema_down(&seek_sema,5000);
-//			set_mp3_seek(cur_mp3_info->once_move_time);           
-//        }
-//		else if((key_val == KEY_EVENT_LDOWN) || (key_val == KEY_EVENT_REPEAT)) {
-//			set_mp3_seek(cur_mp3_info->once_move_time);			
-//		}
-//        else if((key_val == KEY_EVENT_SUP) || (key_val == KEY_EVENT_LUP)) {
-//			cur_mp3_info->update_fops = 1;
-//            os_sema_up(&seek_sema);
-//        }        
-//    }
-//    return 1;
-//}
+// 	target_time = ((cur_mp3_info->playtime + move_time)<0)?0:(cur_mp3_info->playtime + move_time);
+// 	target_time = (target_time>cur_mp3_info->totaltime)?cur_mp3_info->totaltime:target_time;
+// 	target_frame = cur_mp3_info->one_second_frame*target_time;
+// 	table_index = target_time/100;
+// 	table_pos = target_time%100;
+// 	seek_table_list = cur_mp3_info->seek_table_head.next;
+// 	while(table_index>0) {
+// 		seek_table_list = seek_table_list->next;
+// 		table_index--;
+// 	}
+// 	seek_table = list_entry((struct list_head *)seek_table_list,MP3_SEEK_TABLE,sub_table_list);
+// 	offset_seek =  seek_table->sub_table[table_pos];
+// 	osal_fseek(cur_mp3_info->mp3_fp,offset_seek);
+// 	update_curmp3_playtime(target_time);
+// 	update_curmp3_playframe(target_frame);
+//     cur_mp3_info->offset_seek = offset_seek;
+//     MP3_INFO("**file pos:%x time:%d frame:%d**\n",offset_seek,cur_mp3_info->playtime,cur_mp3_info->play_frame);
+// }
+// //
+// //uint32_t key_seek_callback(struct key_callback_list_s *callback_list,uint32_t keyvalue,uint32_t extern_value)
+// //{
+// //	uint32 key_val = 0;
+// //	
+// //    if(!cur_mp3_info)
+// //		return 0;
+// //        
+// //	if(((keyvalue>>8) != AD_A) && ((keyvalue>>8) != AD_B))
+// //		return 0;  
+// //    if(get_mp3_decode_status() == MP3_STOP) {
+// //		_os_printf("mp3 stop\n");
+// //        return 0;
+// //	}
+// //    key_val = (keyvalue & 0xff); 
+// //    if((keyvalue>>8) == AD_A) {
+// //        if(key_val == KEY_EVENT_DOWN) {
+// //            os_sema_down(&seek_sema,5000);
+// //			set_mp3_seek(-cur_mp3_info->once_move_time);
+// //        }
+// //        else if((key_val == KEY_EVENT_LDOWN) || (key_val == KEY_EVENT_REPEAT)) {
+// //			set_mp3_seek(-cur_mp3_info->once_move_time);            
+// //        }
+// //        else if((key_val == KEY_EVENT_SUP) || (key_val == KEY_EVENT_LUP)) {
+// //			cur_mp3_info->update_fops = 1;
+// //            os_sema_up(&seek_sema);
+// //        }        
+// //    }
+// //    else if((keyvalue>>8) == AD_B) {
+// //        if(key_val == KEY_EVENT_DOWN) {			
+// //            os_sema_down(&seek_sema,5000);
+// //			set_mp3_seek(cur_mp3_info->once_move_time);           
+// //        }
+// //		else if((key_val == KEY_EVENT_LDOWN) || (key_val == KEY_EVENT_REPEAT)) {
+// //			set_mp3_seek(cur_mp3_info->once_move_time);			
+// //		}
+// //        else if((key_val == KEY_EVENT_SUP) || (key_val == KEY_EVENT_LUP)) {
+// //			cur_mp3_info->update_fops = 1;
+// //            os_sema_up(&seek_sema);
+// //        }        
+// //    }
+// //    return 1;
+// //}
 
-int32_t at_set_mp3_seek(const char *cmd, char *argv[], uint32_t argc)
-{
-	int32_t seek_time = 0;
-    uint32_t forward_time = 0;
+// int32_t at_set_mp3_seek(const char *cmd, char *argv[], uint32_t argc)
+// {
+// 	int32_t seek_time = 0;
+//     uint32_t forward_time = 0;
 	
-    if(!cur_mp3_info)
-        return 0;
-//    if(get_mp3_decode_status() == AUCODEC_EXIT) {
-//		MP3_INFO("mp3 stop\n");
-//        return 0;
-//	}	
-	if(argc < 1) {
-        MP3_INFO("%s %d,enter the seek\n",__FUNCTION__,argc);
-        return 0;
-    }
-	if(argv[0]) {
-		seek_time = os_atoi(argv[0]);
-		if(seek_time == 0)
-			return 1;
-		// forward_time = (seek_time<MAX_FORWARD_TIME)?seek_time:MAX_FORWARD_TIME;
-		forward_time = seek_time;
-		os_sema_down(&seek_sema,5000);
-		set_mp3_seek(forward_time);    
-		cur_mp3_info->update_fops = 1;
-		os_sema_up(&seek_sema);  		
-	}
-	return 0;
-}
+//     if(!cur_mp3_info)
+//         return 0;
+// //    if(get_mp3_decode_status() == AUCODEC_EXIT) {
+// //		MP3_INFO("mp3 stop\n");
+// //        return 0;
+// //	}	
+// 	if(argc < 1) {
+//         MP3_INFO("%s %d,enter the seek\n",__FUNCTION__,argc);
+//         return 0;
+//     }
+// 	if(argv[0]) {
+// 		seek_time = os_atoi(argv[0]);
+// 		if(seek_time == 0)
+// 			return 1;
+// 		// forward_time = (seek_time<MAX_FORWARD_TIME)?seek_time:MAX_FORWARD_TIME;
+// 		forward_time = seek_time;
+// 		os_sema_down(&seek_sema,5000);
+// 		set_mp3_seek(forward_time);    
+// 		cur_mp3_info->update_fops = 1;
+// 		os_sema_up(&seek_sema);  		
+// 	}
+// 	return 0;
+// }
 
-int seektable_check(CUR_MP3_INFO *mp3_info)
-{
-	int32_t ret = 0;
-	uint32_t read_buf[4] = {0};
-	uint32_t seek_table_len = 0;
-	uint32_t *cache_buf = NULL;
+// int seektable_check(CUR_MP3_INFO *mp3_info)
+// {
+// 	int32_t ret = 0;
+// 	uint32_t read_buf[4] = {0};
+// 	uint32_t seek_table_len = 0;
+// 	uint32_t *cache_buf = NULL;
 	
-	cache_buf = (uint32_t*)MP3_DECODE_ZALLOC(sizeof(uint32_t)*100);
-	if(!cache_buf)
-		goto seektable_check_end;
-	osal_fread(read_buf, 4, 4, mp3_info->mp3_st_fp);
-	if((read_buf[0]==mp3_info->total_size) && (read_buf[1]==mp3_info->first_frame_offset)
-	                                  && (read_buf[2]==mp3_info->normal_frame_offset)) {
-		mp3_info->total_frame = read_buf[3];
-		seek_table_len = osal_fsize(mp3_info->mp3_st_fp) - sizeof(read_buf);
-		INIT_LIST_HEAD((struct list_head *)&mp3_info->seek_table_head);
-		while(seek_table_len) {
-			MP3_SEEK_TABLE *sub_seek_table = MP3_DECODE_ZALLOC(sizeof(MP3_SEEK_TABLE));
-			list_add_tail((struct list_head *)&sub_seek_table->sub_table_list,(struct list_head *)&mp3_info->seek_table_head);
-			osal_fread((void*)cache_buf, 4, 100, mp3_info->mp3_st_fp);
-			os_memcpy(sub_seek_table->sub_table, cache_buf, sizeof(uint32_t)*100);
-			seek_table_len -= 100*4;
-		}
-		cur_mp3_info->totaltime = cur_mp3_info->total_frame * cur_mp3_info->samples / cur_mp3_info->samplingrate;
-		cur_mp3_info->once_move_time = (cur_mp3_info->totaltime%100)?(cur_mp3_info->totaltime/100+1):(cur_mp3_info->totaltime/100);
-		MP3_INFO("total_frame:%d total_time:%d once_move_time:%d\n",cur_mp3_info->total_frame, cur_mp3_info->totaltime,cur_mp3_info->once_move_time);
-		cur_mp3_info->get_totaltime = 1;
-		ret = 1;
-	}
-seektable_check_end:
-	if(cache_buf)
-		MP3_DECODE_FREE((void*)cache_buf);
-	osal_fclose(mp3_info->mp3_st_fp);
-	return ret;
-}
+// 	cache_buf = (uint32_t*)MP3_DECODE_ZALLOC(sizeof(uint32_t)*100);
+// 	if(!cache_buf)
+// 		goto seektable_check_end;
+// 	osal_fread(read_buf, 4, 4, mp3_info->mp3_st_fp);
+// 	if((read_buf[0]==mp3_info->total_size) && (read_buf[1]==mp3_info->first_frame_offset)
+// 	                                  && (read_buf[2]==mp3_info->normal_frame_offset)) {
+// 		mp3_info->total_frame = read_buf[3];
+// 		seek_table_len = osal_fsize(mp3_info->mp3_st_fp) - sizeof(read_buf);
+// 		INIT_LIST_HEAD((struct list_head *)&mp3_info->seek_table_head);
+// 		while(seek_table_len) {
+// 			MP3_SEEK_TABLE *sub_seek_table = MP3_DECODE_ZALLOC(sizeof(MP3_SEEK_TABLE));
+// 			list_add_tail((struct list_head *)&sub_seek_table->sub_table_list,(struct list_head *)&mp3_info->seek_table_head);
+// 			osal_fread((void*)cache_buf, 4, 100, mp3_info->mp3_st_fp);
+// 			os_memcpy(sub_seek_table->sub_table, cache_buf, sizeof(uint32_t)*100);
+// 			seek_table_len -= 100*4;
+// 		}
+// 		cur_mp3_info->totaltime = cur_mp3_info->total_frame * cur_mp3_info->samples / cur_mp3_info->samplingrate;
+// 		cur_mp3_info->once_move_time = (cur_mp3_info->totaltime%100)?(cur_mp3_info->totaltime/100+1):(cur_mp3_info->totaltime/100);
+// 		MP3_INFO("total_frame:%d total_time:%d once_move_time:%d\n",cur_mp3_info->total_frame, cur_mp3_info->totaltime,cur_mp3_info->once_move_time);
+// 		cur_mp3_info->get_totaltime = 1;
+// 		ret = 1;
+// 	}
+// seektable_check_end:
+// 	if(cache_buf)
+// 		MP3_DECODE_FREE((void*)cache_buf);
+// 	osal_fclose(mp3_info->mp3_st_fp);
+// 	return ret;
+// }
 
-void find_first_frame(void *fp)
+void find_first_frame(CUR_MP3_INFO *cur_mp3_info, void *fp)
 {
 	uint8_t mp3_head[512];
 	uint8_t bitrate_index = 0;
@@ -438,22 +438,21 @@ void find_first_frame(void *fp)
 #endif
 }
 
-uint32_t get_curmp3_songtime(uint32_t brate)
-{
-    if(!cur_mp3_info) {
-        return 0;
-	}
-	if(cur_mp3_info->get_totaltime == 1) {
-		return cur_mp3_info->totaltime;
-	}
-	return 0;
-}
+// uint32_t get_curmp3_songtime(uint32_t brate)
+// {
+//     if(!cur_mp3_info) {
+//         return 0;
+// 	}
+// 	if(cur_mp3_info->get_totaltime == 1) {
+// 		return cur_mp3_info->totaltime;
+// 	}
+// 	return 0;
+// }
 
-void clear_curmp3_info(void)
+void clear_curmp3_info(CUR_MP3_INFO *cur_mp3_info)
 {
     if(cur_mp3_info) {
         MP3_DECODE_FREE(cur_mp3_info);
-        cur_mp3_info = NULL;
     }
 #if MP3_SAVE_INFO
     if(key_seek_list) {

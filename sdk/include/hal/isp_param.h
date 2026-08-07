@@ -356,12 +356,14 @@ typedef struct
 }_Sensor_LSC;
 
 
-typedef struct
-{
-    
+typedef struct{
     float bv;                         
     uint32 packed_lut[LUT_SIZE]; 
 } _Sensor_YGAMMA;
+
+typedef struct {
+    _Sensor_YGAMMA local_ygamma_map[NUM_CURVES];
+}_Sensor_YGAMMA_MAP;
 
 
 typedef struct  {
@@ -407,7 +409,7 @@ struct hgisp_param_info {
     TYPE_HGISP_CFG_WDR       config_wdr;   
     ispcfg_malloc            malloc;
     ispcfg_free              free;
-    _Sensor_YGAMMA           *y_gamma;
+    _Sensor_YGAMMA_MAP       y_gamma;
     uint32                   *rgb_gamma;
     uint32                   *lsc_tbl;
 };

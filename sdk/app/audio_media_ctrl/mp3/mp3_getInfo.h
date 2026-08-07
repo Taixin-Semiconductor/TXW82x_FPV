@@ -35,13 +35,12 @@ typedef struct {
 
     struct list_head seek_table_head;
 }CUR_MP3_INFO;
-CUR_MP3_INFO *cur_mp3_info;
 
 struct os_semaphore seek_sema;
 
-uint32_t get_curmp3_size(uint32_t s);
-void curmp3_info_init(uint8_t *mp3_filename);
-void clear_curmp3_info(void);
-void find_first_frame(void *fp);
+uint32_t get_curmp3_size(CUR_MP3_INFO *cur_mp3_info, uint32_t s);
+void curmp3_info_init(CUR_MP3_INFO **cur_mp3_info, uint8_t *mp3_filename);
+void clear_curmp3_info(CUR_MP3_INFO *cur_mp3_info);
+void find_first_frame(CUR_MP3_INFO *cur_mp3_info, void *fp);
 
 #endif

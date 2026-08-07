@@ -120,6 +120,8 @@ const _Sensor_DPC name_dpc_init =
 
 const _Sensor_GAMMA_BV name_gamma_map = 
 {	
+	.adj_by_bv  = 1,
+	
 	.bv 		= { 15000,  8000,  3000, 1200,  600,  300, 200, 100, },
     .y_alpha 	= {	  255,   255,   255,  192,  160,  128,  64,  32, },
     .rgb_alpha 	= {   255,   255,   255,  192,  160,  128,  64,  32, },
@@ -522,6 +524,35 @@ void name_ae_adjust(struct isp_exposure_opt *p_cfg)
     p_cfg->cmd_len   = 2+1;
 }
 
+void name_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x00;
+    addr[index++] = 0x15;
+    addr[index++] = p_opt->reverse_en*2 + p_opt->mirror_en;
+
+    addr[index++] = 0x0d;
+    addr[index++] = 0x15;
+    addr[index++] = p_opt->reverse_en*2 + p_opt->mirror_en;
+    p_opt->data.size = index;
+    p_opt->cmd_len   = 2+1;
+}
+
+void name_fps_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr        = (uint8 *)p_opt->data.addr;
+    uint8  index        = 0;
+    addr[index++]       = 0x0d;
+    addr[index++]       = 0x41;
+    addr[index++]       = p_opt->curr_length >> 8;
+    addr[index++]       = 0x0d;
+    addr[index++]       = 0x42;
+    addr[index++]       = p_opt->curr_length & 0xff;
+    p_opt->data.size    = index;
+    p_opt->cmd_len      = 2+1;
+}
+
 const _Sensor_ISP_Init name_isp_init = 
 {
     .type         = ISP_INPUT_DAT_SRC_MIPI0,
@@ -546,6 +577,8 @@ const _Sensor_ISP_Init name_isp_init =
     .p_lhs        = (_Sensor_LHS    *)name_lhs_map,
     .p_ygamma     = (_Sensor_YGAMMA *)name_ygamma_tbl,
     .p_wdr        = (_Sensor_WDR    *)&name_wdr_init,
+    .img_opt      = (sensor_img_opt  )name_img_opt,
+    .fps_opt      = (sensor_fps_opt  )name_fps_opt,	
 };
 
 

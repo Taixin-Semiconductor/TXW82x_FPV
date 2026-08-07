@@ -394,6 +394,7 @@ typedef struct
 {
     uint32_t size;
     char     boxname[4];
+    uint32_t version : 8, flags : 24;
     uint16_t balance;
     uint16_t reserved;
 

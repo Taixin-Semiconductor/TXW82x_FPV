@@ -32,6 +32,17 @@ uint32_t mp4_tell(F_FILE *fp)
     return osal_ftell(fp);
 }
 
+static void pre_mp4_seek(F_FILE *fp, uint32_t offset)
+{
+    uint32_t filesize  = osal_fsize(fp);
+    if(filesize != offset)
+    {
+        osal_fseek(fp, offset);
+        osal_ftruncate(fp);
+        _os_printf("mp4 size: %d\n", osal_fsize(fp));
+    }
+}
+
 uint32_t mp4_seek(F_FILE *fp, int32_t offset, int seek_mode)
 {
     uint32_t fp_offset = 0;
@@ -675,6 +686,7 @@ uint32_t mp4_stss_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 uint32_t mp4_smhd_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 {
     mp4_smhd smhd;
+    memset(&smhd, 0, sizeof(smhd));
     smhd.size = BIG4_ENDIAN(sizeof(mp4_smhd));
     memcpy(smhd.boxname, "smhd", 4);
     smhd.balance  = BIG2_ENDIAN(0);
@@ -1265,7 +1277,7 @@ uint32_t write_h264_data(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint
         ret |= write_h264_nal(fp, msg, (uint8_t *) &nal_buf[4], size - 4, duration, 0);
         if (ret)
         {
-            ret |= (MP4_I_ERR << 16);
+            ret |= (MP4_P_ERR << 16);
         }
     }
     else if (nal_buf[4] == 0x65)
@@ -1273,7 +1285,7 @@ uint32_t write_h264_data(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint
         ret |= write_h264_nal(fp, msg, (uint8_t *) &nal_buf[4], size - 4, duration, 1);
         if (ret)
         {
-            ret |= (MP4_P_ERR << 16);
+            ret |= (MP4_I_ERR << 16);
         }
     }
     else
@@ -1338,7 +1350,7 @@ static uint32_t _MP4_init(F_FILE *fp,mp4_key_msg *msg)
 {
     if(msg->file_max_size)
     {
-        mp4_seek(fp,msg->file_max_size,SEEK_SET);
+        pre_mp4_seek(fp, msg->file_max_size);
     }
     mp4_seek(fp,0,SEEK_SET);
     mp4_func_stack offset_stack[20];

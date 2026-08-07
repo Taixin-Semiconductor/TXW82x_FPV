@@ -158,19 +158,28 @@ int32_t audio_file_record_stop(void)
     return RET_ERR;
 }
 
-void audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_time)
+int32_t audio_file_record_status(struct msi *msi)
+{
+    int32_t ret = RET_ERR;
+    if(audio_record_s && audio_record_s->is_running) {
+        msi_do_cmd(audio_record_s->msi, MSI_CMD_AUCODER, MSI_AUCODER_GET_STATUS, (uint32_t)(&ret));
+    }  
+    return ret;
+}
+
+int32_t audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_time)
 {
     uint8_t *file_extension = NULL;
 
     if(audio_record_s) {
         os_printf("%s err,already recording!\r\n", __FUNCTION__);
-        return;
+        return RET_ERR;
     }
     else {
         audio_record_s = (struct audio_record_struct *)av_zalloc(sizeof(struct audio_record_struct));
         if(!audio_record_s) {
             os_printf("malloc audio_record_s fail!\r\n");
-            return;
+            return RET_ERR;
         }
     }
     os_memset(audio_record_s->filename, 0, sizeof(audio_record_struct));
@@ -186,7 +195,7 @@ void audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_
             os_printf("Unsupported audio record format!\r\n");
 			av_free(audio_record_s);
 			audio_record_s = NULL;
-            return;
+            return RET_ERR;
         }
         os_memcpy(audio_record_s->filename, filename, os_strlen(filename));
     }
@@ -203,7 +212,7 @@ void audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_
     audio_record_s->record_time = record_time;
     audio_record_s->is_running = 1;
     os_task_create("audio_file_record_thread", audio_file_record_thread, audio_record_s, OS_TASK_PRIORITY_NORMAL, 0, NULL, 1024);
-    return;
+    return RET_OK;
 }
 
 int32_t audio_file_play_pause(struct msi *msi)
@@ -224,6 +233,13 @@ int32_t audio_file_play_stop(struct msi *msi)
 {
     int32_t ret = RET_ERR;
     ret = msi_do_cmd(msi, MSI_CMD_AUCODER, MSI_AUCODER_DEINIT, 0);
+    return ret;
+}
+
+int32_t audio_file_play_status(struct msi *msi)
+{
+    int32_t ret = RET_ERR;
+    msi_do_cmd(msi, MSI_CMD_AUCODER, MSI_AUCODER_GET_STATUS, (uint32_t)(&ret));
     return ret;
 }
 

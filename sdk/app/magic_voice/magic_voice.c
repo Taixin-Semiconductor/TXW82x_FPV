@@ -1,6 +1,4 @@
 #include "basic_include.h"
-#include "lib/multimedia/msi.h"
-#include "lib/multimedia/framebuff.h"
 #include "autpc_msi.h"
 #include "magic_voice.h"
 
@@ -8,16 +6,6 @@
 #define MAX_MAGIC_VOICE_TXBUF    1
 
 #define SETW32TOW16(a)           (a>32767)?32767:(a<-32768)?-32768:a   
-
-typedef struct {
-    struct msi *msi;
-    struct msi *autpc_msi;
-    struct fbpool tx_pool;
-    int16_t *buf;
-    uint8_t new_type;
-    uint8_t current_type;
-    uint32_t table_index;
-}magic_voice_struct;
 
 static const uint8_t delaySamples_table[500] = {
 	0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,0x15,

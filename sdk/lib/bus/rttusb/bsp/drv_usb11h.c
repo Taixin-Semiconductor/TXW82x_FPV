@@ -42,7 +42,9 @@ static volatile rt_uint32_t usbh_flag = 0;
 
 static rt_uint32_t hg_usbh_irq_hdl(rt_uint32_t irq, rt_uint32_t param1, rt_uint32_t param2, rt_uint32_t param3)
 {
+#if defined(RT_USBH_UVC) || defined(RT_USBH_UAC)
     struct hgusb11_host *p_dev = (struct hgusb11_host *)dev_get(HG_USB11HOST_DEVID);
+#endif
     usb_core_instance *core = (usb_core_instance *)param1;
     rt_uint32_t usb_ep = param2 & 0xF;
 

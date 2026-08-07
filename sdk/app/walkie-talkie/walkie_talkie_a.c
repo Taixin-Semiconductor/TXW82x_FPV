@@ -31,6 +31,8 @@
 #include "lib/multimedia/msi.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "lib/video/h264/h264_drv.h"
+#include "scale_msi/scale_msi.h"
 
 #ifdef SYS_APP_WALKIE_TALKIE
 
@@ -83,17 +85,12 @@ void net_s_h264_sema_init()
 	os_msgq_init(&net_h264_msg,1);
 }
 
-uint32 net_s_h264_sema_down(int32 tmo_ms)
+uint32 net_s_h264_sema_down(int32 tmo_ms, int32 *err)
 {
-	uint32 retval;
 	uint32 retdata;
 	//os_sema_down(&net_h264_sem,tmo_ms);	
-	retdata = os_msgq_get2(&net_h264_msg, tmo_ms, (int32*)&retval);
-	if(retval == 0){
-		return retdata;
-	}else{
-		return retval;
-	}
+	retdata = os_msgq_get2(&net_h264_msg, tmo_ms, err);
+	return retdata;
 }
 
 void net_s_h264_sema_up(uint32 clientaddr)
@@ -101,9 +98,17 @@ void net_s_h264_sema_up(uint32 clientaddr)
 	os_msgq_put(&net_h264_msg, clientaddr, osWaitForever);
 }
 
+void net_s_h264_sema_deinit(void)
+{
+	if(net_h264_msg.hdl) {
+		os_msgq_del(&net_h264_msg);
+	}
+}
+
 int usr_protocol_create_server(uint16_t port)
 {
 	int socket_c, err;
+	int32_t time_out = 10;
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
 	addr.sin_len = sizeof(struct sockaddr_in);
@@ -125,6 +130,9 @@ int usr_protocol_create_server(uint16_t port)
 		return  - 1;
 
 	}	
+
+	setsockopt(socket_c, SOL_SOCKET, SO_RCVTIMEO, &time_out, sizeof(int32_t));
+
 	return socket_c;
 }
 
@@ -163,6 +171,8 @@ static void udp_handle_server_status_read_workqueue(void *ei, uint32_t *status_f
 	msg_head = (status_msg *)handlebuf;
 	retval = 16;
 	ret = recvfrom (*status_fd, handlebuf, 24, 0, &remote_addr, (socklen_t*)&retval);
+	if(ret <= 0) 
+		return;
 
 	addrServer = (struct sockaddr_in *)&remote_addr;
 
@@ -172,7 +182,7 @@ static void udp_handle_server_status_read_workqueue(void *ei, uint32_t *status_f
 //		}
 //	}
 	id = 1;
-	if((id == 0)&&(id > 3)) 				   //当前设备号不存在,先只支持三台设备
+	if((id == 0)||(id > 3)) 				   //当前设备号不存在,先只支持三台设备
 	{
 		CHILDREN_DBG(" status no this client dev....");
 		return;
@@ -217,6 +227,7 @@ void udp_handle_server_status_thread(void *d){
 	uint16_t *port;
 	struct sockaddr_in addrServer;
 	in_addr_t cli_addr;
+	int32_t err;
 	memset(&addrServer,0,sizeof(struct sockaddr_in));
 
 	port = d;
@@ -224,13 +235,19 @@ void udp_handle_server_status_thread(void *d){
 	addrServer.sin_family=AF_INET;
 	addrServer.sin_addr.s_addr= inet_addr("255.255.255.255");//client_addr;//inet_addr("192.168.169.1");
 	addrServer.sin_port=htons(*port);
-	eloop_add_fd( handle_protocol_fd, EVENT_READ, EVENT_F_ENABLED, (void*)udp_handle_server_status_read_workqueue, &handle_protocol_fd );
-	
+	EVT_HDL event_fd = eloop_add_fd( handle_protocol_fd, EVENT_READ, EVENT_F_ENABLED, (void*)udp_handle_server_status_read_workqueue, &handle_protocol_fd );
+	user_protocol_task_increase();
 	while(1){
-		cli_addr = net_s_h264_sema_down(-1);
-		addrServer.sin_addr.s_addr = cli_addr;
-		eloop_add_alarm(os_jiffies(),EVENT_F_ENABLED,udp_handle_server_status_write_workqueue,(void *)&addrServer);   //eventloop send
+		if(walkmsg.run_state == 0)
+			break;
+		cli_addr = net_s_h264_sema_down(10, &err);
+		if(err == RET_OK) {
+			addrServer.sin_addr.s_addr = cli_addr;
+			eloop_add_alarm(os_jiffies(),EVENT_F_ENABLED,udp_handle_server_status_write_workqueue,(void *)&addrServer);   //eventloop send
+		}
 	}
+	eloop_remove_event(event_fd);
+	user_protocol_task_decrease();
 }
 
 uint8_t mark_lost_pkt(uint8_t pkt,uint8_t *rxbuf){
@@ -287,9 +304,11 @@ void udp_handle_server_data_thread(uint32_t *d){
 	uint8_t *psarm_room;
 	data_head *frame_hand;
 	retval = 16;
-	uint32 frame_dec_num = 0;
+//	uint32 frame_dec_num = 0;
 	//framenum = 0xffff;    //初始化值
 	
+	user_protocol_task_increase();
+
 	memset(framenum,0xff,sizeof(framenum));
 	memset(oldframecnt,0,sizeof(oldframecnt));
 	memset(framelen,0,sizeof(framelen));
@@ -298,8 +317,12 @@ void udp_handle_server_data_thread(uint32_t *d){
 	memset(type,0,sizeof(type));
 	frame_hand = (data_head *)photo_buf;
 	while(1){
+		if(walkmsg.run_state == 0)
+			break;
 		//ret = recvfrom (dev_tbl->udp_data_fd, photo_buf, MAX_VIDEO_PKT_LEN+sizeof(data_head), 0, &remote_addr, (socklen_t*)&retval);
 		ret = recvfrom (handle_data_protocol_fd, photo_buf, MAX_VIDEO_PKT_LEN+sizeof(data_head), 0, (struct sockaddr*)&remote_addr, (socklen_t*)&retval);
+		if(ret <= 0) 
+			continue;
 		id = 0;
 //		for(itk = 0;itk < 10;itk++){
 //			if(remote_addr.sin_addr.s_addr == devtab[itk].ipaddr){
@@ -326,9 +349,8 @@ void udp_handle_server_data_thread(uint32_t *d){
 				timer_ref = os_jiffies();
 			}
 			rx_speed_cnt += ret;
+			walkmsg.rx_data += ret;
 		}
-
-		walkmsg.rx_data += ret;
 		
 		if(framenum[id] != frame_hand->framenum){           
 			if(framenum[id] != 0xffff){
@@ -416,24 +438,24 @@ markdata:
 						CHILDREN_DBG("w:%d h:%d  id:%d len:%d\r\n",w,h,id,decmsg[itk].len);						
 						enable_irq(ie);
 						//frame_dec_num++;
-						if(frame_dec_num == 0) {
-							scale2_output_size_local_change(0,0,0,0,320,240);
-							scale3_output_size_local_change(0,0,0,0,160,120);
-							frame_dec_num++;
-						}
-						if((frame_dec_num%600) == 200){
-							_os_printf("%s  %d\r\n",__func__,__LINE__);
-							scale2_output_size_local_change(0,0,0,0,320,240);
-							scale3_output_size_local_change(0,0,6,6,160,120);
-						}else if((frame_dec_num%600) == 400){
-							_os_printf("%s  %d\r\n",__func__,__LINE__);	
-							scale2_output_size_local_change(0,0,6,6,160,120);
-							scale3_output_size_local_change(0,0,0,0,320,240);							
+						// if(frame_dec_num == 0) {
+						// 	scale2_output_size_local_change(0,0,0,0,320,240);
+						// 	scale3_output_size_local_change(0,0,0,0,160,120);
+						// 	frame_dec_num++;
+						// }
+						// if((frame_dec_num%600) == 200){
+						// 	_os_printf("%s  %d\r\n",__func__,__LINE__);
+						// 	scale2_output_size_local_change(0,0,0,0,320,240);
+						// 	scale3_output_size_local_change(0,0,6,6,160,120);
+						// }else if((frame_dec_num%600) == 400){
+						// 	_os_printf("%s  %d\r\n",__func__,__LINE__);	
+						// 	scale2_output_size_local_change(0,0,6,6,160,120);
+						// 	scale3_output_size_local_change(0,0,0,0,320,240);							
 							
-						}else if((frame_dec_num%600) == 500){
-							//scale2_output_size_local_change(0,0,0,10,160,120);
-							//scale3_output_size_local_change(0,1,30,0,320,240);							
-						}						
+						// }else if((frame_dec_num%600) == 500){
+						// 	//scale2_output_size_local_change(0,0,0,10,160,120);
+						// 	//scale3_output_size_local_change(0,1,30,0,320,240);							
+						// }						
 						break;
 					}
 				}				
@@ -449,6 +471,7 @@ markdata:
 			net_s_h264_sema_up(remote_addr.sin_addr.s_addr);
 		}
 	}
+	user_protocol_task_decrease();
 }
 
 extern volatile uint8_t scaler2_dev_id;
@@ -476,8 +499,12 @@ void udp_handle_server_decode_to_lcd_thread(){
 	static uint32_t last_update_time = 0;
 	static uint32_t total_disp_num = 0;
 
+	user_protocol_task_increase();
+
 	while(1){
-		
+		if(walkmsg.run_state == 0)
+			break;
+
 		timeinf[0]=timeinf[1]=timeinf[2]= 0xffffffff;
 		decframe[0]=decframe[1]=decframe[2]= 255;
 		os_sleep_ms(2);
@@ -565,7 +592,7 @@ void udp_handle_server_decode_to_lcd_thread(){
 								oldh = h;
 							}
 							//_os_printf("w:%d,h:%d\r\n",w,h);
-							listaddr = put_h264msg_to_queue(1,w,h,decmsg[decframe[itk]].addr,decmsg[decframe[itk]].len);					
+							listaddr = put_h264msg_to_queue(1,w,h,(uint32_t)(decmsg[decframe[itk]].addr),decmsg[decframe[itk]].len);					
 							while(h264msg_queue_done(listaddr) == 0){
 								os_sleep_ms(2);
 							}
@@ -591,6 +618,7 @@ void udp_handle_server_decode_to_lcd_thread(){
 			total_disp_num = 0;
 		}
 	}
+	user_protocol_task_decrease();
 }
 
 static uint16_t port_data;
@@ -610,6 +638,19 @@ void udp_handle_server_init(uint16_t status_port,uint16_t data_port)
 	csi_kernel_task_new((k_task_entry_t)udp_handle_server_decode_to_lcd_thread, "handle_data_decode_pkt", NULL, 25, 0, NULL, 1024, &handle_lcd_task_recv);	
 }
 
+void udp_handle_server_deinit(void)
+{
+	while(walkmsg.run_task > 0)
+		os_sleep_ms(1);
+	if(handle_protocol_fd != -1) {
+		close(handle_protocol_fd);
+		handle_protocol_fd = -1;
+	}
+	if(handle_data_protocol_fd != -1) {
+		close(handle_data_protocol_fd);
+		handle_data_protocol_fd = -1;
+	}
+}
 
 void protocol_server_init(uint16_t status_port,uint16_t data_port){
 #if 0
@@ -638,9 +679,29 @@ void protocol_server_init(uint16_t status_port,uint16_t data_port){
 //	tcp_handle_server_init();
 }
 
+void protocol_server_deinit()
+{
+	udp_handle_server_deinit();
+	net_s_h264_sema_deinit();
+	for(uint32_t i=0; i<DEC_TABLE_NUM; i++){
+		if(decmsg[i].addr != NULL){
+			av_psram_free(decmsg[i].addr);
+			decmsg[i].addr = NULL;
+		}			
+	}
+	if(devtab[0].psram_photo) {
+		av_psram_free(devtab[0].psram_photo);
+		devtab[0].psram_photo = NULL;
+	}
+}
+
 void user_protocol2(uint16_t status_port,uint16_t data_port)
 {
     protocol_server_init(status_port,data_port);	       //进行推屏					AP
 }
 
+void user_protocol2_deinit(void)
+{
+	protocol_server_deinit();
+}
 #endif

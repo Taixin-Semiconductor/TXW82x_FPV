@@ -69,6 +69,7 @@ static void wave_encode_thread(void *d)
             os_sleep_ms(1);
 
         if(s->next_status == AUCODEC_EXIT) {
+            s->current_status = AUCODEC_EXIT;
             s->wave_head.riff_chunk.ChunkSize = s->data_size + sizeof(TYPE_WAVE_HEAD) - 8;
             s->wave_head.fmt_chunk.SampleRate = s->samplerate;
             s->wave_head.fmt_chunk.ByteRate = s->samplerate*2;

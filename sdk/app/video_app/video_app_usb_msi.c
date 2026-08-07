@@ -575,7 +575,7 @@ usb_host_enum_finish_init_start:
         // 默认绑定到一个usb的中间流,外部调用就使用ROUTE_USB这个去接收
         msi_add_output(msi, NULL, ROUTE_USB);
         // 创建任务
-        os_task_create(video_dev_name, msi_get_usb_psram_thread, (void *)msi, OS_TASK_PRIORITY_NORMAL, 0, NULL, 2048);
+        os_task_create(video_dev_name, msi_get_usb_psram_thread, (void *)msi, OS_TASK_PRIORITY_NORMAL + 2, 0, NULL, 2048);
     }
     // 已经被创建了,需要等待资源释放完成后才能重新创建硬件了?或者检测到线程退出了,就将msi->name设置为NULL
     // 因为这个时候代表上一次线程已经完成了,msi会后面自动释放?

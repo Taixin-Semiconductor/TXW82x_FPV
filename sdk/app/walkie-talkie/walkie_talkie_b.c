@@ -25,7 +25,7 @@
 #include "syscfg.h"
 #include <event.h>
 #include <csi_kernel.h>
-#include "lib/video/dvp/jpeg/jpg.h"
+#include "lib/video/dvp/jpeg/jpg.h" 
 #include "walkie_talkie.h"
 #include "stream_define.h"
 #include "lib/multimedia/msi.h"
@@ -35,6 +35,7 @@
 #include "lib/umac/ieee80211.h"
 #include "lib/video/h264/h264_drv.h"
 #include "lib/lmac/lmac.h"
+#include "hal/dvp.h"
 
 #ifdef SYS_APP_WALKIE_TALKIE
 
@@ -82,7 +83,7 @@ uint32_t heartbeat = 0;
 
 EVT_HDL tcp_read_ev;
 
-static uint8_t current_bss_bw = 20;
+static uint8_t current_bss_bw = 10;
 static uint8_t ctrl_mode = 4;
 
 void net_h264_status_sema_init()
@@ -100,19 +101,33 @@ void net_h264_status_sema_up()
 	os_sema_up(&net_h264_status_sem);
 }
 
+void net_h264_status_sema_deinit()
+{
+	if(net_h264_status_sem.hdl) {
+		os_sema_del(&net_h264_status_sem);
+	}	
+}
+
 void net_h264_sema_init()
 {
 	os_sema_init(&net_h264_sem,0);
 }
 
-void net_h264_sema_down(int32 tmo_ms)
+int32_t net_h264_sema_down(int32 tmo_ms)
 {
-	os_sema_down(&net_h264_sem,tmo_ms);
+	return os_sema_down(&net_h264_sem,tmo_ms);
 }
 
 void net_h264_sema_up()
 {
 	os_sema_up(&net_h264_sem);
+}
+
+void net_h264_sema_deinit()
+{
+	if(net_h264_sem.hdl) {
+		os_sema_del(&net_h264_sem);
+	}
 }
 
 void net_tcp_sema_init()
@@ -198,17 +213,21 @@ int usr_protocol_create_client(uint16_t port)
 
 
 void udp_handle_client_status_write_workqueue(void *ei, void *d){
+	int tos;
+	static uint8_t pri_inv = 0;
 	uint32 ie;
 	status_msg *msg_head;
-	int tos;
 	char buf[12];
 	int  len;
 	msg_head = (status_msg *)buf;
 	msg_head->framenum = client_frame.framenum;
 	msg_head->type     = 1;
 	if(client_frame.lost_num != 0){
-		tos = IPTOS_PREC_NETCONTROL; // 最高优先级
-    	setsockopt(handle_protocol_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+		pri_inv++;
+		if((pri_inv%2)==1){
+			tos = IPTOS_PREC_NETCONTROL; // 最高优先级
+			setsockopt(handle_protocol_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));		
+		}
 		len = sendto(handle_protocol_fd, (char*)buf, 2, MSG_DONTWAIT, (struct sockaddr *)d, sizeof(struct sockaddr));
 		tos = IPTOS_PREC_ROUTINE; // 最低优先级
 		setsockopt(handle_protocol_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
@@ -236,7 +255,8 @@ void udp_handle_client_status_read_workqueue(){
 	struct sockaddr remote_addr;
 	retval = 16;
 	ret = recvfrom (handle_protocol_fd, server_staus_buf, 200, 0, &remote_addr, (socklen_t*)&retval);
-
+	if(ret <= 0)
+		return;
 	os_mutex_lock(&thread_lock, osWaitForever);
 	msg_head = (status_msg *)server_staus_buf;
 	new_status = client_frame.status;
@@ -280,9 +300,19 @@ void udp_handle_client_status_thread(void *d)
 	uint32_t start_tmr = 0;
 	struct sockaddr_in addrServer;
 	uint16_t *port;
+	int32_t time_out = 10;
+	int32_t ret = 0;
+	EVT_HDL event_fd = NULL;
 	port = d;
+
+	user_protocol_task_increase();
+
 	memset(&addrServer,0,sizeof(struct sockaddr_in));
 	while(send_addr == 0){
+		if(walkmsg.run_state == 0) {
+			user_protocol_task_decrease();
+			return;
+		}
 		os_sleep_ms(10);
 	}
 	addrServer.sin_family=AF_INET;
@@ -290,10 +320,15 @@ void udp_handle_client_status_thread(void *d)
 	addrServer.sin_port=htons(*port);
 
 	handle_protocol_fd = usr_protocol_create_client(*port);
-	eloop_add_fd( handle_protocol_fd, EVENT_READ, EVENT_F_ENABLED, udp_handle_client_status_read_workqueue, 0 );
+	setsockopt(handle_protocol_fd, SOL_SOCKET, SO_RCVTIMEO, &time_out, sizeof(int32_t));
+	event_fd = eloop_add_fd( handle_protocol_fd, EVENT_READ, EVENT_F_ENABLED, udp_handle_client_status_read_workqueue, 0 );
 	while(1){
+		if(walkmsg.run_state == 0)
+			break;
 		CHILDREN_DBG("D");
-		net_h264_sema_down(-1);  //wait for data send finish
+		ret = net_h264_sema_down(10);  //wait for data send finish
+		if(ret != RET_OK)
+			continue;
 		CHILDREN_DBG("Q(%d)",client_frame.status);
 		start_tmr = client_frame.time;
 		framenum  = client_frame.framenum;
@@ -301,10 +336,10 @@ void udp_handle_client_status_thread(void *d)
 		loop_run = 0;
 		while((client_frame.status == 0)&&(framenum  == client_frame.framenum)){         //如果当前frame还处于等待client状态的情况,发送请求状态的要求
 			eloop_add_alarm(os_jiffies(),EVENT_F_ENABLED,udp_handle_client_status_write_workqueue,(void *)&addrServer);   //eventloop send
-			//client_frame.timeout = 5;       //5ms都读不到对回复的状态,重发吧
-			os_sleep_ms(5);
+			//client_frame.timeout = 5;       //10ms都读不到对回复的状态,重发吧
+			os_sleep_ms(10);
 			loop_run++;
-			if(loop_run > 8)   //重发8次后还是读不到状态,认命吧,你掉线了    
+			if(loop_run > 12)   //重发12次后还是读不到状态,认命吧,你掉线了    
 				break;
 		}
 		
@@ -318,9 +353,11 @@ void udp_handle_client_status_thread(void *d)
 				client_frame.status = 3;		 //frame timeout,lost
 				enable_irq(ie);
 			}
-		}
-		
+		}	
 	}
+	close(handle_protocol_fd);
+	eloop_remove_event(event_fd);
+	user_protocol_task_decrease();
 }
 
 #if 1
@@ -375,19 +412,19 @@ void  recfg_mclk_msg(struct dvp_device * mclkdev,uint8_t success){
 				last_speed_level = speed_level;
 #if 0				
 				if(speed_level == 0){
-					h264_recfg_bsp(1,200);	
+					h264_recfg_bsp(1,200,200);	
 					h264_recfg_rate(1,25);
 					h264_recfg_frm_gop(1,25);
 					h264_recfg_ini_qp(1,26);
 					//dvp_set_baudrate(mclkdev,24000000);	
 				}else if(speed_level == 1){
-					h264_recfg_bsp(1,150);	
+					h264_recfg_bsp(1,150,150);	
 					h264_recfg_rate(1,12);
 					h264_recfg_frm_gop(1,12);
 					h264_recfg_ini_qp(1,31);
 					//dvp_set_baudrate(mclkdev,12000000);
 				}else if(speed_level == 2){
-					h264_recfg_bsp(1,50);	
+					h264_recfg_bsp(1,50,50);	
 					h264_recfg_rate(1,6);
 					h264_recfg_frm_gop(1,6);
 					h264_recfg_ini_qp(1,37);
@@ -442,7 +479,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 		if(walkmsg.speed == 4)
 			return;
 		speed_level = 4;
-		h264_recfg_bsp(1,50);	
+		h264_recfg_bsp(1,50,50);	
 		h264_recfg_rate(1,6);
 		h264_recfg_frm_gop(1,6);
 		h264_recfg_ini_qp(1,37);
@@ -456,7 +493,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 0)
 					return;
 				speed_level = 0;
-				h264_recfg_bsp(1,200);	
+				h264_recfg_bsp(1,200,200);	
 				h264_recfg_rate(1,25);
 				h264_recfg_frm_gop(1,25);
 				h264_recfg_ini_qp(1,26);
@@ -466,7 +503,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 1)
 					return;
 				speed_level = 1;
-				h264_recfg_bsp(1,150);	
+				h264_recfg_bsp(1,150,150);	
 				h264_recfg_rate(1,20);
 				h264_recfg_frm_gop(1,20);
 				h264_recfg_ini_qp(1,29);
@@ -476,7 +513,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 2)
 					return;
 				speed_level = 2;
-				h264_recfg_bsp(1,100);	
+				h264_recfg_bsp(1,100,100);	
 				h264_recfg_rate(1,12);
 				h264_recfg_frm_gop(1,12);
 				h264_recfg_ini_qp(1,33);
@@ -486,7 +523,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 3)
 					return;
 				speed_level = 3;
-				h264_recfg_bsp(1,50);	
+				h264_recfg_bsp(1,50,50);	
 				h264_recfg_rate(1,6);
 				h264_recfg_frm_gop(1,6);
 				h264_recfg_ini_qp(1,37);
@@ -496,19 +533,19 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 4)  
 					return;
 				speed_level = 4;
-				h264_recfg_bsp(1,50);	
+				h264_recfg_bsp(1,50,50);	
 				h264_recfg_rate(1,6);
 				h264_recfg_frm_gop(1,6);
 				h264_recfg_ini_qp(1,37);
 				h264_reflash_new_gop(1,1);
 			}
 		}
-		else if(current_bss_bw == 5) {
+		else if(current_bss_bw == 5 || current_bss_bw == 10) {
 			if(lastmcs > 5) {
 				if(walkmsg.speed == 2)
 					return;	
 				speed_level = 2;
-				h264_recfg_bsp(1,100);	
+				h264_recfg_bsp(1,100,100);	
 				h264_recfg_rate(1,12);
 				h264_recfg_frm_gop(1,12);
 				h264_recfg_ini_qp(1,33);	
@@ -518,7 +555,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 3)
 					return;
 				speed_level = 3;
-				h264_recfg_bsp(1,50);	
+				h264_recfg_bsp(1,50,50);	
 				h264_recfg_rate(1,6);
 				h264_recfg_frm_gop(1,6);
 				h264_recfg_ini_qp(1,37);	
@@ -528,7 +565,7 @@ void recfg_mclk_by_mcs(uint8_t mcs,uint8_t frmtype)
 				if(walkmsg.speed == 4)  
 					return;
 				speed_level = 4;
-				h264_recfg_bsp(1,50);	
+				h264_recfg_bsp(1,50,50);	
 				h264_recfg_rate(1,6);
 				h264_recfg_frm_gop(1,6);
 				h264_recfg_ini_qp(1,37);
@@ -544,10 +581,10 @@ void udp_handle_client_data_thread(void *d){
 	int32 ret;
 	uint32 ie;
 	uint8_t framesuc = 0;
-	uint8_t mcs = 0;
-	uint8_t frmtype = 0;
-	uint32_t temp;
-	uint8_t mcslop=0;
+//	uint8_t mcs = 0;
+//	uint8_t frmtype = 0;
+//	uint32_t temp;
+//	uint8_t mcslop=0;
 	struct dvp_device *dvp_dev;	
 	uint8_t  framenum;
 	uint8_t  oldcount = 0;
@@ -570,12 +607,20 @@ void udp_handle_client_data_thread(void *d){
 	port = d;
 	dvp_dev = (struct dvp_device *)dev_get(HG_DVP_DEVID);
 
+	user_protocol_task_increase();
+
 	msi = msi_new("NET_H264", MAX_USER_VIDEO_TX, NULL);
 	msi->action = net_video_msi_action;
 	msi->enable = 1;
     msi_add_output(0, S_H264, "NET_H264");      //lvgl的msi输出到R_OSD_ENCODE的msi	
 
 	while(send_addr == 0){
+		if(walkmsg.run_state == 0) {
+			msi_destroy(msi);
+			msi_del_output(0, S_H264, "NET_H264");
+			user_protocol_task_decrease();
+			return;
+		}
 		os_sleep_ms(10);
 	}
 	framenum = 0;
@@ -585,12 +630,10 @@ void udp_handle_client_data_thread(void *d){
 	addrServer.sin_port=htons(*port);	
 	handle_data_protocol_fd = usr_protocol_create_client(*port);
 	data_head_msg = (data_head *)photo_buf;
-	while(1){
-		
-	
-		h264_fb = msi_get_fb(msi, 0);
-			
-	
+	while(1){		
+		if(walkmsg.run_state == 0)
+			break;
+		h264_fb = msi_get_fb(msi, 0);  
 		if (h264_fb){
 			os_mutex_lock(&thread_lock, osWaitForever);
 			h264 = (struct fb_h264_s *)h264_fb->priv;
@@ -652,7 +695,8 @@ void udp_handle_client_data_thread(void *d){
 					framelen = 0;
 				}
 				len = sendto(handle_data_protocol_fd, (char*)photo_buf, sendlen+sizeof(data_head), MSG_DONTWAIT, (struct sockaddr *)&addrServer, sizeof(struct sockaddr));
-				walkmsg.tx_data += len;
+				if(len >= 0)
+					walkmsg.tx_data += len;
 				pktcnt++;
 			}
 			net_h264_sema_up();
@@ -670,9 +714,7 @@ void udp_handle_client_data_thread(void *d){
 			lostloop  = 3;    //所有丢包都重传3次,增加接收成功率
 
 			//if((walkmsg.speed >= 4) || (current_bss_bw == 5)) {
-			if((walkmsg.speed == 3) || (current_bss_bw == 5)) {
-				client_frame.lost_num = 0;
-			}else if(walkmsg.speed == 2) {
+			if((walkmsg.speed >= 2)|| (current_bss_bw == 5) || (current_bss_bw == 10)) {
 				lostloop = 1;
 			}
 			
@@ -694,7 +736,8 @@ void udp_handle_client_data_thread(void *d){
 						for(itk = 0;itk < lostloop;itk++){
 							len = sendto(handle_data_protocol_fd, (char*)photo_buf, sendlen+sizeof(data_head), MSG_DONTWAIT, (struct sockaddr *)&addrServer, sizeof(struct sockaddr));
 							os_sleep_ms(1);
-							walkmsg.tx_data += len;
+							if(len >= 0)
+								walkmsg.tx_data += len;
 						}
 					}
 					pktcnt++;
@@ -742,7 +785,6 @@ void udp_handle_client_data_thread(void *d){
 				frmtype = 0;
 				recfg_mclk_by_mcs(walkmsg.mcs,walkmsg.frmtype);
 			}
-			
 #else			
 			recfg_mclk_msg(dvp_dev,framesuc);
 
@@ -757,6 +799,10 @@ delete_frame:
 			recfg_mclk_by_connect();
 		}
 	}
+	close(handle_data_protocol_fd);
+	msi_destroy(msi);
+	msi_del_output(0, S_H264, "NET_H264");
+	user_protocol_task_decrease();
 }
 
 static uint16_t port_data;
@@ -767,6 +813,12 @@ void udp_handle_client_init(uint16_t status_port,uint16_t data_port)
 	port_status = status_port;
 	csi_kernel_task_new((k_task_entry_t)udp_handle_client_status_thread, "handle_udp_pkt", &port_status, 25, 0, NULL, 1024, &handle_task_recv);
 	csi_kernel_task_new((k_task_entry_t)udp_handle_client_data_thread, "handle_data_udp_pkt", &port_data, 25, 0, NULL, 1024, &handle_data_task_recv);	
+}
+
+void udp_handle_client_deinit(void)
+{
+	while(walkmsg.run_task > 0)
+		os_sleep_ms(1);
 }
 
 void client_frame_msg_init(uint8_t frame_num,uint8_t timeout){
@@ -789,11 +841,27 @@ void protocol_client_init(uint16_t status_port,uint16_t data_port){
 	//tcp_handle_client_init();
 }
 
+void protocol_client_deinit()
+{
+	udp_handle_client_deinit();
+	net_h264_status_sema_deinit();
+	net_h264_sema_deinit();
+	if(thread_lock.hdl) {
+		os_mutex_del(&thread_lock);
+	}
+}
+
 void user_protocol3(uint16_t status_port,uint16_t data_port)
 {
     protocol_client_init(status_port,data_port);        //发送摄像头数据    			STA  
 }
 
+void user_protocol3_deinit(void)
+{
+	protocol_client_deinit();
+}
+
+int32 atcmd_recv(uint8 *data, int32 len);
 int32 atcmd_current_bss_bw(const char *cmd, char *argv[], uint32 argc)
 {
 	if(argc < 1) {
@@ -804,12 +872,17 @@ int32 atcmd_current_bss_bw(const char *cmd, char *argv[], uint32 argc)
 		current_bss_bw = os_atoi(argv[0]);
 		os_printf("\n***current_bss_bw:%d***\n",current_bss_bw);
 		if(current_bss_bw == 20) {
-			atcmd_recv((uint8_t*)"AT+BSS_BW=20",0);    
+			atcmd_recv((uint8_t*)"AT1+BSS_BW=20",0);    
 			lmac_set_beacon_modulation(NULL, LMAC_RATE_DSSS_CCK_RATE0);
 			lmac_set_supp_rate(NULL, WIFI_TX_SUPP_RATE);
 		}
-		else {
-			atcmd_recv((uint8_t*)"AT+BSS_BW=5",0);
+		else if(current_bss_bw == 10) {
+			atcmd_recv((uint8_t*)"AT1+BSS_BW=10",0);
+			lmac_set_beacon_modulation(NULL, LMAC_RATE_NON_HT_RATE0);
+			lmac_set_supp_rate(NULL, WIFI_TX_SUPP_RATE & 0xFFFFFFF0);
+		}		
+		else if(current_bss_bw == 5) {
+			atcmd_recv((uint8_t*)"AT1+BSS_BW=5",0);
 			lmac_set_beacon_modulation(NULL, LMAC_RATE_NON_HT_RATE0);
 			lmac_set_supp_rate(NULL, WIFI_TX_SUPP_RATE & 0xFFFFFFF0);
 		}		

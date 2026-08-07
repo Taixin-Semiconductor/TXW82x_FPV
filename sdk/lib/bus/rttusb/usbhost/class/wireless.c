@@ -24,7 +24,9 @@ static rt_err_t rt_usbh_wireless_enable(void *arg)
         intf[0]->intf_desc->bInterfaceSubClass,
         intf[0]->intf_desc->bInterfaceProtocol);
 
-    if (intf[0]->intf_desc->bInterfaceSubClass == 1 && intf[0]->intf_desc->bInterfaceProtocol == 3) {
+    // 中云信安cat1模组在iad描述符和接口描述符中不一致，兼容多了一种判断
+    if ((intf[0]->intf_desc->bInterfaceSubClass == 1 && intf[0]->intf_desc->bInterfaceProtocol == 3) || \
+        (intf[0]->intf_desc->bInterfaceSubClass == 2 && intf[0]->intf_desc->bInterfaceProtocol == 255)) {
 #ifdef STATIC_RNDIS_NETDEV
         rndis = (struct usb_rndis *)dev_get(HG_LTE_RNDIS_DEVID);
 #else

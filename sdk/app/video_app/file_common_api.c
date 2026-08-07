@@ -2,6 +2,7 @@
 #include "lib/fs/fatfs/osal_file.h"
 #include "app/video_app/file_thumb.h"
 #include "osal/string.h"
+#include "lwip/sockets.h"
 
 static uint8_t get_rtc_time_str(char *timestr, uint8_t timestr_len, struct timeval *t)
 {
@@ -22,7 +23,7 @@ static uint8_t get_rtc_time_str(char *timestr, uint8_t timestr_len, struct timev
         _os_printf("gmtime error\r\n");
         return 1;
     }
-    os_snprintf(timestr, timestr_len, "%04d%02d%02d%02d%02d%02d%03d", 
+    os_snprintf(timestr, timestr_len, "%04d%02d%02d%02d%02d%02d%03d",
                time_info->tm_year + 1900, time_info->tm_mon + 1, time_info->tm_mday,
                time_info->tm_hour, time_info->tm_min, time_info->tm_sec, ms);
     return 0;
@@ -75,11 +76,16 @@ int32_t takephoto_name_no_dir(char *filename, int filename_size)
     return 0;
 }
 
-
-int32_t takephoto_name_no_dir2(char *filename, int filename_size, struct timeval *t)
+/* 
+ * 获取JPG文件名称
+ * filename: 文件名，格式: 20250918010101000.JPG
+ * filename_size: 文件名大小
+ * time: 时间
+ */
+int32_t takephoto_name_no_dir_time(char *filename, int filename_size, struct timeval *time)
 {
     char timestr[FILE_NAME_LEN + 1];
-    if(get_rtc_time_str(timestr, FILE_NAME_LEN + 1, t))
+    if(get_rtc_time_str(timestr, FILE_NAME_LEN + 1, time))
         return 1;
     os_snprintf(filename, filename_size, "%.*s.JPG", FILE_NAME_LEN, timestr);
     return 0;
@@ -141,84 +147,113 @@ uint8_t get_extension_file_name(const char *rec_dir, char *sub_path, char *file_
 }
 
 /* 
- * 根据文件类型获取文件路径
+ * 获取文件名
+ * rec_dir: 录像目录，0:/RECA
+ * sub_path: 子目录，格式: 0:/RECA/20250918
+ * file_name: 文件名，格式: 20250918010101000.MP4
+ * extension_name: 文件扩展名，格式: .MP4/.AVI/...
+ * time: 时间
+ */
+uint8_t get_extension_file_name_time(const char *rec_dir, char *sub_path, char *file_name, const char *extension_name, struct timeval *time)
+{
+    char timestr[FILE_NAME_LEN + 1];
+    if(get_rtc_time_str(timestr, FILE_NAME_LEN + 1, time))
+        return 1;
+    
+    os_sprintf(sub_path, "%s/%.*s", rec_dir, FILE_SUB_PATH_LEN, timestr);
+    os_sprintf(file_name, "%.*s%s", FILE_NAME_LEN, timestr, extension_name);
+
+    return 0;
+}
+
+/* 
+ * 根据文件类型获取照片文件路径
  * filename: 文件名
  * path: 文件路径
  * pathsize: 文件路径大小
- * type: 1:IMG 2:REC 3:EMR 4:PARK
  */
-uint8_t gen_file_path(const char *filename, char *path, uint32_t pathsize, uint8_t type)
+void gen_photo_path(const char *filename, char *path, uint32_t pathsize)
 {
-    uint8_t locate = 0;
-    char rec_path[32];
-    char file_name[32];
+    const char *rec_path = NULL;
 
-    if(type != 4)
-    {
-        if(os_strstr(filename, FRONT_SUFFIX)) {
-            locate = 1;
-            if(type == 1)
-                os_strncpy(rec_path, IMGA_PATH, sizeof(rec_path));
-            else
-                os_strncpy(rec_path, RECA_PATH, sizeof(rec_path));
-        } else if(os_strstr(filename, INTER_SUFFIX)) {
-            locate = 2;
-            if(type == 1)
-                os_strncpy(rec_path, IMGB_PATH, sizeof(rec_path));
-            else
-                os_strncpy(rec_path, RECB_PATH, sizeof(rec_path));
-        } else if(os_strstr(filename, BACK_SUFFIX)) {
-            locate = 3;
-            if(type == 1)
-                os_strncpy(rec_path, IMGC_PATH, sizeof(rec_path));
-            else
-                os_strncpy(rec_path, RECC_PATH, sizeof(rec_path));
-        } else {
-            if(type == 1)
-                os_strncpy(rec_path, IMG_PATH, sizeof(rec_path));
-            else
-                os_strncpy(rec_path, REC_PATH, sizeof(rec_path));
-        }
+    const char* file_dot = strrchr(filename, '.');
+    if(file_dot == NULL) {
+        os_printf("%s file_dot is NULL\n", __FUNCTION__);
+        return;
     }
-    
-    char *dirname = (type == 1 || type == 2) ? rec_path : ((type == 3) ? EMR_PATH : PARK_PATH);
 
-    if(type == 1 || type == 3)
-    {
-        if(locate)
-        {
-            char extension[8];
-            if(type == 1) {
-                os_memcpy(extension, JPG_EXTENSION_NAME, sizeof(extension));
-            } else {
-                os_memcpy(extension, (locate == 1) ? MP4_EXTENSION_NAME : AVI_EXTENSION_NAME, sizeof(extension));
-            }
-            
-            os_snprintf(file_name, sizeof(file_name), "%.*s%s", FILE_NAME_LEN, filename, extension);
-            os_snprintf((char *) path, pathsize, "%s/%s", dirname, file_name);
-        }
-        else
-        {
-            os_snprintf((char *) path, pathsize, "%s/%s", dirname, filename);
-        }
+    if(os_strstr(filename, FRONT_SUFFIX)) {
+        rec_path = IMGA_PATH;
+    } else if(os_strstr(filename, INTER_SUFFIX)) {
+        rec_path = IMGB_PATH;
+    } else if(os_strstr(filename, BACK_SUFFIX)) {
+        rec_path = IMGC_PATH;
+    } else {
+        rec_path = IMG_PATH;
     }
-    else if(type == 2 || type == 4)
-    {
-        char datefile[9];
-        os_sprintf(datefile, "%.*s", FILE_SUB_PATH_LEN, filename);
-        if(locate)
-        {
-            char *extension = (locate == 1) ? MP4_EXTENSION_NAME : AVI_EXTENSION_NAME;
-            os_snprintf(file_name, sizeof(file_name), "%.*s%s", FILE_NAME_LEN, filename, extension);
-            os_snprintf((char *) path, pathsize, "%s/%s/%s", dirname, datefile, file_name);
-        }
-        else
-        {
-            os_snprintf((char *) path, pathsize, "%s/%s/%s", dirname, datefile, filename);
-        }
-    }
+
+    os_snprintf(path, pathsize, "%s/%.*s%s", rec_path, FILE_NAME_LEN, filename, file_dot);
+
     os_printf("%s path: %s\n", __FUNCTION__, path);
-    return 0;
+}
+
+/* 
+ * 根据文件类型获取视频文件路径
+ * filename: 文件名
+ * path: 文件路径
+ * pathsize: 文件路径大小
+ */
+void gen_video_path(const char *filename, char *path, uint32_t pathsize)
+{
+    uint8_t prefix_len = 0;
+    const char *rec_path = NULL;
+
+    const char *file_name = os_strrchr(filename, '/');
+    if(file_name == NULL) {
+        file_name = filename;
+    }
+
+    const char* file_dot = strrchr(filename, '.');
+    if(file_dot == NULL) {
+        os_printf("%s file_dot is NULL\n", __FUNCTION__);
+        return;
+    }
+
+    if(os_strstr(file_name, SOS_PREFIX)) {
+        prefix_len = strlen(SOS_PREFIX);
+    } else if(os_strstr(file_name, PARKF_PREFIX)) {
+        prefix_len = strlen(PARKF_PREFIX);
+    }
+
+    if(os_strstr(file_name, FRONT_SUFFIX)) {
+        rec_path = RECA_PATH;
+    } else if(os_strstr(file_name, INTER_SUFFIX)) {
+        rec_path = RECB_PATH;
+    } else if(os_strstr(file_name, BACK_SUFFIX)) {
+        rec_path = RECC_PATH;
+    } else {
+        rec_path = REC_PATH;
+    }
+
+    os_snprintf(path, pathsize, "%s/%.*s/%.*s%s", rec_path, FILE_SUB_PATH_LEN, file_name + prefix_len, FILE_NAME_LEN + prefix_len, file_name, file_dot);
+
+    os_printf("%s path: %s\n", __FUNCTION__, path);
+}
+
+void gen_photo_video_path(const char *filename, char *path, uint32_t pathsize)
+{
+    if(os_strstr(filename, JPG_EXTENSION_NAME)) 
+    {
+        gen_photo_path(filename, path, pathsize);
+    }
+    else if(os_strstr(filename, MP4_EXTENSION_NAME) || os_strstr(filename, AVI_EXTENSION_NAME))
+    {
+        gen_video_path(filename, path, pathsize);
+    }
+    else
+    {
+        _os_printf("filename %s format err!\n", filename);
+    }
 }
 
 
@@ -227,25 +262,16 @@ uint8_t gen_file_path(const char *filename, char *path, uint32_t pathsize, uint8
  *                                                             *
 ****************************************************************/
 
-struct file_info
-{
-    char *file_name;
-    uint32_t file_size;
-    uint32_t file_date;
-    uint32_t file_time;
-    uint32_t file_count;
-};
-
 typedef void (* conver_send_fn)(int fd, struct file_info *file_info);
 
-static void send_chunk(int fd, const char* data, uint16_t data_len) 
+void send_chunk(int fd, const char* data, uint16_t data_len) 
 {
     char chunk_buffer[256]; // 或者使用动态分配
 	int chunk_len = os_snprintf(chunk_buffer, sizeof(chunk_buffer), "%x\r\n%s\r\n", data_len, data);
 	send(fd, chunk_buffer, chunk_len, 0);
 }
 
-static void conver_send(int fd, struct file_info *file_info)
+void conver_send(int fd, struct file_info *file_info)
 {
     char send_buffer[256];
     char timestr[15];
@@ -268,11 +294,10 @@ static void conver_send(int fd, struct file_info *file_info)
     send_chunk(fd, send_buffer, strlen(send_buffer));
 }
 
-static int get_fileinfo_send(int fd, const char *search_dir, const char *ext_name, conver_send_fn cs_fn)
+int get_fileinfo_send(int fd, const char *search_dir, const char *ext_name, conver_send_fn cs_fn)
 {
     struct file_info file_info;
     FILINFO *fil = NULL;
-    char path[256];
 
     void *dir = osal_opendir(search_dir);
     if (dir)
@@ -313,6 +338,8 @@ static int get_fileinfo_send(int fd, const char *search_dir, const char *ext_nam
                 }
                 file_info.file_name = filename;
                 file_info.file_size = filesize;
+                file_info.file_date = filedate;
+                file_info.file_time = filetime;
                 file_info.file_count++;
                 cs_fn(fd, &file_info);
             }
@@ -327,9 +354,6 @@ void send_stream_filelist(int fd)
 {
     int     video_count = 0;
     int     photo_count = 0;
-    int     sos_count = 0;
-    int     park_count = 0;
-    int     last_count = 0;
     char    send_buffer[256];
 
     // 创建HTTP响应头
