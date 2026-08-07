@@ -299,6 +299,7 @@ int stat(const char *path, struct stat *buf)
     buf->st_size = file_info->fsize;
     buf->st_mtime = file_info->ftime;
     buf->fattrib = file_info->fattrib;
+	buf->st_mode = (file_info->fattrib & AM_DIR) ? S_IFDIR : S_IFREG;
     buf->fname = NULL;
     os_free(file_info);
 #endif

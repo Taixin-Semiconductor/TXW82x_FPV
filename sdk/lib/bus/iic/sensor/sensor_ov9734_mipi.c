@@ -377,6 +377,17 @@ const _Sensor_YUVNR ov9734_yuvnr_init = {
     205,255,0,
 };
 
+const _Sensor_COLENH_BV ov9734_ce_map[BV2COLENH_ARRAY_NUM] = {
+    {.bv =   29491, .hue = 0, .luma = 50, .contrast = 56, .saturation = 65},
+    {.bv =    3534, .hue = 0, .luma = 50, .contrast = 56, .saturation = 65},
+    {.bv =    4531, .hue = 0, .luma = 50, .contrast = 56, .saturation = 65},
+    {.bv =     400, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =     222, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =     115, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =      57, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =      34, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+};
+
 const _Sensor_COLENH ov9734_colenh_init = {
     .yuv_range  = 0,
     .luma       = 50, // range: 0 ~ 100
@@ -389,11 +400,8 @@ const _Sensor_COLENH ov9734_colenh_init = {
     .ce_out_ofs_y  = 128, 
     .ce_out_ofs_cb = 128, 
     .ce_out_ofs_cr = 128, // range: -128 ~ 128
-    .adj_sat_by_bv = 1,
-    .hi_sat     = 65,
-    .lo_sat     = 50,
-    .hi_sat_bv  = 4531, // high brightness for saturation
-    .lo_sat_bv  = 400,  // low brightness for saturation
+    .adj_by_bv_en  = 1,
+    .bv2colenh_map = (void *)ov9734_ce_map,
 };
 
 const uint32 ov9734_lsc_tbl[] = {
@@ -513,7 +521,7 @@ uint32 ov9734_gainLevelTable[30] = {
     0xffffffff
 };
 
-void ov9734_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void ov9734_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint8 index         = 0;
     uint8  *addr        = (uint8 *)p_cfg->data.addr;

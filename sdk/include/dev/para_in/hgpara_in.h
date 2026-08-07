@@ -41,6 +41,8 @@ struct hgpara_in {
     uint32                      flags;
 };
 
+int32 hgpara_in_attach(uint32 dev_id, struct hgpara_in *p_para_in);
+
 #ifdef __cplusplus
 }
 #endif

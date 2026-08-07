@@ -55,11 +55,11 @@ struct rt_rndis_eth
 #endif /* RNDIS_DELAY_LINK_UP */
 
     rt_align(4)
-    rt_uint8_t rx_pool[512];
+    rt_uint8_t rx_pool[512 + USB_RX_BUFF_RESERVE_SIZE];
     rt_align(4)
-    rt_uint8_t tx_pool[512];
+    rt_uint8_t tx_pool[512 + USB_RX_BUFF_RESERVE_SIZE];
 
-    rt_uint32_t cmd_pool[2];
+    rt_uint32_t cmd_pool[2 + (USB_RX_BUFF_RESERVE_SIZE / 4)];
     rt_align(4)
     char rx_buffer[sizeof(struct rndis_packet_msg) + USB_ETH_MTU + 14];
     rt_size_t rx_offset;

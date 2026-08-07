@@ -73,6 +73,21 @@ static uint8 key_adkey_scan(key_channel_t *key)
 
 默认开发板先检查每一个按键的值,然后大概每一个ad-100填到下表
 ************************************************************/
+#ifdef SYS_APP_WALKIE_TALKIE
+static const struct adkey_scan_code adkey_table[] = 
+{
+	{0,     AD_DOWN},
+	{200,   AD_DOWN},
+	{635,   AD_SPEACH},
+	{1275,  AD_UP},
+    {1620,  AD_RIGHT},
+	{2047,  KEY_NONE},
+	{3200,  KEY_NONE},
+    {3800,  KEY_NONE},
+    {4000,  KEY_NONE},
+    {4096,  KEY_NONE},
+};
+#else
 static const struct adkey_scan_code adkey_table[] = 
 {
 	{0,     AD_LEFT},
@@ -86,6 +101,7 @@ static const struct adkey_scan_code adkey_table[] =
     {4000,  KEY_NONE},
     {4096,  KEY_NONE},
 };
+#endif
 
 static const keys_t adkey_arg = 
 {

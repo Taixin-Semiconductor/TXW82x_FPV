@@ -1,7 +1,5 @@
 #include "basic_include.h"
-
 #include "lib/multimedia/msi.h"
-
 #include "stream_define.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
@@ -26,11 +24,17 @@ extern uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
 #define STREAM_ZALLOC av_psram_zalloc
 
 // 结构体申请空间函数
+#ifdef MORE_SRAM
+#define STREAM_LIBC_MALLOC av_psram_malloc
+#define STREAM_LIBC_FREE   av_psram_free
+#define STREAM_LIBC_ZALLOC av_psram_zalloc
+#else
 #define STREAM_LIBC_MALLOC av_malloc
 #define STREAM_LIBC_FREE   av_free
 #define STREAM_LIBC_ZALLOC av_zalloc
+#endif
 
-#define MAX_JPG_CONCAT_RECV (8)
+#define MAX_JPG_CONCAT_RECV (30)
 extern struct msi *hardware_jpg_msi(uint8_t which_jpg, uint8_t src_from, uint16_t jpg_node_len, uint16_t jpg_node_count);
 
 int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
@@ -64,7 +68,7 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
             uint32_t running = 0;
             if (jpg_concat_msg->jpg_msi)
             {
-                msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_GET_RUNNING, (uint32_t)&running, 0);
+                msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_GET_RUNNING, (uint32_t) &running, 0);
             }
             *(uint32_t *) param1 = running;
         }
@@ -135,7 +139,14 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
                             }
                             // 其他的来源,则使用配置参数
                             msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_HARDWARE_JPEG, MSI_JPEG_SET_TIME, jpg_concat_msg->set_time);
+                            // 判断jpg_w?如果超过某些size,就通知jpg的内存池,增加部分内存?
                             msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_HARDWARE_JPEG, MSI_JPEG_HARDWARE_MSG, jpg_w << 16 | jpg_h);
+                            if (jpg_concat_msg->scale1_flag)
+                            {
+                                msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_HARDWARE_JPEG, MSI_JPEG_SET_SCALE1_FLAG, 1);
+                            }
+                            //是否转发取决于启动参数
+                            jpg_concat_msg->force_node = (arg&0x02)?1:0;
                             msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_HARDWARE_JPEG, MSI_JPEG_HARDWARE_START, 0);
                         }
                         else
@@ -148,7 +159,14 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
 
                         if (jpg_concat_msg->jpg_msi)
                         {
+                            // scale1的自动模式,所以需要发送命令,让它关闭scale1
+                            if (jpg_concat_msg->scale1_flag)
+                            {
+                                jpg_concat_msg->scale1_flag = 0;
+                            }
                             msi_do_cmd(jpg_concat_msg->jpg_msi, MSI_CMD_HARDWARE_JPEG, MSI_JPEG_HARDWARE_STOP, 0);
+                            
+
                             if (jpg_concat_msg->auto_free)
                             {
                                 // 删除jpg_msi,主要为了释放空间
@@ -172,7 +190,12 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
                     jpg_concat_msg->gen420_type = arg;
                     break;
                 }
-
+                // 设置scale1为自动模式
+                case MSI_SET_SCALE1_AUTO_FLAG:
+                {
+                    jpg_concat_msg->scale1_flag = arg;
+                }
+                break;
                 case MSI_SET_SCALE1_TYPE:
                 {
                     jpg_concat_msg->scale1_type = arg;
@@ -183,7 +206,6 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
                     jpg_concat_msg->jpg_node_count = arg;
                     break;
                 }
-
                 case MSI_GET_JPEG_MSI:
                 {
                     struct msi **jpg_msi = (struct msi **) param2;
@@ -239,7 +261,7 @@ int32_t jpg_concat_msg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t par
                 struct jpg_node_s *jpg_priv = (struct jpg_node_s *) fb->priv;
                 if (jpg_priv)
                 {
-                    if (jpg_priv->jpg_len > MAX_JPG_SIZE)
+                    if (jpg_concat_msg->force_node || jpg_priv->jpg_len > MAX_JPG_SIZE)
                     {
                         struct framebuff *send_fb = fb_clone(fb, fb->mtype << 8 | fb->stype, msi);
                         send_fb->len              = jpg_priv->jpg_len;
@@ -316,9 +338,11 @@ static int32 jpg_concat_msi_work(struct os_work *work)
             jpg_psram_space = (uint8_t *) STREAM_MALLOC(jpg_len);
             if (jpg_psram_space)
             {
+                sys_dcache_invalid_range((uint32_t *) jpg_psram_space, jpg_len);
                 send_fb = fbpool_get(&jpg_concat_msg->tx_pool, 0, jpg_concat_msg->msi);
                 if (!send_fb)
                 {
+                    _os_printf("=");
                     STREAM_FREE(jpg_psram_space);
                 }
                 else
@@ -338,12 +362,12 @@ static int32 jpg_concat_msi_work(struct os_work *work)
                         {
                             cp_len = remain_len;
                         }
-                        hw_memcpy(jpg_psram_space + offset, tmp_fb->data, cp_len);
+                        // os_printf("cp_len:%X\n",cp_len);
+                        hw_memcpy_no_cache(jpg_psram_space + offset, tmp_fb->data, cp_len);
                         offset += cp_len;
                         remain_len -= cp_len;
                         tmp_fb = tmp_fb->next;
                     }
-                    sys_dcache_clean_range((uint32_t *) jpg_psram_space, jpg_len);
                     send_fb->data    = jpg_psram_space;
                     send_fb->len     = jpg_len;
                     send_fb->mtype   = F_JPG;
@@ -385,7 +409,7 @@ static int32 jpg_concat_msi_work(struct os_work *work)
 struct msi *jpg_concat_msi_init_start(uint32_t jpgid, uint16_t w, uint16_t h, uint16_t *filter_type, uint8_t src_from, uint8_t run)
 {
     ASSERT((jpgid == 0) || (jpgid == 1));
-    const char *msi_name =  NULL;
+    const char *msi_name  = NULL;
     uint8_t     which_jpg = jpgid;
     if (jpgid == 0)
     {
@@ -403,16 +427,21 @@ struct msi *jpg_concat_msi_init_start(uint32_t jpgid, uint16_t w, uint16_t h, ui
     {
         jpg_concat_msg = (struct jpg_concat_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct jpg_concat_msi_s));
         ASSERT(jpg_concat_msg);
-        msi->priv                      = (void *) jpg_concat_msg;
-        msi->enable                    = 1;
-        jpg_concat_msg->which_jpg      = which_jpg; // 默认使用jpg0
-        jpg_concat_msg->msi            = msi;
-        jpg_concat_msg->msi->action    = jpg_concat_msg_msi_action;
-        jpg_concat_msg->msi->priv      = (void *) jpg_concat_msg;
-        jpg_concat_msg->msi->enable    = 1;
-        jpg_concat_msg->filter_type    = filter_type;
-        jpg_concat_msg->from           = src_from;
-        jpg_concat_msg->auto_free      = 1;
+        msi->priv                   = (void *) jpg_concat_msg;
+        msi->enable                 = 1;
+        jpg_concat_msg->which_jpg   = which_jpg; // 默认使用jpg0
+        jpg_concat_msg->msi         = msi;
+        jpg_concat_msg->msi->action = jpg_concat_msg_msi_action;
+        jpg_concat_msg->msi->priv   = (void *) jpg_concat_msg;
+        jpg_concat_msg->msi->enable = 1;
+        jpg_concat_msg->filter_type = filter_type;
+        jpg_concat_msg->from        = src_from;
+        jpg_concat_msg->force_node  = 0;
+#ifndef FAST_JPG
+        jpg_concat_msg->auto_free = 1;
+#else
+        jpg_concat_msg->auto_free = 0;
+#endif
         jpg_concat_msg->jpg_node_count = JPG_NODE_COUNT;
         fbpool_init(&jpg_concat_msg->tx_pool, MAX_JPG_CONCAT_RECV);
         jpg_concat_msg->w = w;

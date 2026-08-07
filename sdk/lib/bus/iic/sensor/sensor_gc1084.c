@@ -259,6 +259,17 @@ const _Sensor_YUVNR gc1084_yuvnr_init = {
     205,255,0,
 };
 
+const _Sensor_COLENH_BV gc1084_ce_map[BV2COLENH_ARRAY_NUM] = {
+    {.bv = 48664, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =  5993, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =  3022, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =  1638, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   381, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =   369, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =   184, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =    90, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+};
+
 const _Sensor_COLENH gc1084_colenh_init = {
     .yuv_range  = 1,
     .luma       = 50, // range: 0 ~ 100
@@ -271,11 +282,8 @@ const _Sensor_COLENH gc1084_colenh_init = {
     .ce_out_ofs_y  = 128, 
     .ce_out_ofs_cb = 128, 
     .ce_out_ofs_cr = 128, // range: -128 ~ 128
-    .adj_sat_by_bv = 1,
-    .hi_sat     = 70,
-    .lo_sat     = 50,
-    .hi_sat_bv  = 1638, // high brightness for saturation
-    .lo_sat_bv  = 381, // low brightness for saturation
+    .adj_by_bv_en  = 1,
+    .bv2colenh_map = (void *)gc1084_ce_map,
 };
 
 const _Sensor_BV2NR gc1084_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
@@ -404,7 +412,7 @@ uint32 gc1084_gainLevelTable[26] = {
     0xffffffff,
 };
 
-void GC1084_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void GC1084_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint32 i            = 0;
     uint32 index        = 0;

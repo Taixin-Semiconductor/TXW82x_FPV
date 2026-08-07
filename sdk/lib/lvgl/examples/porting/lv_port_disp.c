@@ -270,11 +270,86 @@ static void disp_flush_rotate(lv_disp_drv_t * disp_drv, const lv_area_t * area, 
 //msi的驱动中间层
 #include "basic_include.h"
 #include "lib/multimedia/msi.h"
+#include "video_app_csc_msi.h"
+
+int lv_vendor_get_rotate_callback(struct framebuff *fb)
+{
+    int ret = 0;
+#if LVGL_HW_CSC_2_LCD_VIDEO
+    ret = lv_disp_get_rotation(NULL);
+
+    if(ret)
+    {
+        fb->srcID = FRAMEBUFF_SOURCE_OSD_ENC;
+    }
+    else
+    {
+        fb->srcID = FRAMEBUFF_SOURCE_CSC;
+    }
+#else
+    fb->srcID = FRAMEBUFF_SOURCE_OSD_ENC;
+#endif
+    return ret;
+}
+
+static void force_full_refresh_timer_cb(lv_timer_t * t)
+{
+    lv_disp_t *disp = lv_disp_get_default();
+    if(!disp) { lv_timer_del(t); return; }
+
+    os_printf("%s %d\n",__FUNCTION__,__LINE__);
+    /* 标记活动屏为失效以触发绘制（会走 full_refresh 路径）*/
+    lv_obj_invalidate(lv_disp_get_scr_act(disp));
+
+    /* 立即触发刷新（将在安全的上下文执行）*/
+    lv_refr_now(disp);
+
+    /* 只要一次性生效，恢复标志并删除定时器 */
+    lv_timer_del(t);
+}
+
+int lv_vendor_rotate_callback(int width, int height)
+{
+#if LVGL_HW_CSC_2_LCD_VIDEO
+    static int last_rotate = 0xff;
+    int ret = 0;
+    int rotate = 0;
+
+    msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_GET_ENABLE, (uint32)&rotate);
+
+    if (rotate != last_rotate) {
+        if (last_rotate != 0xff) {
+            if (rotate) {
+                os_printf("------OSD ENCODE MODE-------- width:%d height:%d\n", width, height);
+
+                lv_disp_set_full_screen_rotation(NULL, LV_DISP_ROT_270, width, height); // 480 800
+
+                lv_timer_create(force_full_refresh_timer_cb, 1, NULL);
+
+            } else {
+                os_printf("------CSC VIDEO MODE--------width:%d height:%d\n", width, height);
+                lv_disp_set_full_screen_rotation(NULL, LV_DISP_ROT_NONE, width, height); // 800 480
+
+                lv_timer_create(force_full_refresh_timer_cb, 1, NULL);
+
+            }
+            ret = 1;
+        }
+        last_rotate = rotate;
+    } else {
+        ret = 0;
+    }
+
+    return ret;
+#else
+    return 0;
+#endif
+}
 
 //不需要旋转
 static void disp_flush_msi(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
-
+    int ret;
 	lv_color_t *p_16;
 	p_16 = (lv_color_t*)osd_menu565_buf;
     if(disp_drv->draw_buf->flushing_last)
@@ -289,13 +364,19 @@ static void disp_flush_msi(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_
                 struct encode_data_s_callback *callback = (struct encode_data_s_callback*)fb->priv;
                 callback->user_data = (void*)disp_drv;
                 callback->finish_cb = (osd_finish_cb)lv_disp_flush_ready;
+                callback->rot_flag = lv_vendor_get_rotate_callback(fb);
 
 				fb->data = (void*)p_16;
                 fb->len = disp_drv->disp_buf_len;
 
                 //回写空间
                 sys_dcache_clean_range((uint32_t*)fb->data, disp_drv->disp_buf_len); 
-                msi_output_fb(msi,fb);
+                ret = lv_vendor_rotate_callback(disp_drv->ver_res, disp_drv->hor_res);
+                if (ret) {
+                    msi_delete_fb(msi, fb);
+                } else {
+                    msi_output_fb(msi, fb);
+                }
 			}
             //如果其他地方处理慢,要考虑丢帧了
             else
@@ -318,19 +399,19 @@ static void disp_flush_msi(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_
 //旋转部分
 static void disp_flush_rotate_msi(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
-
+    int ret;
 	lv_color_t *p_16;
 	p_16 = (lv_color_t*)osd_menu565_buf;
     if(area->x1 == 0 && area->x2 == disp_drv->hor_res-1)
     {
-        hw_memcpy(p_16+area->y1*disp_drv->hor_res,color_p,disp_drv->hor_res*(area->y2-area->y1+1) *sizeof(lv_color_t));
+        hw_memcpy_no_cache(p_16+area->y1*disp_drv->hor_res,color_p,disp_drv->hor_res*(area->y2-area->y1+1) *sizeof(lv_color_t));
     }
     else
     {
         uint32_t y;
         for(y = area->y1; y <= area->y2; y++) 
         {
-            hw_memcpy(p_16+y*disp_drv->hor_res+area->x1,color_p,(area->x2-area->x1+1)*sizeof(lv_color_t));
+            hw_memcpy_no_cache(p_16+y*disp_drv->hor_res+area->x1,color_p,(area->x2-area->x1+1)*sizeof(lv_color_t));
             color_p += (area->x2-area->x1+1);
         }
     }
@@ -347,14 +428,17 @@ static void disp_flush_rotate_msi(lv_disp_drv_t * disp_drv, const lv_area_t * ar
                 struct encode_data_s_callback *callback = (struct encode_data_s_callback*)fb->priv;
                 callback->user_data = (void*)disp_drv;
                 callback->finish_cb = (osd_finish_cb)lv_disp_flush_ready;
+                callback->rot_flag = lv_vendor_get_rotate_callback(fb);
 
 				fb->data = (void*)p_16;
                 fb->len = disp_drv->disp_buf_len;
 
-                //回写空间
-                sys_dcache_clean_range((uint32_t*)fb->data, disp_drv->disp_buf_len); 
-                msi_output_fb(msi,fb);
-                //lv_disp_flush_ready(disp_drv);
+                ret = lv_vendor_rotate_callback(disp_drv->ver_res, disp_drv->hor_res);
+                if (ret) {
+                    msi_delete_fb(msi, fb);
+                } else {
+                    msi_output_fb(msi, fb);
+                }
 			}
             //如果其他地方处理慢,要考虑丢帧了
             else
@@ -375,7 +459,6 @@ static void disp_flush_rotate_msi(lv_disp_drv_t * disp_drv, const lv_area_t * ar
 
 #if DMA2D_EN
 #include "hal/dma2d.h"
-
 static void disp_flush_rotate_dma2d_msi(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
     int ret = 0;
@@ -423,13 +506,17 @@ static void disp_flush_rotate_dma2d_msi(lv_disp_drv_t * disp_drv, const lv_area_
                 struct encode_data_s_callback *callback = (struct encode_data_s_callback*)fb->priv;
                 callback->user_data = (void*)disp_drv;
                 callback->finish_cb = (osd_finish_cb)lv_disp_flush_ready;
+                callback->rot_flag = lv_vendor_get_rotate_callback(fb);
 
 				fb->data = (void*)p_16;
                 fb->len = disp_drv->disp_buf_len;
 
-                //回写空间
-                sys_dcache_clean_range((uint32_t*)fb->data, disp_drv->disp_buf_len); 
-                msi_output_fb(msi,fb);
+                ret = lv_vendor_rotate_callback(disp_drv->ver_res, disp_drv->hor_res);
+                if (ret) {
+                    msi_delete_fb(msi, fb);
+                } else {
+                    msi_output_fb(msi, fb);
+                }
 			}
             //如果其他地方处理慢,要考虑丢帧了
             else
@@ -486,6 +573,8 @@ static void disp_flush_cpu1_hw_rotate_msi(lv_disp_drv_t * disp_drv, const lv_are
 }
 #endif
 
+
+
 void lv_port_disp_init_msi(const char *name,uint16_t w,uint16_t h,uint8_t rotate)
 {
     /*-------------------------
@@ -512,7 +601,7 @@ void lv_port_disp_init_msi(const char *name,uint16_t w,uint16_t h,uint8_t rotate
     {
         disp_drv.sw_rotate   = 0;
     }
-    disp_drv.rotated           = rotate;
+    disp_drv.rotated         = rotate;
 
     //初始化msi
     disp_drv.user_data = lvgl_osd_msi(name);
@@ -521,60 +610,99 @@ void lv_port_disp_init_msi(const char *name,uint16_t w,uint16_t h,uint8_t rotate
 
     #if LVGL_HW_ROTATE_RPC_EN
 
-    disp_drv.sw_rotate   = 0;
-    disp_drv.rotated     = 0;
+        disp_drv.sw_rotate   = 0;
+        disp_drv.rotated     = 0;
 
-    /*Set up the functions to access to your display*/
+        /*Set up the functions to access to your display*/
 
-    /*Set the resolution of the display*/
-    disp_drv.hor_res = h;
-    disp_drv.ver_res = w;
+        /*Set the resolution of the display*/
+        disp_drv.hor_res = h;
+        disp_drv.ver_res = w;
 
-    disp_drv.full_refresh = 1;
+        disp_drv.full_refresh = 1;
 
-    buf_1 = (lv_color_t*)lv_malloc(disp_drv.hor_res*LV_PORT_DISP_LINE*sizeof(lv_color_t));
+        buf_1 = (lv_color_t*)lv_malloc(disp_drv.hor_res*LV_PORT_DISP_LINE*sizeof(lv_color_t));
 
-    lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, disp_drv.hor_res * LV_PORT_DISP_LINE);   /*Initialize the display buffer*/
+        lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, disp_drv.hor_res * LV_PORT_DISP_LINE);   /*Initialize the display buffer*/
 
-    osd_menu565_buf = (uint8_t *)av_psram_malloc(w*h*2);
-	sys_dcache_invalid_range((uint32_t)osd_menu565_buf, w*h*2);
+        osd_menu565_buf = (uint8_t *)av_psram_malloc(w*h*2);
+        sys_dcache_invalid_range((uint32_t)osd_menu565_buf, w*h*2);
 
-    disp_drv.flush_cb = disp_flush_cpu1_hw_rotate_msi;
+        disp_drv.flush_cb = disp_flush_cpu1_hw_rotate_msi;
 
-    lvgl_rotate_task_init(disp_drv.user_data, lv_disp_flush_ready, (void*)&disp_drv, disp_drv.hor_res, disp_drv.ver_res, LV_COLOR_DEPTH);
+        lvgl_rotate_task_init(disp_drv.user_data, lv_disp_flush_ready, (void*)&disp_drv, disp_drv.hor_res, disp_drv.ver_res, LV_COLOR_DEPTH);
 
     #else
-    //如果旋转,就使用单buf
-    if(disp_drv.sw_rotate)
-    {
-        buf_1 = (lv_color_t*)lv_malloc(w*LV_PORT_DISP_LINE*sizeof(lv_color_t));
-        lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, w * LV_PORT_DISP_LINE);   /*Initialize the display buffer*/
-        //旋转,需要中间层
-        osd_menu565_buf = (uint8_t *)av_psram_malloc(w*h*2);
-        sys_dcache_invalid_range((uint32_t*)osd_menu565_buf, w*h*2);
-        #if DMA2D_EN
-        disp_drv.flush_cb = disp_flush_rotate_dma2d_msi;
+        #if LVGL_HW_CSC_2_LCD_VIDEO
+            disp_drv.sw_rotate   = 1;
+            disp_drv.rotated     = 0;
+
+            /*Set up the functions to access to your display*/
+
+            /*Set the resolution of the display*/
+            disp_drv.hor_res = h;
+            disp_drv.ver_res = w;
+
+            #if (LVGL_HW_CSC_2_LCD_VIDEO == 1) 
+                // 行缓存刷新模式
+                buf_1 = (lv_color_t*)lv_malloc(disp_drv.hor_res*LV_PORT_DISP_LINE*sizeof(lv_color_t));
+
+                lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, disp_drv.hor_res * LV_PORT_DISP_LINE);   /*Initialize the display buffer*/
+
+                osd_menu565_buf = (uint8_t *)av_psram_malloc(w*h*2);
+                sys_dcache_invalid_range((uint32_t)osd_menu565_buf, w*h*2);
+
+                #if DMA2D_EN
+                disp_drv.flush_cb = disp_flush_rotate_dma2d_msi;
+                #else
+                disp_drv.flush_cb = disp_flush_rotate_msi;
+                #endif
+            #elif (LVGL_HW_CSC_2_LCD_VIDEO == 2)
+                // 整帧直接渲染模式
+                disp_drv.direct_mode = 1;
+                buf_1 = (lv_color_t*)av_psram_malloc(w*h*sizeof(lv_color_t));
+                sys_dcache_invalid_range((uint32_t*)buf_1, w*h*sizeof(lv_color_t));
+                osd_menu565_buf = (uint8_t *)buf_1;
+                lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, w * h);   /*Initialize the display buffer*/
+                disp_drv.flush_cb = disp_flush_msi;
+            #endif
+
+            video_app_csc_msi_init(R_CSC_MSI, CSC_RGB565, CSC_YUV420P, disp_drv.hor_res, disp_drv.ver_res);
+            msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 0);
+            msi_add_output(NULL, R_CSC_MSI, R_CSC_VIDEO_P2);
+
         #else
-        disp_drv.flush_cb = disp_flush_rotate_msi;
+            //如果旋转,就使用单buf
+            if(disp_drv.sw_rotate)
+            {
+                buf_1 = (lv_color_t*)lv_malloc(w*LV_PORT_DISP_LINE*sizeof(lv_color_t));
+                lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, w * LV_PORT_DISP_LINE);   /*Initialize the display buffer*/
+                //旋转,需要中间层
+                osd_menu565_buf = (uint8_t *)av_psram_malloc(w*h*2);
+                sys_dcache_invalid_range((uint32_t*)osd_menu565_buf, w*h*2);
+                #if DMA2D_EN
+                disp_drv.flush_cb = disp_flush_rotate_dma2d_msi;
+                #else
+                disp_drv.flush_cb = disp_flush_rotate_msi;
+                #endif
+            }
+            else
+            {
+                //非旋转,直接绘制就好了
+                disp_drv.direct_mode = 1;
+                buf_1 = (lv_color_t*)lv_malloc(w*h*sizeof(lv_color_t));
+                sys_dcache_invalid_range((uint32_t*)buf_1, w*h*sizeof(lv_color_t));
+                osd_menu565_buf = (uint8_t *)buf_1;
+                lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, w * h);   /*Initialize the display buffer*/
+                disp_drv.flush_cb = disp_flush_msi;
+            }
+
+            /*Set up the functions to access to your display*/
+
+            /*Set the resolution of the display*/
+            disp_drv.hor_res = w;
+            disp_drv.ver_res = h;
         #endif
-    }
-    else
-    {
-        //非旋转,直接绘制就好了
-        disp_drv.direct_mode = 1;
-        buf_1 = (lv_color_t*)lv_malloc(w*h*sizeof(lv_color_t));
-		sys_dcache_invalid_range((uint32_t*)buf_1, w*h*sizeof(lv_color_t));
-        osd_menu565_buf = (uint8_t *)buf_1;
-        lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, w * h);   /*Initialize the display buffer*/
-        disp_drv.flush_cb = disp_flush_msi;
-    }
-
-    /*Set up the functions to access to your display*/
-
-    /*Set the resolution of the display*/
-    disp_drv.hor_res = w;
-    disp_drv.ver_res = h;
-
     #endif
 
     /*Used to copy the buffer's content to the display*/

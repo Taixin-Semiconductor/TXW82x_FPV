@@ -3,6 +3,11 @@
 #include "osal/string.h"
 #include "lib/common/dsleepdata.h"
 
+struct dsleeplog {
+    uint16 size;
+    uint16 off;
+};
+
 struct system_sleepdata {
     uint32 magic1;
     uint32 cur_addr;
@@ -87,5 +92,41 @@ void *sys_sleepdata_get(uint8 id)
         return (void *)sdata->regions[id];
     }
     return NULL;
+}
+
+int32 dsleeplog_int(uint32 size)
+{
+    struct dsleeplog *log = (struct dsleeplog *)sys_sleepdata_request(SYSTEM_SLEEPDATA_ID_SLEEPLOG, size + sizeof(struct dsleeplog));
+    if (log) {
+        if (log->size == 0) log->size = size;
+        return RET_OK;
+    } else {
+        os_printf(KERN_EMERG"dsleeplog_int fail, size:%d! freesize:%d\r\n", size, sys_sleepdata_freesize());
+        return -ENOMEM;
+    }
+}
+
+void dsleeplog_print(void)
+{
+    struct dsleeplog *log = (struct dsleeplog *)sys_sleepdata_get(SYSTEM_SLEEPDATA_ID_SLEEPLOG);
+    if (log) {
+        char *buff = (char *)(log + 1);
+        hgprintf_out(buff + log->off, log->size - log->off, 1);
+        hgprintf_out(buff, log->off, 1);
+    }
+}
+
+__dsleep_text void dsleeplog_save(char c)
+{
+    uint32 start = (uint32)&__sleep_data_start;
+    struct system_sleepdata *sdata = (struct system_sleepdata *)start;
+    struct dsleeplog *log = (struct dsleeplog *)sdata->regions[SYSTEM_SLEEPDATA_ID_SLEEPLOG];
+
+    if (log && c && c != 0x0d) {
+        char *buff = (char *)(log + 1);
+        buff[log->off] = c;
+        log->off++;
+        log->off &= (log->size - 1);
+    }
 }
 

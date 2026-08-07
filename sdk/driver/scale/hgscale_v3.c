@@ -616,6 +616,12 @@ void SCALE1_IRQHandler_action(void *p_scale)
 				scaleirq1_vector_table[loop] (loop,scaleirq1_dev_table[loop],0);
 		}
 	}
+
+	if(scale_hw->need_close)
+	{
+		hw->SCALECON &= ~BIT(0);  //disable
+		scale_hw->need_close = 0;
+	}
 }
 
 
@@ -746,18 +752,15 @@ static int32 hgscale1_open(struct scale_device *p_scale){
 static int32 hgscale1_close(struct scale_device *p_scale){
 	struct hgscale *scale_hw = (struct hgscale*)p_scale;	
 	struct hgscale1_hw *hw  = (struct hgscale1_hw *)scale_hw->hw;
-	//如果关闭中断或者在中断调用,就不再处理
-	if(!(__in_interrupt() || in_disable_irq()))
+	//如果关闭中断或者在中断调用,就不再处理,并且是在vpp模式需要等待中断关闭
+	if((!(__in_interrupt() || in_disable_irq())) && hw->SCALECON & BIT(2))
 	{
-		uint32_t timeout = 100;
-		while((hw->SCALESTA &BIT(16)) && --timeout)
+		uint32_t timeout = 50;
+		scale_hw->need_close = 1;
+		while(scale_hw->need_close && --timeout)
 		{
 			os_sleep_ms(1);
 		}
-	}
-	else
-	{
-		while(hw->SCALESTA &BIT(16)); 
 	}
 	hw->SCALECON &= ~BIT(0);  //disable
 	hw->SCALESTA = hw->SCALESTA;
@@ -833,12 +836,207 @@ static int32 hgscale3_close(struct scale_device *p_scale){
 	return 0;
 }
 
+int32 hgscale1_suspend(struct dev_obj *obj){
+	struct hgscale *scale_hw = (struct hgscale*)obj;
+	struct hgscale1_hw *hw;
+	struct hgscale1_hw *hw_cfg;
+	if(!scale_hw->opened || scale_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	scale_hw->dsleep = 1;
+	scale_hw->cfg_backup = (uint32 *)os_malloc(sizeof(struct hgscale1_hw));
+	hw_cfg = (struct hgscale1_hw*)scale_hw->cfg_backup;
+	hw     = (struct hgscale1_hw*)scale_hw->hw;
+	hw_cfg->SCALECON 		= hw->SCALECON;
+	hw_cfg->SWINCON 		= hw->SWINCON;
+	hw_cfg->SSTART 		    = hw->SSTART;
+	hw_cfg->TWINCON         = hw->TWINCON;  
+	hw_cfg->SWIDTH_STEP 	= hw->SWIDTH_STEP;
+	hw_cfg->SHEIGH_STEP 	= hw->SHEIGH_STEP;
+	hw_cfg->INBUF_LINE_NUM 	= hw->INBUF_LINE_NUM;
+	hw_cfg->INYDMA_STADR 	= hw->INYDMA_STADR;
+	hw_cfg->INUDMA_STADR 	= hw->INUDMA_STADR;
+	hw_cfg->INVDMA_STADR 	= hw->INVDMA_STADR;
+	hw_cfg->INBUFCON 		= hw->INBUFCON;
+	hw_cfg->SHEIGH_CNT 		= hw->SHEIGH_CNT;
+	hw_cfg->SCALESTA 		= hw->SCALESTA;	
+	irq_disable(scale_hw->irq_num);
+	return 0;
+}
+
+int32 hgscale1_resume(struct dev_obj *obj){
+	struct hgscale *scale_hw = (struct hgscale*)obj;
+	struct hgscale1_hw *hw;
+	struct hgscale1_hw *hw_cfg;
+	if(!scale_hw->opened || !scale_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	scale_hw->dsleep = 0;	
+	hw_cfg = (struct hgscale1_hw*)scale_hw->cfg_backup;
+	hw     = (struct hgscale1_hw*)scale_hw->hw;
+	hw->SCALECON 		= hw_cfg->SCALECON;
+	hw->SWINCON 		= hw_cfg->SWINCON;
+	hw->SSTART   		= hw_cfg->SSTART;
+	hw->TWINCON 		= hw_cfg->TWINCON;
+	hw->SWIDTH_STEP 	= hw_cfg->SWIDTH_STEP;
+	hw->SHEIGH_STEP 	= hw_cfg->SHEIGH_STEP;
+	hw->INBUF_LINE_NUM 	= hw_cfg->INBUF_LINE_NUM;
+	hw->INYDMA_STADR 	= hw_cfg->INYDMA_STADR;
+	hw->INUDMA_STADR 	= hw_cfg->INUDMA_STADR;
+	hw->INVDMA_STADR 	= hw_cfg->INVDMA_STADR;
+	hw->INBUFCON 		= hw_cfg->INBUFCON;
+	hw->SHEIGH_CNT 		= hw_cfg->SHEIGH_CNT;
+	hw->SCALESTA 		= hw_cfg->SCALESTA;	
+	irq_enable(scale_hw->irq_num);
+	os_free(scale_hw->cfg_backup);
+	return 0;
+}
+
+
+int32 hgscale2_suspend(struct dev_obj *obj){
+	struct hgscale *scale_hw = (struct hgscale*)obj;
+	struct hgscale2_hw *hw;
+	struct hgscale2_hw *hw_cfg;
+	if(!scale_hw->opened || scale_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	scale_hw->dsleep = 1;
+	scale_hw->cfg_backup = (uint32 *)os_malloc(sizeof(struct hgscale2_hw));
+	hw_cfg = (struct hgscale2_hw*)scale_hw->cfg_backup;
+	hw     = (struct hgscale2_hw*)scale_hw->hw;
+	hw_cfg->SCALECON 		= hw->SCALECON;
+	hw_cfg->SWINCON 		= hw->SWINCON;
+	hw_cfg->SSTART 		    = hw->SSTART;
+	hw_cfg->TWINCON         = hw->TWINCON;  
+	hw_cfg->SWIDTH_STEP 	= hw->SWIDTH_STEP;
+	hw_cfg->SHEIGH_STEP 	= hw->SHEIGH_STEP;
+	hw_cfg->YSRAMBUF_STADR  = hw->YSRAMBUF_STADR;
+	hw_cfg->USRAMBUF_STADR  = hw->USRAMBUF_STADR;
+	hw_cfg->VSRAMBUF_STADR	= hw->VSRAMBUF_STADR;
+	hw_cfg->INYDMA_STADR 	= hw->INYDMA_STADR;
+	hw_cfg->INUDMA_STADR 	= hw->INUDMA_STADR;
+	hw_cfg->INVDMA_STADR 	= hw->INVDMA_STADR;
+	hw_cfg->OUTYDMA_STADR   = hw->OUTYDMA_STADR;
+	hw_cfg->OUTUDMA_STADR   = hw->OUTUDMA_STADR;
+	hw_cfg->OUTVDMA_STADR   = hw->OUTVDMA_STADR;
+	hw_cfg->SHEIGH_CNT 		= hw->SHEIGH_CNT;
+	hw_cfg->SCALESTA 		= hw->SCALESTA;	
+	irq_disable(scale_hw->irq_num);
+	return 0;
+}
+
+int32 hgscale2_resume(struct dev_obj *obj){
+	struct hgscale *scale_hw = (struct hgscale*)obj;
+	struct hgscale2_hw *hw;
+	struct hgscale2_hw *hw_cfg;
+	if(!scale_hw->opened || !scale_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	scale_hw->dsleep = 0;	
+	hw_cfg = (struct hgscale2_hw*)scale_hw->cfg_backup;
+	hw     = (struct hgscale2_hw*)scale_hw->hw;
+	hw->SCALECON 		= hw_cfg->SCALECON;
+	hw->SWINCON 		= hw_cfg->SWINCON;
+	hw->SSTART 		    = hw_cfg->SSTART;
+	hw->TWINCON         = hw_cfg->TWINCON;  
+	hw->SWIDTH_STEP 	= hw_cfg->SWIDTH_STEP;
+	hw->SHEIGH_STEP 	= hw_cfg->SHEIGH_STEP;
+	hw->YSRAMBUF_STADR  = hw_cfg->YSRAMBUF_STADR;
+	hw->USRAMBUF_STADR  = hw_cfg->USRAMBUF_STADR;
+	hw->VSRAMBUF_STADR	= hw_cfg->VSRAMBUF_STADR;
+	hw->INYDMA_STADR 	= hw_cfg->INYDMA_STADR;
+	hw->INUDMA_STADR 	= hw_cfg->INUDMA_STADR;
+	hw->INVDMA_STADR 	= hw_cfg->INVDMA_STADR;
+	hw->OUTYDMA_STADR   = hw_cfg->OUTYDMA_STADR;
+	hw->OUTUDMA_STADR   = hw_cfg->OUTUDMA_STADR;
+	hw->OUTVDMA_STADR   = hw_cfg->OUTVDMA_STADR;
+	hw->SHEIGH_CNT 		= hw_cfg->SHEIGH_CNT;
+	hw->SCALESTA 		= hw_cfg->SCALESTA;	
+
+	irq_enable(scale_hw->irq_num);
+	os_free(scale_hw->cfg_backup);
+	return 0;
+}
+
+int32 hgscale3_suspend(struct dev_obj *obj){
+	struct hgscale *scale_hw = (struct hgscale*)obj;
+	struct hgscale3_hw *hw;
+	struct hgscale3_hw *hw_cfg;
+	if(!scale_hw->opened || scale_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	scale_hw->dsleep = 1;
+	scale_hw->cfg_backup = (uint32 *)os_malloc(sizeof(struct hgscale3_hw));
+	hw_cfg = (struct hgscale3_hw*)scale_hw->cfg_backup;
+	hw     = (struct hgscale3_hw*)scale_hw->hw;
+	hw_cfg->SCALECON 		= hw->SCALECON;
+	hw_cfg->SWINCON 		= hw->SWINCON;
+	hw_cfg->SSTART 		    = hw->SSTART;
+	hw_cfg->TWINCON         = hw->TWINCON;  
+	hw_cfg->SWIDTH_STEP 	= hw->SWIDTH_STEP;
+	hw_cfg->SHEIGH_STEP 	= hw->SHEIGH_STEP;
+	hw_cfg->INBUF_LINE_NUM  = hw->INBUF_LINE_NUM;
+	hw_cfg->INYDMA_STADR 	= hw->INYDMA_STADR;
+	hw_cfg->INUDMA_STADR 	= hw->INUDMA_STADR;
+	hw_cfg->INVDMA_STADR 	= hw->INVDMA_STADR;
+	hw_cfg->OUTYDMA_STADR   = hw->OUTYDMA_STADR;
+	hw_cfg->OUTUDMA_STADR   = hw->OUTUDMA_STADR;
+	hw_cfg->OUTVDMA_STADR   = hw->OUTVDMA_STADR;
+	hw_cfg->INBUFCON        = hw->INBUFCON;
+	hw_cfg->SHEIGH_CNT 		= hw->SHEIGH_CNT;
+	hw_cfg->SCALESTA 		= hw->SCALESTA;	
+	irq_disable(scale_hw->irq_num);
+	return 0;
+}
+
+int32 hgscale3_resume(struct dev_obj *obj){
+	struct hgscale *scale_hw = (struct hgscale*)obj;
+	struct hgscale3_hw *hw;
+	struct hgscale3_hw *hw_cfg;
+	if(!scale_hw->opened || !scale_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	scale_hw->dsleep = 0;	
+	hw_cfg = (struct hgscale3_hw*)scale_hw->cfg_backup;
+	hw     = (struct hgscale3_hw*)scale_hw->hw;
+	hw->SCALECON 		= hw_cfg->SCALECON;
+	hw->SWINCON 		= hw_cfg->SWINCON;
+	hw->SSTART 		    = hw_cfg->SSTART;
+	hw->TWINCON         = hw_cfg->TWINCON;  
+	hw->SWIDTH_STEP 	= hw_cfg->SWIDTH_STEP;
+	hw->SHEIGH_STEP 	= hw_cfg->SHEIGH_STEP;
+	hw->INBUF_LINE_NUM  = hw_cfg->INBUF_LINE_NUM;
+	hw->INYDMA_STADR 	= hw_cfg->INYDMA_STADR;
+	hw->INUDMA_STADR 	= hw_cfg->INUDMA_STADR;
+	hw->INVDMA_STADR 	= hw_cfg->INVDMA_STADR;
+	hw->OUTYDMA_STADR   = hw_cfg->OUTYDMA_STADR;
+	hw->OUTUDMA_STADR   = hw_cfg->OUTUDMA_STADR;
+	hw->OUTVDMA_STADR   = hw_cfg->OUTVDMA_STADR;
+	hw->INBUFCON        = hw_cfg->INBUFCON;
+	hw->SHEIGH_CNT 		= hw_cfg->SHEIGH_CNT;
+	hw->SCALESTA 		= hw_cfg->SCALESTA;	
+	irq_enable(scale_hw->irq_num);
+	os_free(scale_hw->cfg_backup);
+	return 0;
+}
+
+
 static const struct scale_hal_ops dev1_ops = {
     .open        = hgscale1_open,
     .close       = hgscale1_close,
     .ioctl       = hgscale1_ioctl,
     .request_irq = scaleirq1_register,
     .release_irq = scaleirq1_unregister,
+#ifdef CONFIG_SLEEP	
+	.ops.suspend = hgscale1_suspend,
+	.ops.resume  = hgscale1_resume,
+#endif     
 };
 
 static const struct scale_hal_ops dev2_ops = {
@@ -847,6 +1045,10 @@ static const struct scale_hal_ops dev2_ops = {
     .ioctl       = hgscale2_ioctl,
     .request_irq = scaleirq2_register,
     .release_irq = scaleirq2_unregister,
+#ifdef CONFIG_SLEEP	
+	.ops.suspend = hgscale2_suspend,
+	.ops.resume  = hgscale2_resume,
+#endif       
 };
 
 static const struct scale_hal_ops dev3_ops = {
@@ -855,6 +1057,10 @@ static const struct scale_hal_ops dev3_ops = {
     .ioctl       = hgscale3_ioctl,
     .request_irq = scaleirq3_register,
     .release_irq = scaleirq3_unregister,
+#ifdef CONFIG_SLEEP	
+	.ops.suspend = hgscale3_suspend,
+	.ops.resume  = hgscale3_resume,
+#endif    
 };
 
 int32 hgscale1_attach(uint32 dev_id, struct hgscale *scale){

@@ -51,6 +51,7 @@ enum
 #define R_OSD_ENCODE                "osd_encode"
 #define R_OSD_SHOW                  "osd_show"
 #define R_LCD_OSD                   "LCD_OSD"
+#define R_CSC_VIDEO_P2              "CSC_VIDEO_P2"
 #define R_VIDEO_P1                  "VIDEO_P1"
 #define R_VIDEO_P0                  "VIDEO_P0"
 #define R_SIM_VIDEO                 "SIM_VIDEO"
@@ -61,21 +62,27 @@ enum
 #define RS_JPG_CONCAT               "JPG_CONCAT"  // 用于jpg重新组成framebuff
 #define RS_JPG_CONCAT1              "JPG_CONCAT1" // 用于jpg1重新组成framebuff
 #define R_GEN420_THUMB_JPG          "gen420_thumb_jpg"
+#define R_GEN420_THUMB_JPG_USB      "gen420_thumb_jpg_usb"
 #define R_GEN420_THUMB_JPG_OVER_DPI "gen420_thumb_jpg_over_dpi"
 #define R_GEN420_JPG_RECODE         "gen420_JPG_RECODE"
 #define R_SCALE1_JPG_RECODE         "scale1_JPG_RECODE"
 #define R_DEBUG_STREAM              "debug_stream"
 #define R_SONIC_PROCESS             "r_sonic_process"
 #define R_JPG_THUMB                 "JPG_THUMB"
+#define R_JPG_PHOTO_USB             "JPG_PHOTO_USB"
 #define R_MP4_THUMB                 "MP4_THUMB"
+#define R_AVI_THUMB                 "AVI_THUMB"
 #define R_THUMB                     "THUMB"
+#define R_THUMB_USB                 "THUMB_USB"
 #define R_JPG_SAVE                  "JPG_SAVE"
 #define R_JPG_DECODE_MSG            "JPG_DECODE_MSG"
 #define R_THUMB_DECODE_MSG          "THUMB_DECODE_MSG"
+#define R_THUMB_DECODE_MSG_USB      "THUMB_DECODE_MSG_USB"
 #define R_USBD_VIDEO                "usbd_video_msi"
 #define R_FILE_MSI                  "file_msi"
 #define R_RTP_H264                  "rtp-h264" // 图传的视频
 #define R_AVI_ENCODE_MSI            "avi_encode_msi"
+#define R_CSC_MSI                   "csc_msi"
 // S
 #define S_PDM                       "pdm"
 #define S_ADC_AUDIO                 "adc_audio"
@@ -127,6 +134,7 @@ enum
 #define SR_GEN420_720P_JPG          "GEN420_720P_MJPG"
 #define ROUTE_USB                   "route-usb"
 #define AUTO_JPG                    "auto-jpg"
+#define AUTO_JPG1                    "auto-jpg1"
 #define AUTO_H264                    "auto-h264"
 
 // 高16位是大类型(统一宏),低16位是细分类型
@@ -194,6 +202,8 @@ struct fb_h264_s
     uint8_t *sps;
     uint16_t pps_len;
     uint16_t sps_len;
+    uint16_t w;
+    uint16_t h;
     uint8_t  count;
     uint8_t  type;      // 0:无效  1:I帧  2:P帧  3:B帧
     uint8_t  start_len; // 读取实际内容的的起始长度(就是偏移到I帧、P帧、B帧头第一byte)
@@ -220,6 +230,7 @@ struct yuv_arg_s
     uint8_t *del;
     uint32_t dispcnt;
     uint32_t magic; // 一个类似随机数?有些msi可以通过识别这个magic来判断是否为自己所需要的数据};
+    uint8_t video_only; //多屏显示层专用，用于只显示当前层画面
 };
 
 // 解码,yuv通用参数放前面,与yuv_arg_s保持一致
@@ -281,11 +292,15 @@ enum MSI_SELF_CMDs
     MSI_OSD_HARDWARE_DEV,
     MSI_OSD_HARDWARE_STREAM_RESET,
     MSI_OSD_HARDWARE_STREAM_STOP,
+    MSI_OSD_ENC_MSI_ENABLE,
 };
 
-enum MSI_SCALE3_CMD
+enum MSI_SCALE3_NORMAL_CMD
 {
     MSI_SCALE3_START,
+    MSI_SCLAE3_NORMAL_ADD_DPI,  //从scale3增加一个获取某个分辨率的yuv数据,暂定内部只有一个buf,
+                                //用于分时复用,考虑连拍的问题,如果采用一次性全部获取,会导致推屏丢帧严重
+
 };
 
 enum MSI_SCALE1_CMD
@@ -301,8 +316,14 @@ enum MSI_SCALE2_CMD
 
 enum MSI_LCD_VIDEO_CMD
 {
-    // osd使用
     MSI_VIDEO_ENABLE,
+    MSI_VIDEO_GET_ENABLE,
+};
+
+enum MSI_LCD_OSD_CMD
+{
+    // osd使用
+    MSI_OSD_ENABLE,
 };
 
 enum MSI_JPEG0_CMD
@@ -325,6 +346,7 @@ enum MSI_JPEG_CONCAT
     MSI_SET_GEN420_TYPE,
     MSI_SET_SCALE1_TYPE,
     MSI_SET_TIME,
+    MSI_SET_SCALE1_AUTO_FLAG,
 };
 
 enum MSI_JPEG_HARDWARE
@@ -336,6 +358,8 @@ enum MSI_JPEG_HARDWARE
     MSI_JPEG_HARDWARE_SET_GEN420_TYPE,
     MSI_JPEG_HARDWARE_SET_SCALE1_TYPE,
     MSI_JPEG_SET_TIME,
+    MSI_JPEG_SET_LEN,
+    MSI_JPEG_SET_SCALE1_FLAG,
 };
 
 enum MSI_AUTO_JPG
@@ -359,6 +383,7 @@ enum MSI_JPEG_DECODE_MSG
 enum MSI_JPG_THUMB
 {
     MSI_JPG_THUMB_TAKEPHOTO,
+    MSI_JPG_THUMB_TAKEPHOTO_SETPATH,
 };
 
 enum MSI_DECODE_CMD
@@ -392,6 +417,8 @@ enum MSI_MEDIA_CTRL_CMD
 {
     MSI_MEDIA_CTRL_PLAY,
     MSI_MEDIA_CTRL_PLAY_1FPS,
+	MSI_MEDIA_CTRL_RECORD_START,
+    MSI_MEDIA_CTRL_GET_RECTIME,
 };
 
 enum MSI_VIDEO_DEMUX_CTRL_CMD
@@ -402,6 +429,8 @@ enum MSI_VIDEO_DEMUX_CTRL_CMD
     MSI_VIDEO_DEMUX_SET_STATUS,
     MSI_VIDEO_DEMUX_GET_STATUS,
     MSI_VIDEO_DEMUX_START,
+	MSI_VIDEO_DEMUX_STOP,
+    MSI_VIDEO_DEMUX_PAUSE,
 };
 
 enum MSI_TAKEPHOTO_SCALE3_CMD
@@ -409,4 +438,10 @@ enum MSI_TAKEPHOTO_SCALE3_CMD
     MSI_TAKEPHOTO_SCALE3_KICK,
     MSI_TAKEPHOTO_SCALE3_STOP,
 };
+
+enum MSI_CSC_CMD
+{
+    MSI_CSC_MSI_ENABLE,
+};
+
 #endif

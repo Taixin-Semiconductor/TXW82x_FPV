@@ -1,5 +1,4 @@
 #include "basic_include.h"
-
 #include "fatfs/osal_file.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
@@ -9,6 +8,7 @@
 #include "audio_media_ctrl/audio_code_ctrl.h"
 #include "audio_msi/audio_adc.h"
 #include "app/video_app/file_thumb.h"
+#include "app/recorder/file_process.h"
 
 #ifdef PIN_FROM_PARAM
 #include "pin_param.h"
@@ -37,8 +37,9 @@ struct msi *mp4_thumb_msi_init(const char *filename, uint8_t srcID, uint8_t filt
 
 enum
 {
-    MSI_MP4_STOP        = BIT(0),
-    MSI_MP4_THREAD_DEAD = BIT(1),
+    MSI_MP4_START       = BIT(0),
+    MSI_MP4_STOP        = BIT(1),
+    MSI_MP4_THREAD_DEAD = BIT(2),
 };
 
 enum
@@ -55,23 +56,19 @@ enum
     MP4_MODE_TIME_LAPSE, // 缩时录影模式
 };
 
-typedef void *(*file_create)(void **loop, char *file_name);
-typedef void (*loop_free)(void **loop);
-
 struct mp4_encode_msi_s
 {
-    struct msi     *msi;
-    struct os_event evt;
-    void           *loop; // 循环录像的句柄,定时检查是否足够空间以及是否需要删除文件
-    uint8_t         filter_type;
-    uint8_t         srcID;
-    uint8_t         rec_time;
-    uint32_t        audio_encode;
-    uint16_t        rec_second;
-    int16_t         max_video_count;
-    file_create     file_create;
-    loop_free       loop_free;
-    uint8_t         mode; // 录制模式：普通录像 or 缩时录影
+    struct msi         *msi;
+    struct os_event     evt;
+    struct file_process file_process;
+    uint8_t             filter_type;
+    uint8_t             srcID;
+    uint8_t             rec_time;
+    uint16_t            rec_second;
+    uint32_t            audio_encode;
+    int16_t             max_video_count;
+    uint8_t             mode; // 录制模式：普通录像 or 缩时录影
+    void               *fb;
 };
 
 #define MIN(a, b) ((a) > (b) ? b : a)
@@ -198,24 +195,25 @@ static uint8_t *get_sps_pps_nal_size(uint8_t *buf, uint32_t size, uint32_t *nal_
     return ret_buf;
 }
 
-static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, const char *h264_filename)
+static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, const char *h264_filename, uint32_t filesize)
 {
-    int                      ret              = 0;
-    struct mp4_encode_msi_s *mp4_encode       = (struct mp4_encode_msi_s *) msi->priv;
-    struct msi              *mp4_thumb_msi    = NULL;
-    void                    *mp4_msg          = NULL;
-    struct framebuff        *fb               = NULL;
-    int32_t                  error            = 0;
-    uint32_t                 MP4_status       = 0;
-    uint32_t                 write_start_time = os_jiffies();
-    uint32_t                 nal_size;
-    uint8_t                  nal_head_size;
-    uint8_t                 *buf;
-    uint8_t                 *nal_head_buf;
-    uint8_t                 *last_nal_head_buf;
-    uint8_t                  sps_pps_flag = 0;
-    uint8_t                  h264_count   = 0;
-    uint8_t                  asps_data[2];
+    int                      ret        = 0;
+    struct mp4_encode_msi_s *mp4_encode = (struct mp4_encode_msi_s *) msi->priv;
+    struct framebuff        *fb         = mp4_encode->fb; // 获取缓冲的一帧数据
+    mp4_encode->fb                      = NULL;
+    struct msi *mp4_thumb_msi           = NULL;
+    void       *mp4_msg                 = NULL;
+    int32_t     error                   = 0;
+    uint32_t    MP4_status              = 0;
+    uint32_t    write_start_time        = os_jiffies();
+    uint32_t    nal_size;
+    uint8_t     nal_head_size;
+    uint8_t    *buf;
+    uint8_t    *nal_head_buf;
+    uint8_t    *last_nal_head_buf;
+    uint8_t     sps_pps_flag = 0;
+    uint8_t     h264_count   = 0;
+    uint8_t     asps_data[2];
 
     // 普通录像变量
     uint32_t now_time             = 0;
@@ -239,7 +237,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
     {
         os_sleep_ms(1);
         ret = MP4_ENCODE_ERR_NO_SD;
-        goto mp4_encode_thread_end;
+        goto mp4_encode_running_clean_end;
     }
 
     // MP4文件初始化 - 根据模式决定是否包含音频
@@ -247,17 +245,17 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
     mp4_msg       = MP4_open_init((F_FILE *) fp, has_audio);
     if (!mp4_msg)
     {
-        goto mp4_encode_thread_end;
+        goto mp4_encode_running_clean_end;
     }
 
     // 配置音频和视频
     if (mp4_encode->mode == MP4_MODE_NORMAL && has_audio)
     {
-        get_aac_config(AUADC_SAMPLERATE, asps_data);
+        get_aac_config(audio_adc_get_samplerate(AUSYS_AUAD), asps_data);
         mp4_audio_cfg_init(mp4_msg, asps_data, sizeof(asps_data));
     }
-    mp4_set_max_size(mp4_msg, MAX_SINGLE_MP4_SIZE);
-    mp4_video_cfg_init(mp4_msg, 1280, 720);
+    mp4_set_max_size(mp4_msg, filesize);
+    // mp4_video_cfg_init(mp4_msg, 1280, 720);
 
     // 初始化PTS相关变量（普通录像使用）
     if (mp4_encode->mode == MP4_MODE_NORMAL)
@@ -266,8 +264,8 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
     }
 
     // 启动缩略图生成
-    mp4_thumb_msi   = mp4_thumb_msi_init(h264_filename, FRAMEBUFF_SOURCE_CAMERA0, FSTYPE_NONE);
-    msi->enable     = 1;
+    mp4_thumb_msi = mp4_thumb_msi_init(h264_filename, FRAMEBUFF_SOURCE_CAMERA0, FSTYPE_NONE);
+    msi->enable   = 1;
     while (fp)
     {
         os_event_wait(&mp4_encode->evt, MSI_MP4_STOP, &MP4_status, OS_EVENT_WMODE_OR, 0);
@@ -275,17 +273,40 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
         if (MP4_status & MSI_MP4_STOP)
         {
             ret = 1;
-            goto mp4_encode_thread_end;
+            goto mp4_encode_running_clean_end;
         }
-        fb = msi_get_fb(msi, 0);
+
+        if (fb == NULL)
+        {
+            fb = msi_get_fb(msi, 0);
+            if (fb && (fb->mtype == F_H264))
+            {
+                mp4_encode->max_video_count--;
+            }
+        }
+
         if (fb && (fb->mtype == F_H264))
         {
             struct fb_h264_s *h264_priv = (struct fb_h264_s *) fb->priv;
-            mp4_encode->max_video_count--;
 
             // 普通录像：帧序号检查和PTS计算
             if (mp4_encode->mode == MP4_MODE_NORMAL)
             {
+                // 检查录制时间
+                if (os_jiffies() - write_start_time >= save_time)
+                {
+                    if (h264_priv->type == 1)
+                    {
+                        mp4_encode->fb = fb;
+                        goto mp4_encode_running_end;
+                    }
+                }
+                // 超时退出 3s
+                if (os_jiffies() - write_start_time >= save_time + 3000)
+                {
+                    goto mp4_encode_running_clean_end;
+                }
+
                 h264_count++;
                 if ((h264_priv->count != h264_count) && (h264_priv->type != 1))
                 {
@@ -333,6 +354,11 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             }
             else
             {
+                // 检查录制时间
+                if (os_jiffies() - write_start_time >= save_time)
+                {
+                    goto mp4_encode_running_clean_end;
+                }
                 // 缩时录影：计数统计
                 v_count++;
             }
@@ -342,7 +368,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             nal_head_buf      = buf;
             last_nal_head_buf = nal_head_buf;
 
-        mp4_encode_thread_again:
+        mp4_encode_running_again:
             // 检查是否存在pps或者sps
             nal_head_buf = get_sps_pps_nal_size(nal_head_buf, 64, &nal_size, &nal_head_size);
 
@@ -354,19 +380,19 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                 {
                     write_start_time = os_jiffies();
                 }
-
+                mp4_video_cfg_init(mp4_msg, h264_priv->w, h264_priv->h);
                 error |= write_h264_pps_sps(mp4_msg, nal_head_buf, nal_size + nal_head_size);
                 if (0 != error)
                 {
                     os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
-                    goto mp4_encode_thread_end;
+                    goto mp4_encode_running_clean_end;
                 }
 
                 nal_head_buf += (nal_size + nal_head_size);
                 last_nal_head_buf = nal_head_buf;
                 sps_pps_flag      = 1;
 
-                goto mp4_encode_thread_again;
+                goto mp4_encode_running_again;
             }
 
             // 如果没有写过sps和pps,就跳过（普通录像）
@@ -393,7 +419,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             if (0 != error)
             {
                 os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
-                goto mp4_encode_thread_end;
+                goto mp4_encode_running_clean_end;
             }
             now_time = fb->time;
 
@@ -409,7 +435,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                 if (0 != error)
                 {
                     os_printf("%s:%d\n", __FUNCTION__, __LINE__);
-                    goto mp4_encode_thread_end;
+                    goto mp4_encode_running_clean_end;
                 }
             }
             else
@@ -425,7 +451,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                     if (0 != error)
                     {
                         os_printf(KERN_ERR "%s:%d\n", __FUNCTION__, __LINE__);
-                        goto mp4_encode_thread_end;
+                        goto mp4_encode_running_clean_end;
                     }
 #endif
                 }
@@ -455,7 +481,7 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
                 error |= write_aac_data(mp4_msg, buf + 7, fb->len - 7, 128);
                 if (0 != error)
                 {
-                    goto mp4_encode_thread_end;
+                    goto mp4_encode_running_clean_end;
                 }
             }
             msi_delete_fb(NULL, fb);
@@ -467,21 +493,37 @@ static int mp4_encode_running(struct msi *msi, uint32_t save_time, void *fp, con
             fb = NULL;
         }
 
-        // 检查录制时间
-        if (os_jiffies() - write_start_time >= save_time)
-        {
-            goto mp4_encode_thread_end;
-        }
         os_sleep_ms(1);
     }
 
-mp4_encode_thread_end:
-    mp4_encode->rec_second = 0;
-
+mp4_encode_running_clean_end:
     if (fb)
     {
         msi_delete_fb(NULL, fb);
     }
+
+    // 清空缓冲区
+    msi->enable = 0;
+    while (1)
+    {
+        fb = msi_get_fb(msi, 0);
+        if (fb)
+        {
+            if (fb->mtype == F_H264)
+            {
+                mp4_encode->max_video_count--;
+            }
+            msi_delete_fb(NULL, fb);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+mp4_encode_running_end:
+
+    mp4_encode->rec_second = 0;
 
     if (mp4_msg)
     {
@@ -492,28 +534,6 @@ mp4_encode_thread_end:
     {
         osal_fclose(fp);
         fp = NULL;
-    }
-
-    // 清空缓冲区
-    if (1)
-    {
-        msi->enable = 0;
-        while (1)
-        {
-            fb = msi_get_fb(msi, 0);
-            if (fb)
-            {
-                if (fb->mtype == F_H264)
-                {
-                    mp4_encode->max_video_count--;
-                }
-                msi_delete_fb(NULL, fb);
-            }
-            else
-            {
-                break;
-            }
-        }
     }
 
     if (mp4_thumb_msi)
@@ -531,36 +551,45 @@ mp4_encode_thread_end:
 
 static void mp4_encode_thread(void *d)
 {
-    int                      ret        = 0;
-    uint32_t                 MP4_status = 0;
-    struct msi              *msi        = (struct msi *) d;
-    struct mp4_encode_msi_s *mp4_encode = (struct mp4_encode_msi_s *) msi->priv;
-    void                    *fp         = NULL;
+    int                      ret          = 0;
+    uint32_t                 mp4_status   = 0;
+    struct msi              *msi          = (struct msi *) d;
+    struct mp4_encode_msi_s *mp4_encode   = (struct mp4_encode_msi_s *) msi->priv;
+    struct file_process     *file_process = &mp4_encode->file_process;
+    void                    *fp           = NULL;
+    uint32_t                 filesize     = 0;
     char                     filename[64];
+    char                     filepath[64];
 
     msi_get(msi);
+    os_event_wait(&mp4_encode->evt, MSI_MP4_START, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, -1);
+
     while (msi)
     {
-        // msi->enable = 1;
-        if (mp4_encode->file_create)
+        filesize = mp4_encode->rec_time * MAX_SINGLE_MP4_SIZE;
+        if (file_process->create_file)
         {
-            fp = mp4_encode->file_create(&mp4_encode->loop, filename);
+            fp = file_process->create_file(file_process, filename, filepath, filesize);
         }
-        ret         = mp4_encode_running(msi, mp4_encode->rec_time * 60 * 1000, fp, filename);
-        msi->enable = 0;
-        os_printf(KERN_DEBUG "%s:%d end\n", __FUNCTION__, __LINE__);
+        ret = mp4_encode_running(msi, mp4_encode->rec_time * 60 * 1000, fp, filename, filesize);
+        if (file_process->lock_file)
+        {
+            file_process->lock_file(filename, filepath);
+        }
+
+        os_printf(KERN_DEBUG "%s %d end\n", __FUNCTION__, __LINE__);
         if (ret)
         {
-            if (mp4_encode->loop_free)
+            if (file_process->loop_free)
             {
-                mp4_encode->loop_free(&mp4_encode->loop);
+                file_process->loop_free(&file_process->loop);
             }
             // 如果是sd异常,延迟1s然后重新尝试重新录像(同时检测是否要停止)
             if (ret == MP4_ENCODE_ERR_NO_SD)
             {
-                MP4_status = 0;
-                os_event_wait(&mp4_encode->evt, MSI_MP4_STOP, &MP4_status, OS_EVENT_WMODE_OR, 1000);
-                if (MP4_status & MSI_MP4_STOP)
+                mp4_status = 0;
+                os_event_wait(&mp4_encode->evt, MSI_MP4_STOP, &mp4_status, OS_EVENT_WMODE_OR, 1000);
+                if (mp4_status & MSI_MP4_STOP)
                 {
                     break;
                 }
@@ -570,11 +599,12 @@ static void mp4_encode_thread(void *d)
                 break;
             }
         }
+        os_printf(KERN_DEBUG "%s %d end, ret: %d\n", __FUNCTION__, __LINE__, ret);
     }
 
     os_event_set(&mp4_encode->evt, MSI_MP4_THREAD_DEAD, NULL);
     msi_put(msi);
-    os_printf(KERN_DEBUG "%s:%d end\n", __FUNCTION__, __LINE__);
+    os_printf(KERN_DEBUG "%s: %d end\n", __FUNCTION__, __LINE__);
 }
 
 static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
@@ -591,7 +621,6 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
         case MSI_CMD_PRE_DESTROY:
             os_event_set(&mp4_encode->evt, MSI_MP4_STOP, NULL);
             break;
-
         case MSI_CMD_TRANS_FB:
         {
             struct framebuff *fb = (struct framebuff *) param1;
@@ -606,7 +635,6 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
             }
             else if (fb->mtype == F_H264 && mp4_encode->filter_type != (uint16_t) ~0)
             {
-
                 if (mp4_encode->srcID != 0 && fb->srcID != mp4_encode->srcID)
                 {
                     ret = RET_ERR;
@@ -665,7 +693,16 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
         break;
         case MSI_CMD_MEDIA_CTRL:
         {
-            *(uint32_t *) param1 = mp4_encode->rec_second;
+            uint32_t cmd_self = (uint32_t) param1;
+            switch (cmd_self)
+            {
+                case MSI_MEDIA_CTRL_GET_RECTIME:
+                    *(uint32_t *) param2 = mp4_encode->rec_second;
+                    break;
+                case MSI_MEDIA_CTRL_RECORD_START:
+                    os_event_set(&mp4_encode->evt, MSI_MP4_START, NULL);
+                    break;
+            }
         }
         break;
     }
@@ -673,7 +710,7 @@ static int32_t MP4_encode_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
 }
 
 // 统一的初始化函数，通过mode参数控制录制模式
-struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time, uint32_t audio_encode, void *file_create, void *loop_free, uint8_t mode)
+struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time, uint32_t audio_encode, struct file_process *file_process, uint8_t mode)
 {
     struct mp4_encode_msi_s *mp4_encode = NULL;
     struct msi              *msi        = msi_new(mp4_msi_name, 96, NULL);
@@ -685,7 +722,9 @@ struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_
         mp4_encode->srcID       = srcID;
         mp4_encode->rec_time    = rec_time;
         mp4_encode->mode        = mode; // 设置录制模式
-        msi->priv               = mp4_encode;
+        os_memcpy(&mp4_encode->file_process, file_process, sizeof(struct file_process));
+        msi->priv = mp4_encode;
+
         os_event_init(&mp4_encode->evt);
         mp4_encode->msi = msi;
         msi->action     = MP4_encode_msi_action;
@@ -702,8 +741,6 @@ struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_
             // 普通录像：支持音频
             mp4_encode->audio_encode = audio_encode;
         }
-        mp4_encode->file_create = file_create;
-        mp4_encode->loop_free   = loop_free;
     }
     else
     {
@@ -715,7 +752,7 @@ struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_
         }
     }
 
-    void *mp4_hdl = os_task_create("mp4", mp4_encode_thread, msi, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 2048);
+    void *mp4_hdl = os_task_create("mp4_encode", mp4_encode_thread, msi, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 2048);
     os_printf(KERN_DEBUG "mp4_hdl:%X\n", mp4_hdl);
     if (!mp4_hdl && mp4_encode)
     {

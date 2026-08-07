@@ -288,6 +288,21 @@ const _Sensor_DPC gc1084_dpc_init =
     .dynamic_black_strength = 4,
 };
 
+const _Sensor_GAMMA_BV gc1084_gamma_map = 
+{
+    .bv = {
+        29491, 3534, 1599, 347, 222, 115, 57, 34,
+    },
+
+    .y_alpha = {
+        255,  255, 192, 192, 128, 128, 64, 64,                         
+    },
+
+    .rgb_alpha = {
+        255,  255, 192, 192, 128, 128, 64, 64,     
+    },
+};
+
 const _Sensor_CSC gc1084_csc_init = 
 {
     .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
@@ -298,6 +313,7 @@ const _Sensor_CSC gc1084_csc_init =
     .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
     .y_gamma_alpha         = 0xff,
     .rgb_gamma_alpha       = 0xff,
+    .gamma_alpha_map       = (void *)&gc1084_gamma_map,
 };
 
 const _Sensor_GIC gc1084_gic_init = 
@@ -371,6 +387,17 @@ const _Sensor_YUVNR gc1084_yuvnr_init = {
 	.y_win_size = 0,
 };
 
+const _Sensor_COLENH_BV gc1084_ce_map[BV2COLENH_ARRAY_NUM] = {
+    {.bv = 24647, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =  2784, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =  1391, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   347, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =   236, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =   197, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =   129, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =    88, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+};
+
 const _Sensor_COLENH gc1084_colenh_init = {
     .yuv_range     = 0, // 0: narrow range, 1: full range
     .luma          = 50, // range: 0 ~ 100
@@ -383,11 +410,8 @@ const _Sensor_COLENH gc1084_colenh_init = {
     .ce_out_ofs_y  = 128, 
     .ce_out_ofs_cb = 128, 
     .ce_out_ofs_cr = 128, // range: -128 ~ 128
-    .adj_sat_by_bv = 1,
-    .hi_sat        = 70,
-    .lo_sat        = 50,
-    .hi_sat_bv     = 1391, // high brightness for saturation
-    .lo_sat_bv     = 347, // low brightness for saturation
+    .adj_by_bv_en  = 1,
+    .bv2colenh_map = (void *)gc1084_ce_map,
 };
 
 const _Sensor_BV2NR gc1084_bv2nr_init[11] = {
@@ -472,70 +496,61 @@ const _Sensor_LHS gc1084_lhs_map[] = {
 
 
 const _Sensor_YGAMMA gc1084_ygamma_tbl[] = {
-     8392704,
-    18887688,
-    33579026,
-    52470816,
-    72412210,
-    92354629,
-   113346648,
-   134338668,
-   156380288,
-   178420885,
-   199413930,
-   221455550,
-   243496147,
-   264489192,
-   285481212,
-   307522832,
-   329563429,
-   351605050,
-   373646671,
-   394639716,
-   416681336,
-   438722957,
-   459714978,
-   480706998,
-   501699018,
-   521641438,
-   540535281,
-   559429123,
-   578320917,
-   596165159,
-   614008376,
-   631851593,
-   648645210,
-   665438826,
-   682232442,
-   699026058,
-   714770074,
-   730515113,
-   746259128,
-   762002119,
-   776697558,
-   792441572,
-   807135987,
-   821830401,
-   835476239,
-   850169628,
-   862765866,
-   876410678,
-   889005891,
-   901601103,
-   913146715,
-   923643750,
-   934139760,
-   942538618,
-   949885826,
-   954085257,
-   959333261,
-   963531666,
-   969828246,
-   977174428,
-   987669411,
-  1004457901,
-  1033840573,
-  1060087769,
+    {
+     .bv = 200,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 500,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 1000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 1500,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0, }},
+    {// 线性曲线，BV=500
+     .bv = 2000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}}
 };
 uint8 gc1084_regValTable[25][6] = {
     // 00d1  00d0  0dc1  00b8  00b9  0155 
@@ -598,7 +613,7 @@ uint32 gc1084_gainLevelTable[26] = {
     0xffffffff,
 };
 
-void gc1084_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void gc1084_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint32 i            = 0;
     uint32 index        = 0;

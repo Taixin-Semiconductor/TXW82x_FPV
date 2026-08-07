@@ -159,7 +159,7 @@ magic_voice_output:
                 }
                 fbpool_destroy(&magic_voice_s->tx_pool);
                 if(magic_voice_s->autpc_msi) {
-                    msi_destroy(magic_voice_s->autpc_msi);
+                    autpc_msi_deinit(magic_voice_s->autpc_msi);
                     magic_voice_s->autpc_msi = NULL;
                 }
                 if(magic_voice_s->buf) {
@@ -197,7 +197,7 @@ int32_t magic_voice_msi_add_output(const char *msi_name)
         msi_put(msi);
         magic_voice_struct *magic_voice_s = (magic_voice_struct*)msi->priv;
         if(magic_voice_s->autpc_msi) {
-            ret = msi_add_output(magic_voice_s->autpc_msi, NULL, msi_name);
+            ret = autpc_msi_add_output(magic_voice_s->autpc_msi, msi_name);
         }
     }
     return ret;
@@ -211,7 +211,7 @@ int32_t magic_voice_msi_del_output(const char *msi_name)
         msi_put(msi);
         magic_voice_struct *magic_voice_s = (magic_voice_struct*)msi->priv;
         if(magic_voice_s->autpc_msi) {
-            ret = msi_del_output(magic_voice_s->autpc_msi, NULL, msi_name);
+            ret = autpc_msi_add_output(magic_voice_s->autpc_msi, msi_name);
         }
     }
     return ret;
@@ -263,7 +263,7 @@ struct msi *magic_voice_init(uint32_t samplerate, uint32_t size)
 	magic_voice_s->msi = msi;
     magic_voice_s->msi->enable = 1;
     magic_voice_s->msi->action = magic_voice_msi_action;
-    magic_voice_s->autpc_msi = autpc_msi_init(samplerate, 100, 100, size);
+    magic_voice_s->autpc_msi = autpc_msi_init(samplerate, 100, 100, size, NULL);
     if(magic_voice_s->autpc_msi == NULL) {
         msi_destroy(msi);
         os_printf("magic voice create autpc msi fail\n");

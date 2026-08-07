@@ -15,7 +15,9 @@
 #define IN_GEN422						5
 #define IN_PARA_IN                      6
 
+#ifndef VPP_INPUT_FROM
 #define VPP_INPUT_FROM       			IN_ISP   
+#endif
 
 enum
 {
@@ -24,9 +26,20 @@ enum
 	ISP_VIDEO_2,
 };
 
+typedef enum {
+	SCALER3_DONE = 0,
+	JPG0_DONE,
+	JPG1_DONE,
+	SCALE1_JPG_ENCODE,
+	VPP_IFP_EN_CTRL,
+	VPP_FUNC_DONE_NUM,
+}VPP_FUNC_DONE;
 
 typedef int32_t (*scale3_kick_fn)();
 
+
+//ret :0 --->keep running   1 --->run one time
+typedef int32_t (*func_done_fn)(uint32 irq_data);
 
 struct  video_cfg_t {
 	uint8_t video_num;
@@ -52,25 +65,48 @@ struct  video_cfg_t {
 };
 enum
 {
-	VPP_MODE_2N_ADD_16,        //[16,32] 2N+16
+	VPP_MODE_2N_ADD_16 = 0,        //[16,32] 2N+16
 	VPP_MODE_2N,			   //[0,16]	 2N
 };
 
-#define SCALE1_FROM_VPPBF         0//0:VPP BUF0    1:VPP BUF1
-#define SCALE3_FROM_VPPBF         0//0:VPP BUF0    1:VPP BUF1
 
-#define VPP_BUF0_MODE                  VPP_MODE_2N_ADD_16        
-#define VPP_BUF1_MODE                  VPP_MODE_2N_ADD_16        
+#ifndef SCALE1_FROM_VPPBF
+#define SCALE1_FROM_VPPBF         0//0:VPP BUF0    1:VPP BUF1
+#endif
+
+#ifndef SCALE3_FROM_VPPBF
+#define SCALE3_FROM_VPPBF         0//0:VPP BUF0    1:VPP BUF1
+#endif
+
+#ifndef VPP_BUF0_MODE
+#define VPP_BUF0_MODE                  VPP_MODE_2N_ADD_16   
+#endif
+
+#ifndef VPP_BUF1_MODE
+#define VPP_BUF1_MODE                  VPP_MODE_2N_ADD_16  
+#endif
 
 //注意这里配置的N,所以实际根据MODE决定申请空间
+#ifndef VPP_BUF0_LINEBUF_NUM
 #define VPP_BUF0_LINEBUF_NUM           8
-#define VPP_BUF1_LINEBUF_NUM		   6
+#endif
 
+#ifndef VPP_BUF1_LINEBUF_NUM
+#define VPP_BUF1_LINEBUF_NUM		   6
+#endif
 
 
 extern struct video_cfg_t video_msg;
 bool vpp_cfg(uint32_t w,uint32_t h,uint8_t input_from);
 void vpp_itp_save_only(struct vpp_device *p_vpp,uint16_t w,uint16_t h,uint32_t psram_adr);
 uint8_t vpp_video_type_map(uint8_t stype);
+int32 vppdone_func_register(uint8_t id,func_done_fn func,uint32 arg);
+int32 vppdone_func_unregister(uint8_t id);
+uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
+void set_vpp_scale_w_h(uint8_t en, uint16_t w, uint16_t h);
+uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
+void *get_vpp_buf(uint8_t which);
+int8_t vpp_dev_open();
+int32 vpp_is_closed(struct vpp_device *p_vpp);
 #endif
 

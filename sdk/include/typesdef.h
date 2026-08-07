@@ -131,16 +131,16 @@
 #define __bobj            //__at_section(".bobj")
 #endif
 
-#ifndef __dsleeptext
-#define __dsleeptext      __at_section(".dsleep.text")
-#endif
-
-#ifndef __dsleepdata
-#define __dsleepdata      __at_section(".dsleep.data")
-#endif
-
 #ifndef __psram_data
 #define __psram_data      //__at_section(".psram.data")
+#endif
+
+#ifndef __dsleep_text
+#define __dsleep_text     //__at_section(".dsleep.text")
+#endif
+
+#ifndef __dsleep_data
+#define __dsleep_data     //__at_section(".dsleep.data")
 #endif
 
 #ifndef __noinit

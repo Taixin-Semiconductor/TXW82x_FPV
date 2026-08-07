@@ -75,36 +75,6 @@ struct jpg_msi_s
     uint8_t auto_free_space;
 };
 
-struct jpg_decode_cmd_s
-{
-    struct jpg_decode_arg_s *msg;
-    union
-    {
-        struct
-        {
-            uint32_t w;
-            uint32_t h;
-            uint32_t rotate;
-        } config;
-
-        struct
-        {
-            uint32_t in_w;
-            uint32_t in_h;
-            uint32_t out_w;
-            uint32_t out_h;
-        } in_out_size;
-
-        struct
-        {
-            uint32_t in_w;
-            uint32_t in_h;
-            uint32_t out_w;
-            uint32_t out_h;
-        } step;
-    };
-};
-
 static void stream_jpg_decode_scale2_done(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
 }
@@ -146,8 +116,8 @@ static int32 jpg_decode_work(struct os_work *work)
         if (decode->current_fb && (os_jiffies() - decode->last_decode_time > 1000))
         {
             // 解码可能失败了
-            os_printf("decode failed1:%d\n", decode->hardware_ready);
-            os_printf("decode->hardware_err:%d\n", decode->hardware_err);
+            os_printf(KERN_ERR"decode failed1:%d\n", decode->hardware_ready);
+            os_printf(KERN_ERR"decode->hardware_err:%d\n", decode->hardware_err);
             decode->hardware_ready = 1;
             // 无论是完成还是失败,都要释放这张图片了
             msi_delete_fb(NULL, decode->parent_fb);
@@ -165,7 +135,7 @@ static int32 jpg_decode_work(struct os_work *work)
         // 解码异常
         else if (decode->hardware_err)
         {
-            _os_printf("decode failed2\n");
+            _os_printf(KERN_ERR"decode failed2\n");
             decode->hardware_err   = 0;
             decode->hardware_ready = 1;
             if (decode->current_fb)
@@ -212,6 +182,7 @@ static int32 jpg_decode_work(struct os_work *work)
 
         if (unlock)
         {
+            jpg_close(decode->jpg_dev);
             jpg_mutex_unlock(JPGID1, JPG_LOCK_DECODE);
             unlock = 0;
         }
@@ -543,6 +514,7 @@ static int decode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint
                     }
                     if (!err)
                     {
+                        //jpg_open(decode->jpg_dev);
                         scale2_from_jpeg_config_for_msi(decode->scale_dev, (uint32_t)decode->scaler2buf_y, (uint32_t)decode->scaler2buf_u, (uint32_t)decode->scaler2buf_v, dst, cfg->decode_w, cfg->decode_h, cfg->yuv_arg.out_w,
                                                         cfg->yuv_arg.out_h, 10);
 
@@ -579,6 +551,17 @@ static int decode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint
         }
         break;
 
+        case MSI_CMD_TRANS_FB:
+        {
+            struct framebuff *fb = (struct framebuff *) param1;
+            if (fb->mtype != F_JPG_DECODE_MSG)
+            {
+                ret = RET_OK + 1;
+            }
+        }
+
+        break;
+
         default:
             break;
     }
@@ -607,17 +590,13 @@ struct msi *jpg_decode_msi(const char *name)
         {
             uint8_t *data = (uint8_t *) STREAM_MALLOC(DECODE_MAX_SIZE);
 			ASSERT(data);
-            sys_dcache_clean_invalid_range((uint32_t*)data, DECODE_MAX_SIZE);
+            sys_dcache_invalid_range((uint32_t*)data, DECODE_MAX_SIZE);
             priv          = (void *) STREAM_LIBC_ZALLOC(sizeof(struct jpg_decode_arg_s));
             FBPOOL_SET_INFO(&decode->tx_pool, init_count, data, 0, priv);
             init_count++;
         }
 
         decode->jpg_dev = (struct jpg_device *) dev_get(HG_JPG1_DEVID);
-        if (decode->jpg_dev)
-        {
-            jpg_open(decode->jpg_dev);
-        }
         decode->scale_dev       = (struct scale_device *) dev_get(HG_SCALE2_DEVID);
         decode->scaler2buf_y    = NULL;
         decode->scaler2buf_u    = NULL;

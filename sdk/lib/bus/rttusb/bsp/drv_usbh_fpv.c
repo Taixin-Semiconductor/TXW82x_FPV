@@ -1,3 +1,17 @@
+/* 
+针对 USB DMA RX , 需做的内存预留大小为 4 字节, 防止 DMA 内存越界引起的内存错误问题
+
+USB1.1 SIE:
+(1) rx len % 4 == 1 实际 dma sram 会少 1 byte , 即 rx len - 1 (USB1.1驱动已修复)
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+USB2.0 SIE: 
+(1) rx len % 4 == 1 实际 dma sram 会多 2 byte , 即 rx len + 2
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+*/
 #include <rtthread.h>
 #include <include/rttusb_host.h>
 #include "hal/usb_device.h"
@@ -237,7 +251,7 @@ static int drv_pipe_xfer(upipe_t pipe, rt_uint8_t token, void *buffer, int nbyte
             }
             else
             {
-                total_len = hgusb20_ep_get_dma_rx_len(hgusb, pipe->pipe_index);
+                usb_device_ioctl((struct usb_device *)hgusb, USB_HOST_GET_RX_DMA_LEN, pipe->pipe_index, (rt_uint32_t)&total_len);
                 if (hgusb20_host_is_xact_err(hgusb, pipe->pipe_index, USB_DIR_IN)
                     || hgusb20_host_is_rx_stall(hgusb, pipe->pipe_index, USB_DIR_IN)) 
                 {
@@ -291,7 +305,7 @@ static int drv_pipe_xfer(upipe_t pipe, rt_uint8_t token, void *buffer, int nbyte
                     pipe->status = UPIPE_STATUS_ERROR;
                     hgusb20_ep_tx_abort(hgusb, pipe->pipe_index);
                 } else {
-                    total_len = hgusb20_ep_get_tx_len(hgusb, pipe->pipe_index);
+                    total_len = nbytes;
                     if (hgusb20_host_is_xact_err(hgusb, pipe->pipe_index, USB_DIR_OUT)
                         || hgusb20_host_is_rx_stall(hgusb, pipe->pipe_index, USB_DIR_OUT)) 
                     {

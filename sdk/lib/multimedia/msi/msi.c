@@ -244,7 +244,6 @@ struct msi *msi_find(const char *name, uint8 inited)
     if(msi && inited && atomic_read(&msi->inited) == 0){
         msi = NULL;
     }else{
-
         msi_get(msi);
     }
     os_mutex_unlock(&g_MSI.lock);

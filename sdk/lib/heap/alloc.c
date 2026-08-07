@@ -4,15 +4,30 @@
 #include "lib/heap/sysheap.h"
 #include "lib/common/rbuffer.h"
 
+/***********************************************************************
+MEM_RECLIST - 内存 申请/释放 操作流水记录。
+使用方法：
+  1. 添加宏定义： 
+     #define MEM_RECLIST_CNT 256  - 表示记录最后256条内存访问记录
+
+  2. 在需要检测的 申请/释放 API里面添加：mem_alloc_rec 和 mem_free_rec
+      -申请内存成功时调用：mem_alloc_rec
+      -释放内存时调用：mem_free_rec
+     __malloc和__free函数有示例代码。
+
+  3. 执行 mem_reclist_dump API 打印被记录的内存访问信息
+     SDK在检测到内存越界或内存信息损坏时，也会自动执行 mem_reclist_dump
+***********************************************************************/
+//#define MEM_RECLIST_CNT 256
 #ifdef MEM_RECLIST_CNT
-static uint16 g_mfreelist_pos, g_malloclist_pos;
 struct mem_reclist {
     void  *addr;
     void  *lr;
     uint64 tick;
 };
-struct mem_reclist g_mfreelist[MEM_RECLIST_CNT];
-struct mem_reclist g_malloclist[MEM_RECLIST_CNT];
+static uint16 g_mfreelist_pos, g_malloclist_pos;
+static struct mem_reclist g_mfreelist[MEM_RECLIST_CNT];
+static struct mem_reclist g_malloclist[MEM_RECLIST_CNT];
 #endif
 
 void mem_free_rec(void *addr, void *lr)
@@ -73,7 +88,7 @@ void *__malloc(struct sys_heap *heap, int size, void *lr)
 {
     void *ptr = sysheap_alloc(heap, size, lr, 0);
     if (ptr) {
-        mem_alloc_rec(ptr, lr);
+        //mem_alloc_rec(ptr, lr);
         ASSERT((uint32)ptr == ALIGN((uint32)ptr, heap->pool.align));
     } else {
         os_printf(KERN_WARNING"%s: malloc fail, size=%d [LR:%p]\tremain size:%d\r\n", heap->name, size, lr,sysheap_freesize(heap));
@@ -106,7 +121,7 @@ void *__realloc(struct sys_heap *heap, void *ptr, int size, void *lr)
 void __free(struct sys_heap *heap, void *ptr, void *lr)
 {
     if (ptr) {
-        mem_free_rec(ptr, lr);
+        //mem_free_rec(ptr, lr);
         ASSERT((uint32)ptr == ALIGN((uint32)ptr, heap->pool.align));
         if (sysheap_free(heap, ptr)) {
             os_printf(KERN_WARNING"%s: free error, ptr=%p, [LR:%p]\r\n", heap->name, ptr, lr);
@@ -118,7 +133,7 @@ void *__malloc_t(struct sys_heap *heap, int size, const char *func, int line)
 {
     void *ptr = sysheap_alloc(heap, size, func, line);
     if (ptr) {
-        mem_alloc_rec(ptr, (void *)func);
+        //mem_alloc_rec(ptr, (void *)func);
         ASSERT((uint32)ptr == ALIGN((uint32)ptr, heap->pool.align));
     } else {
         os_printf(KERN_WARNING"%s: malloc fail, size=%d [%s:%d]\tremain size:%d\r\n", heap->name, size, func, line, sysheap_freesize(heap));
@@ -153,7 +168,7 @@ void *__realloc_t(struct sys_heap *heap, void *ptr, int size, const char *func, 
 void __free_t(struct sys_heap *heap, void *ptr, const char *func, int line)
 {
     if (ptr) {
-        mem_free_rec(ptr, (void *)func);
+        //mem_free_rec(ptr, (void *)func);
         ASSERT((uint32)ptr == ALIGN((uint32)ptr, heap->pool.align));
         if (sysheap_free(heap, ptr)) {
             os_printf(KERN_WARNING"%s: free error, ptr=%p, [%s:%d]\r\n", heap->name, ptr, func, line);

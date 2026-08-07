@@ -48,7 +48,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 	{	
         path++;
 		r->live_node = &source->live_node;
-		r->video_msi = msi_find(path, 0);
+		r->video_msi = msi_find(path, 1);
         os_printf("video_msi :%s\tmsi:%X\n",path,r->video_msi);
 		if(r->video_msi)
 		{

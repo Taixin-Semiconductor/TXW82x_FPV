@@ -217,13 +217,13 @@ static struct udevice_descriptor dev_desc =
     USB_DESC_LENGTH_DEVICE,     //bLength;
     USB_DESC_TYPE_DEVICE,       //type;
     USB_BCD_VERSION,            //bcdUSB;
-    USB_CLASS_MASS_STORAGE,     //bDeviceClass;
-    0x06,                       //bDeviceSubClass;
-    0x50,                       //bDeviceProtocol;
+    0,                          //bDeviceClass;
+    0,                          //bDeviceSubClass;
+    0,                          //bDeviceProtocol;
     0x40,                       //bMaxPacketSize0;
     _VENDOR_ID,                 //idVendor;
     _PRODUCT_ID,                //idProduct;
-    USB_BCD_DEVICE,             //bcdDevice;
+    0x110,                      //bcdDevice;
     USB_STRING_MANU_INDEX,      //iManufacturer;
     USB_STRING_PRODUCT_INDEX,   //iProduct;
     USB_STRING_SERIAL_INDEX,    //iSerialNumber;
@@ -319,6 +319,7 @@ static rt_ssize_t _read_capacity(ufunction_t func, ustorage_cbw_t cbw);
 static rt_ssize_t _read_10(ufunction_t func, ustorage_cbw_t cbw);
 static rt_ssize_t _write_10(ufunction_t func, ustorage_cbw_t cbw);
 static rt_ssize_t _verify_10(ufunction_t func, ustorage_cbw_t cbw);
+static rt_ssize_t _mode_sense_10(ufunction_t func, ustorage_cbw_t cbw);
 
 rt_align(4)
 static struct scsi_cmd cmd_data[] =
@@ -334,6 +335,7 @@ static struct scsi_cmd cmd_data[] =
     {SCSI_READ_10,         _read_10,         10, BLOCK_COUNT, 0, DIR_IN},
     {SCSI_WRITE_10,        _write_10,        10, BLOCK_COUNT, 0, DIR_OUT},
     {SCSI_VERIFY_10,       _verify_10,       10, FIXED,       0, DIR_NONE},
+    {SCSI_MODE_SENSE_10,   _mode_sense_10,   10, COUNT,       0, DIR_IN},
 };
 
 static void _send_status(ufunction_t func)
@@ -410,7 +412,8 @@ static rt_ssize_t _inquiry_cmd(ufunction_t func, ustorage_cbw_t cbw)
     data = (struct mstorage*)func->user_data;
     buf = data->ep_in->buffer;
 
-    *(rt_uint32_t*)&buf[0] = 0x0 | (0x80 << 8);
+    // RMB:Yes  ANSI Version:4   ECMA Version:0   ISO Version:0   Response Data Format:SCSI-2
+    *(rt_uint32_t*)&buf[0] = 0x0 | (0x80 << 8) | (0x04 << 16) | (0x02 << 24); 
     *(rt_uint32_t*)&buf[4] = 31;
 
     rt_memset(&buf[8], 0x20, 28);
@@ -502,6 +505,35 @@ static rt_ssize_t _mode_sense_6(ufunction_t func, ustorage_cbw_t cbw)
     }
 
     data->cb_data_size = MIN(data->cb_data_size, SIZEOF_MODE_SENSE_6);
+    data->ep_in->request.buffer = buf;
+    data->ep_in->request.size = data->cb_data_size;
+    data->ep_in->request.req_type = UIO_REQUEST_WRITE;
+    rt_usbd_io_request(func->device, data->ep_in, &data->ep_in->request);
+    data->status = STAT_CMD;
+
+    return data->cb_data_size;
+}
+
+static rt_ssize_t _mode_sense_10(ufunction_t func, ustorage_cbw_t cbw)
+{
+    struct mstorage *data;
+    rt_uint8_t *buf;
+
+    RT_ASSERT(func != RT_NULL);
+    RT_ASSERT(func->device != RT_NULL);
+    RT_ASSERT(cbw != RT_NULL);
+
+    LOG_D("_mode_sense_10");
+
+    data = (struct mstorage*)func->user_data;
+    buf = data->ep_in->buffer;
+    buf[0] = 0x43;
+    buf[1] = 0;
+    buf[2] = 0;
+    buf[3] = 0;
+    
+
+    data->cb_data_size = MIN(data->cb_data_size, SIZEOF_MODE_SENSE_10);
     data->ep_in->request.buffer = buf;
     data->ep_in->request.size = data->cb_data_size;
     data->ep_in->request.req_type = UIO_REQUEST_WRITE;
@@ -983,20 +1015,23 @@ static rt_err_t _ep_in_handler(ufunction_t func, rt_size_t size)
      return RT_EOK;
 }
 
-#ifdef  MASS_CBW_DUMP
+
 static void cbw_dump(struct ustorage_cbw* cbw)
 {
     RT_ASSERT(cbw != RT_NULL);
 
-    LOG_D("signature 0x%x", cbw->signature);
-    LOG_D("tag 0x%x", cbw->tag);
-    LOG_D("xfer_len 0x%x", cbw->xfer_len);
-    LOG_D("dflags 0x%x", cbw->dflags);
-    LOG_D("lun 0x%x", cbw->lun);
-    LOG_D("cb_len 0x%x", cbw->cb_len);
-    LOG_D("cb[0] 0x%x", cbw->cb[0]);
+    os_printf("signature 0x%x\n", cbw->signature);
+    os_printf("tag 0x%x\n", cbw->tag);
+    os_printf("xfer_len 0x%x\n", cbw->xfer_len);
+    os_printf("dflags 0x%x\n", cbw->dflags);
+    os_printf("lun 0x%x\n", cbw->lun);
+    os_printf("cb_len 0x%x\n", cbw->cb_len);
+    os_printf("cb[0] 0x%x\n", cbw->cb[0]);
+    for(int i = 0;i < 16; i++){
+        os_printf("cbw->cb[%d]:%d\n",i,cbw->cb[i]);
+    }
 }
-#endif
+
 
 static struct scsi_cmd* _find_cbw_command(rt_uint16_t cmd)
 {
@@ -1184,6 +1219,7 @@ static rt_err_t _ep_out_handler(ufunction_t func, rt_size_t size)
         if(cmd == RT_NULL)
         {
             rt_kprintf("can't find cbw command\n");
+            cbw_dump(cbw);
             goto exit;
         }
 

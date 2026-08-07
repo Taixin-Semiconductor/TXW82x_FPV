@@ -62,27 +62,6 @@ void gen420wq_sema_up()
 }
 
 
-int32_t h264_gen420_kick()
-{
-	struct h264_device *h264_dev;
-	h264_dev = (struct h264_device *)dev_get(HG_H264_DEVID);
-	extern void h264_cfg_srcdat(struct h264_device *p_h264,uint8_t mode);	
-	h264_cfg_srcdat(h264_dev,GEN420_DATA);
-	return 0;
-}
-
-
-
-
-int32_t g_gen420_kick_msg(struct gen420_msg_s *msg,int32_t ms)
-{
-    if(!msg)
-    {
-        os_printf("%s:%d err,msg is NULL\n",__FUNCTION__,__LINE__);
-        return 1;
-    }
-    return os_msgq_put(gen420_msgq,(uint32)msg,ms);
-}
 
 
 int register_gen420_queue(uint8_t type,uint32_t w,uint32_t h,gen420_kick_fn kick_fn,gen420_free_fn free_fn,uint32 priv){
@@ -182,6 +161,29 @@ int unregister_gen420_queue(uint32_t devid){
 	return ret;
 }
 
+int change_gen420dev_w_h(uint8_t devid,uint16_t w,uint16_t h){
+	struct list_head *dlist;
+	struct gen420_msg_s* gen420dev;
+	if(list_empty((struct list_head *)&gen420_queue_head) != TRUE){
+		dlist = (struct list_head *)&gen420_queue_head;
+		do{
+			dlist = dlist->next;
+			if(dlist == &gen420_queue_head){
+				return -1;
+			}else{
+				gen420dev = list_entry((struct list_head *)dlist,struct gen420_msg_s,list);
+				if(gen420dev->devid == devid){
+					gen420dev->w  = w;
+					gen420dev->h  = h;
+					return 1;
+				}
+			}
+		}while(1);
+	}
+	return 0;	
+}
+
+
 int wake_up_gen420_queue(uint8_t devid,uint8_t *data_rom){
 	int ret = 0;
 	struct list_head *dlist;
@@ -268,7 +270,8 @@ rewait:
 
 
 				//如果类型超过2,就是自定义的,那么要看看是否有副码流,如果有副码流,需要等待副码流去编码后再执行自定义的
-				if(msgsub[itk]->type >= 2)
+				//如果没有辅码流需要编码,则不需要执行去等待VPP小于80%去编码(这里80%是为了给足够时间去编辅码流,如果没有辅码流,这里就没有意义了)
+				if(msgsub[itk]->type >= 2 && have_h264_jpg_stream)
 				{
 					while(done_percent > 80){
 						if(have_h264_jpg_stream)
@@ -362,7 +365,7 @@ struct msi *gen420_hardware_msi_init()
         msi->enable = 1;
         //创建线程
         gen420_msgq = &gen420->msgq;
-        OS_TASK_INIT("gen420_s", &gen420->task, gen420_hardware_thread, (void*)msi, OS_TASK_PRIORITY_ABOVE_NORMAL+0xf, NULL, 2048);
+        OS_TASK_INIT("gen420_s", &gen420->task, gen420_hardware_thread, (void*)msi, OS_TASK_PRIORITY_ABOVE_NORMAL+0xf, NULL, 768);
     }
     return msi;
 }

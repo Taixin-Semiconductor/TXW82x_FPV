@@ -6,10 +6,10 @@
 #include "hal/dsi.h"
 
 
-int32 dsi_init(struct dsi_device *p_dsi,uint8 clk_div,uint8_t tx_esc_clk_div,uint8_t auto_clklane,uint8_t lane_num)
+int32 dsi_init(struct dsi_device *p_dsi,uint8 clk_div,uint8_t tx_esc_clk_div,uint8_t auto_clklane,uint8_t lane_num,uint8_t clkselect,uint8_t div_strong)
 {
     if (p_dsi && ((const struct dsi_hal_ops *)p_dsi->dev.ops)->init) {
-        return ((const struct dsi_hal_ops *)p_dsi->dev.ops)->init(p_dsi,clk_div,tx_esc_clk_div,auto_clklane,lane_num);
+        return ((const struct dsi_hal_ops *)p_dsi->dev.ops)->init(p_dsi,clk_div,tx_esc_clk_div,auto_clklane,lane_num,clkselect,div_strong);
     }
     return RET_ERR;
 }
@@ -378,6 +378,7 @@ int32 mipi_dsi_get_sta1(struct dsi_device *p_dsi){
 	return RET_ERR; 
 }
 
+//2 1 2 3 4 1 1 0 0 0
 
 int32 mipi_dsi_set_lane_remap(struct dsi_device *p_dsi,uint8_t clklane,uint8_t lane0,uint8_t lane1,uint8_t lane2,uint8_t lane3,uint8_t clk_pol,uint8_t lane0_pol,uint8_t lane1_pol,uint8_t lane2_pol,uint8_t lane3_pol){
 	uint32_t databuf[3];

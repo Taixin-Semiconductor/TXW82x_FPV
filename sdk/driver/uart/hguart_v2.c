@@ -522,7 +522,7 @@ static int32 hguart_v2_puts(struct uart_device *uart, uint8 *buf, uint32 len)
         hguart_v2_rs485_re_set(hw);
     }
 
-    if (((PSRAM_BASE <= (uint32)buf)) && (((uint32)buf) <= PSRAM_END_ADDR)) {
+    if (((__PSRAM_ADDR_START <= (uint32)buf)) && (((uint32)buf) <= __PSRAM_ADDR_END)) {
         for (i = 0; i < len; i++) {
             hguart_v2_putc(uart, buf[i]);
         }
@@ -554,9 +554,6 @@ static int32 hguart_v2_puts(struct uart_device *uart, uint8 *buf, uint32 len)
                         break;
                     }
                 }
-                irq_flag = disable_irq();
-                dev->flag &= ~UART_FLAG_TDMA_BUSY;
-                enable_irq(irq_flag);
             }
         } else {
             for (i = 0; i < len; i++) {
@@ -570,6 +567,9 @@ static int32 hguart_v2_puts(struct uart_device *uart, uint8 *buf, uint32 len)
         hguart_v2_rs485_re_reset(hw);
     }
 
+    irq_flag = disable_irq();
+    dev->flag &= ~UART_FLAG_TDMA_BUSY;
+    enable_irq(irq_flag);
     return RET_OK;
 }
 
@@ -613,6 +613,87 @@ static int32 hguart_v2_gets(struct uart_device *uart, uint8 *buf, uint32 len)
 
 }
 
+struct uart_testS {
+    struct uart_device *uart;
+    uint8_t            *buf;
+    int                 len;
+    int                 id;
+};
+
+static int32 uart_test_irqhdl(uint32 irq_flag, uint32 irq_data, uint32 param1, uint32 param2)
+{
+    struct uart_testS *tuart = (struct uart_testS *)irq_data;
+    int32 ret = 0;
+    switch (irq_flag) {
+        case UART_IRQ_FLAG_DMA_RX_DONE: // maybe overbuff?
+        case UART_IRQ_FLAG_TIME_OUT:
+            if (tuart->id == 1) {
+                if (memcmp(tuart->buf, "uart5 msg", 9) != 0) {
+                    os_printf("uart1 recv lp err\r\n");
+                }
+            } else if (tuart->id == 5) {
+                if (memcmp(tuart->buf, "uart1 msg", 9) != 0) {
+                    os_printf("uart5 recv lp err\r\n");
+                }
+            }
+            tuart->buf[param1] = 0;
+            os_printf("id = %d, recv: %s\r\n", tuart->id, tuart->buf);
+            uart_gets(tuart->uart, tuart->buf, tuart->len);
+            break;
+        default:
+            break;
+    }
+    return ret;
+}
+
+void uart_sleep_test()
+{
+    uint8_t *uart1_buf = os_malloc(32);
+    uint8_t *uart5_buf = os_malloc(32);
+    struct uart_device *uart1 = (void *)dev_get(1+1);
+    struct uart_device *uart5 = (void *)dev_get(1+5);
+
+    uint8_t uart1_msg[] = "uart1 msg\r\n";
+    //uint8_t uart5_msg[] = "uart5 msg\r\n";
+    struct uart_testS uart1ts = {
+        .uart = uart1,
+        .buf  = uart1_buf,
+        .len  = 32,
+        .id   = 1,
+    };
+    struct uart_testS uart5ts = {
+        .uart = uart5,
+        .buf  = uart5_buf,
+        .len  = 32,
+        .id   = 5,
+    };
+
+    uart_open(uart1, 921600);
+    uart_open(uart5, 921600);
+
+    uart_ioctl(uart1, UART_IOCTL_CMD_USE_DMA, 1, 0);
+    uart_ioctl(uart5, UART_IOCTL_CMD_USE_DMA, 1, 0);
+    uart_ioctl(uart1, UART_IOCTL_CMD_SET_TIME_OUT, 40, 1);
+    uart_ioctl(uart5, UART_IOCTL_CMD_SET_TIME_OUT, 40, 1);
+
+    uart_request_irq(uart1, uart_test_irqhdl, 
+        UART_IRQ_FLAG_DMA_RX_DONE | UART_IRQ_FLAG_TIME_OUT, (uint32)&uart1ts);
+    // uart_request_irq(uart1, uart_test_irqhdl, 
+        // UART_IRQ_FLAG_DMA_RX_DONE, (uint32)&uart1ts);
+    uart_request_irq(uart5, uart_test_irqhdl, 
+        UART_IRQ_FLAG_DMA_RX_DONE | UART_IRQ_FLAG_TIME_OUT, (uint32)&uart5ts);
+    uart_gets(uart1, uart1_buf, 32);
+    uart_gets(uart5, uart5_buf, 32);
+    while(1)
+    {
+        // uart_puts(uart5, uart5_msg, os_strlen((const char *)uart5_msg));
+
+        uart_puts(uart1, uart1_msg, os_strlen((const char *)uart1_msg));
+        
+        os_sleep_ms(1000);
+    }
+}
+
 #ifdef CONFIG_SLEEP
 int32 hguart_v2_suspend(struct dev_obj *obj)
 {
@@ -623,26 +704,35 @@ int32 hguart_v2_suspend(struct dev_obj *obj)
         return RET_OK;
     }
 
- 
     uint32_t disable = disable_irq();
     enable_irq(disable);
-
 
     while(dev->flag & UART_FLAG_TDMA_BUSY);
     hw->TDMALEN = 0;
 
+    /*
+     * save the reglist
+     */
+    dev->bp_regs.con       = hw->CON;
+    dev->bp_regs.baud      = hw->BAUD;
+    dev->bp_regs.tstadr    = hw->TSTADR|0x20000000;
+    dev->bp_regs.rstadr    = hw->RSTADR|0x20000000;
+    dev->bp_regs.tdmalen   = hw->TDMALEN;
+    dev->bp_regs.rdmalen   = hw->RDMALEN;
+    dev->bp_regs.dmacon    = hw->DMACON;
+    dev->bp_regs.rs485_con = hw->RS485_CON;
+    dev->bp_regs.rs485_det = hw->RS485_DET;
+    dev->bp_regs.rs485_tat = hw->RS485_TAT;
+    dev->bp_regs.tocon     = hw->TOCON;
+
     /*!
      * Close the UART
      */
+    hw->DMACON = 0x300; //disable dma
     hw->CON &= ~ BIT(0);
 
 
-    pin_func(dev->dev.dev.dev_id, 0);
-
-
-    /*
-     * close irq
-     */
+    // pin_func(dev->dev.dev.dev_id, 0);
     irq_disable(dev->irq_num);
 
     /*
@@ -659,39 +749,13 @@ int32 hguart_v2_suspend(struct dev_obj *obj)
     } while (hw->STA & LL_UART_STA_RX_CNT(0x7));
 
 
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * save the reglist
-     */
-    dev->bp_regs.con       = hw->CON;
-    dev->bp_regs.baud      = hw->BAUD;
-    dev->bp_regs.tstadr    = hw->TSTADR;
-    dev->bp_regs.rstadr    = hw->RSTADR;
-    dev->bp_regs.tdmalen   = hw->TDMALEN;
-    dev->bp_regs.rdmalen   = hw->RDMALEN;
-    dev->bp_regs.dmacon    = hw->DMACON;
-    dev->bp_regs.rs485_con = hw->RS485_CON;
-    dev->bp_regs.rs485_det = hw->RS485_DET;
-    dev->bp_regs.rs485_tat = hw->RS485_TAT;
-    dev->bp_regs.tocon     = hw->TOCON;
-
-    /*
-     * save the irq_hdl created by user
-     */
-    dev->bp_irq_hdl  = dev->irq_hdl;
-    dev->bp_irq_data = dev->irq_data;
-
     if (UART0_BASE == (uint32)hw) {
         sysctrl_uart0_clk_close();
     } else if (UART1_BASE == (uint32)hw) {
         sysctrl_uart1_clk_close();
     }
-
+    
     dev->dsleep = 1;
-
-    //os_mutex_unlock(&dev->bp_suspend_lock);
-
     return RET_OK;
 }
 
@@ -703,24 +767,22 @@ int32 hguart_v2_resume(struct dev_obj *obj)
         return RET_OK;
     }
 
-    //if (0 > os_mutex_lock(&dev->bp_resume_lock, 10000)) {
-    //    return RET_ERR;
-    //}
-
     /* pin config */
     if (pin_func(dev->dev.dev.dev_id, 1) != RET_OK) {
         return RET_ERR;
     }
 
-
-    /*
-     * recovery the UART clk
-     */
     if (UART0_BASE == (uint32)hw) {
         sysctrl_uart0_clk_open();
     } else if (UART1_BASE == (uint32)hw) {
         sysctrl_uart1_clk_open();
     }
+
+    /*
+     * clear pending
+     */
+    hw->DMASTA = 0xFFFFFFFF;
+    hw->STA    = 0xFFFFFFFF;
 
     /*
      * recovery the reglist from sram
@@ -731,34 +793,22 @@ int32 hguart_v2_resume(struct dev_obj *obj)
     hw->RSTADR    = dev->bp_regs.rstadr;
     hw->TDMALEN   = dev->bp_regs.tdmalen;
     hw->RDMALEN   = dev->bp_regs.rdmalen;
-    hw->DMACON    = dev->bp_regs.dmacon | BIT(8) | BIT(9);
+    hw->DMACON    = dev->bp_regs.dmacon;
     hw->RS485_CON = dev->bp_regs.rs485_con;
     hw->RS485_DET = dev->bp_regs.rs485_det;
     hw->RS485_TAT = dev->bp_regs.rs485_tat;
     hw->TOCON     = dev->bp_regs.tocon;
 
-    /*
-     * recovery the irq handle and data
-     */
-    dev->irq_hdl  = dev->bp_irq_hdl;
-    dev->irq_data = dev->bp_irq_data;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
     /*!
      * Open the UART
      */
     hw->CON |= BIT(0);
+    if (dev->bp_regs.dmacon & LL_UART_DMACON_RX_DMA_EN)
+        hguart_v2_dma_rx_config(hw, 1);
 
-    /*
-     * open irq
-     */
     irq_enable(dev->irq_num);
-
+    
     dev->dsleep = 0;
-
-    //os_mutex_unlock(&dev->bp_resume_lock);
-
     return RET_OK;
 }
 #else

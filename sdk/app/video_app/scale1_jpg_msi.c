@@ -15,16 +15,15 @@
 #include "hal/scale.h"
 #include "dev/scale/hgscale.h"
 #include "video_msi.h"
+#include "lib/video/vpp/vpp_dev.h"
 #define STATIC_SCALE1_BUF 1
 #define SCALE1_JPG_COUNT  20
-extern uint8 *yuvbuf;
-extern int32_t vpp_evt_wait_open(int enable, int timeout);
-
 enum
 {
-    MSI_SCALE1_THREAD_DEAD = BIT(0),
-    MSI_SCALE1_THREAD_STOP = BIT(1),
-    MSI_SCALE1_THREAD_KICK = BIT(2),
+    MSI_SCALE1_THREAD_DEAD      = BIT(0),
+    MSI_SCALE1_THREAD_STOP      = BIT(1),
+    MSI_SCALE1_THREAD_KICK      = BIT(2),
+    MSI_SCALE1_THREAD_VPP_CLOSE = BIT(3),
 };
 
 // data申请空间函数
@@ -49,15 +48,12 @@ struct scale1_jpg_msi_s
     uint32_t             magic;
     uint16_t             last_w, last_h;
     uint16_t             jpg_w, jpg_h;
-    uint8_t              src_from;
-    uint8_t              stop;
-    uint8_t              which_jpg;
+    uint8_t              which_jpg : 1, output_en : 1, src_from : 3, stop : 1, force_node : 1, rev : 1;
     uint8_t              lock_value;
-    uint8_t              output_en;
+    uint8_t              recv_type;
     uint8_t             *scale1_buf;
     uint32_t             scale1_buf_size;
     uint16_t             force_type; // 设置最后输出图片的类型
-    uint8_t              recv_type;
 };
 
 static int32_t scale1_soft_ov_isr(uint32_t irq_flag, uint32_t irq_data, uint32_t param1)
@@ -69,10 +65,9 @@ static int32_t scale1_soft_ov_isr(uint32_t irq_flag, uint32_t irq_data, uint32_t
 
 static int32_t scale1_done(uint32_t irq_flag, uint32_t irq_data, uint32_t param1)
 {
-    os_printf("sd$$$$\r\n");
     struct scale1_jpg_msi_s *scale1_jpg = (struct scale1_jpg_msi_s *) irq_data;
-    //struct scale_device     *scale_dev  = scale1_jpg->scale_dev;
-    // 完成后,再次kick一下线程,检查是否有新的数据
+    // struct scale_device     *scale_dev  = scale1_jpg->scale_dev;
+    //  完成后,再次kick一下线程,检查是否有新的数据
     os_event_set(&scale1_jpg->evt, MSI_SCALE1_THREAD_KICK, NULL);
     return 0;
 }
@@ -104,9 +99,9 @@ static void scale1_soft_from_psram_to_enc(struct scale1_jpg_msi_s *scale1_jpg, u
         return;
     }
 
-    hw_memcpy(line_buf, psram_data, (line_num * icount) * w);
-    hw_memcpy(line_buf + (line_num * icount) * w, psram_data + h * w, (line_num * icount) * w / 4);
-    hw_memcpy(line_buf + (line_num * icount) * w + (line_num * icount) * w / 4, psram_data + h * w + h * w / 4, (line_num * icount) * w / 4);
+    hw_memcpy_no_cache(line_buf, psram_data, (line_num * icount) * w);
+    hw_memcpy_no_cache(line_buf + (line_num * icount) * w, psram_data + h * w, (line_num * icount) * w / 4);
+    hw_memcpy_no_cache(line_buf + (line_num * icount) * w + (line_num * icount) * w / 4, psram_data + h * w + h * w / 4, (line_num * icount) * w / 4);
     scale_set_in_yaddr(scale_dev, (uint32) line_buf);
     scale_set_in_uaddr(scale_dev, (uint32) line_buf + (line_num * icount) * w);
     scale_set_in_vaddr(scale_dev, (uint32) line_buf + (line_num * icount) * w + (line_num * icount) * w / 4);
@@ -121,16 +116,16 @@ static void scale1_soft_from_psram_to_enc(struct scale1_jpg_msi_s *scale1_jpg, u
             if ((icount % 2) == 0)
             {
                 // os_printf("get_height_cnt:%d===>up head\r\n",scale_get_heigh_cnt(scale_dev));
-                hw_memcpy(line_buf, psram_data + (line_num * icount) * w, line_num * w);
-                hw_memcpy(line_buf + line_num * 2 * w, psram_data + h * w + (line_num * icount) * w / 4, line_num * w / 4);
-                hw_memcpy(line_buf + line_num * 2 * w + line_num * 2 * w / 4, psram_data + h * w + h * w / 4 + (line_num * icount) * w / 4, line_num * w / 4);
+                hw_memcpy_no_cache(line_buf, psram_data + (line_num * icount) * w, line_num * w);
+                hw_memcpy_no_cache(line_buf + line_num * 2 * w, psram_data + h * w + (line_num * icount) * w / 4, line_num * w / 4);
+                hw_memcpy_no_cache(line_buf + line_num * 2 * w + line_num * 2 * w / 4, psram_data + h * w + h * w / 4 + (line_num * icount) * w / 4, line_num * w / 4);
             }
             else
             {
                 // os_printf("get_height_cnt:%d===>up tail\r\n",scale_get_heigh_cnt(scale_dev));
-                hw_memcpy(line_buf + line_num * w, psram_data + (line_num * icount) * w, line_num * w);
-                hw_memcpy(line_buf + line_num * 2 * w + line_num * 2 * w / 8, psram_data + h * w + (line_num * icount) * w / 4, line_num * w / 4);
-                hw_memcpy(line_buf + line_num * 2 * w + line_num * 2 * w / 4 + line_num * 2 * w / 8, psram_data + h * w + h * w / 4 + (line_num * icount) * w / 4, line_num * w / 4);
+                hw_memcpy_no_cache(line_buf + line_num * w, psram_data + (line_num * icount) * w, line_num * w);
+                hw_memcpy_no_cache(line_buf + line_num * 2 * w + line_num * 2 * w / 8, psram_data + h * w + (line_num * icount) * w / 4, line_num * w / 4);
+                hw_memcpy_no_cache(line_buf + line_num * 2 * w + line_num * 2 * w / 4 + line_num * 2 * w / 8, psram_data + h * w + h * w / 4 + (line_num * icount) * w / 4, line_num * w / 4);
             }
             icount++;
             if (icount == ((h + line_num - 1) / line_num))
@@ -158,7 +153,7 @@ static void scale1_soft_from_psram_to_enc(struct scale1_jpg_msi_s *scale1_jpg, u
         }
         else
         {
-            msi_do_cmd(scale1_jpg->register_jpg_msi, MSI_CMD_GET_RUNNING,(uint32_t) &running, 0);
+            msi_do_cmd(scale1_jpg->register_jpg_msi, MSI_CMD_GET_RUNNING, (uint32_t) &running, 0);
             if (running == 0)
             {
                 os_printf("%s:%d\n", __FUNCTION__, __LINE__);
@@ -174,6 +169,18 @@ static void scale1_soft_from_psram_to_enc(struct scale1_jpg_msi_s *scale1_jpg, u
             os_printf("%s:%d\n", __FUNCTION__, __LINE__);
         }
     }
+    scale_close(scale_dev);
+}
+
+static int scale1_vpp_close(uint32_t d)
+{
+    struct scale1_jpg_msi_s *scale1_jpg_s = (struct scale1_jpg_msi_s *) d;
+    struct vpp_device       *vpp_dev;
+    //struct jpg_V3_msi_s     *jpg_msg = (struct jpg_V3_msi_s *) d;
+    os_event_set(&scale1_jpg_s->evt, MSI_SCALE1_THREAD_VPP_CLOSE, NULL);
+    vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
+    vpp_close(vpp_dev);
+    return 1;
 }
 
 static void scale1_jpg_work(void *d)
@@ -181,11 +188,13 @@ static void scale1_jpg_work(void *d)
     uint8_t last_value   = 0;
     uint8_t already_kick = 0;
 
-    uint32_t    delay_time = -1;
-    uint32_t    flags;
-    int32_t     ret;
-    //struct msi *msi = scale1_jpg_s->msi;
-	struct scale1_jpg_msi_s *scale1_jpg_s = (struct scale1_jpg_msi_s *)d;
+    uint32_t                 start_arg  = 1;
+    uint32_t                 delay_time = -1;
+    uint32_t                 flags;
+    int32_t                  ret;
+    uint8_t                 *scale1_buf;
+    // struct msi *msi = scale1_jpg_s->msi;
+    struct scale1_jpg_msi_s *scale1_jpg_s = (struct scale1_jpg_msi_s *) d;
     while (1)
     {
     scale1_jpg_work_again:
@@ -262,7 +271,11 @@ static void scale1_jpg_work(void *d)
                 msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_FROM, scale1_jpg_s->src_from);
                 msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_MSG, scale1_jpg_s->jpg_w << 16 | scale1_jpg_s->jpg_h);
                 // 重新启动mjpg
-                msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 1);
+                if(scale1_jpg_s->force_node)
+                {
+                    start_arg = BIT(scale1_jpg_s->force_node) | start_arg;
+                }
+                msi_do_cmd(scale1_jpg_s->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, start_arg);
 
                 struct yuv_arg_s *yuv_msg;
                 yuv_msg = (struct yuv_arg_s *) scale1_jpg_s->fb->priv;
@@ -279,13 +292,21 @@ static void scale1_jpg_work(void *d)
                     if (STATIC_SCALE1_BUF || scale1_jpg_s->jpg_w <= 2 * p_w)
                     {
                         // yuvbuf需要给28行,传入14行
-                        if (yuvbuf)
+                        scale1_buf = (uint8_t *) get_vpp_buf(0);
+                        if (scale1_buf)
                         {
-                            vpp_evt_wait_open(0, 100);
-
+                            vppdone_func_register(SCALE1_JPG_ENCODE, scale1_vpp_close, (uint32_t) d);
+                            int32_t timeout = os_event_wait(&scale1_jpg_s->evt, MSI_SCALE1_THREAD_VPP_CLOSE, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 50);
+                            // 超时,就强行关闭vpp,理论应该需要先判断vpp是否被打开,这里暂时默认是被打开的
+                            if (timeout)
+                            {
+                                vppdone_func_unregister(SCALE1_JPG_ENCODE);
+                                scale1_vpp_close((uint32_t)d);
+                                os_event_wait(&scale1_jpg_s->evt, MSI_SCALE1_THREAD_VPP_CLOSE, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 0);
+                            }
                             uint32_t start_encode = os_jiffies();
-                            scale1_soft_from_psram_to_enc(scale1_jpg_s, yuvbuf, 14, scale1_jpg_s->fb->data, p_w, p_h, scale1_jpg_s->jpg_w, scale1_jpg_s->jpg_h);
-                            vpp_evt_wait_open(1, 0);
+                            scale1_soft_from_psram_to_enc(scale1_jpg_s, scale1_buf, 14, scale1_jpg_s->fb->data, p_w, p_h, scale1_jpg_s->jpg_w, scale1_jpg_s->jpg_h);
+                            vpp_dev_open();
                             os_printf(KERN_INFO "spend1 time:%d\n", (uint32_t) os_jiffies() - start_encode);
                             already_kick = 1;
                             jpg_mutex_unlock(scale1_jpg_s->which_jpg, scale1_jpg_s->lock_value);
@@ -472,7 +493,6 @@ static int32_t scale1_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
                 {
                     scale1_jpg_s->output_en = 0;
                 }
-                os_printf("send:%d\n", send);
                 ret = RET_OK + 1;
                 break;
             }
@@ -532,7 +552,7 @@ static int32_t scale1_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
     return ret;
 }
 
-struct msi *scale1_jpg_msi_init(const char *msi_name, uint8_t which_jpg, uint8_t recv_type, uint8_t lock_value, uint16_t force_type, scale1_filter_fn fn)
+struct msi *scale1_jpg_msi_init(const char *msi_name, uint8_t which_jpg, uint8_t recv_type, uint8_t lock_value, uint16_t force_type, scale1_filter_fn fn, uint8_t force_node)
 {
     uint8_t isnew;
     ASSERT(which_jpg == 0 || which_jpg == 1);
@@ -555,6 +575,7 @@ struct msi *scale1_jpg_msi_init(const char *msi_name, uint8_t which_jpg, uint8_t
         scale1_jpg_s->src_from   = SCALER_DATA;
         scale1_jpg_s->scale_dev  = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
         scale1_jpg_s->recv_type  = recv_type;
+        scale1_jpg_s->force_node = force_node;
         os_event_init(&scale1_jpg_s->evt);
 
         // 将大分辨率拍照改成线程(因为消耗时间过长)

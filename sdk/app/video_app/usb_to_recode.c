@@ -26,7 +26,7 @@ static uint8_t recode_filter(void *f, uint8_t recv_type)
     return res;
 }
 
-void usb_to_recode_init()
+void usb_to_recode_init(uint8_t jpg_num)
 {
 
     uint32_t    magic;
@@ -76,7 +76,7 @@ void usb_to_recode_init()
 
     // 过滤类型,由于从usb过来,由于decode_msg_msi设置了类型,所以这里需要修改
     static const uint16_t watermark_filter[] = {FSTYPE_JPG_GEN420_REJPG, FSTYPE_NONE};
-    struct msi           *gen420_jpg_msi = gen420_jpg_msi_init(R_GEN420_JPG_RECODE, JPGID0, FSTYPE_JPG_GEN420_REJPG, JPG_LOCK_GEN420_RECODE, GEN420_QUEUE_JPEG_RECODE, (uint16_t*)watermark_filter, recode_filter);
+    struct msi           *gen420_jpg_msi = gen420_jpg_msi_init(R_GEN420_JPG_RECODE, jpg_num, FSTYPE_JPG_GEN420_REJPG, JPG_LOCK_GEN420_RECODE, GEN420_QUEUE_JPEG_RECODE, (uint16_t*)watermark_filter, recode_filter);
     if (gen420_jpg_msi)
     {
         // 如果需要默认添加到某个msi,在这里添加,也可以后续在其他地方通过msi_add_output(NULL, R_GEN420_JPG_RECODE, "XXX");的方式添加

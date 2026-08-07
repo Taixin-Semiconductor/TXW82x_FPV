@@ -349,8 +349,8 @@ int connect_udp_endpoint( struct rtp_endpoint *ep,
 	}
 
 
-	//int tos = 0xe0;
-	//setsockopt(rtpfd, IPPROTO_IP, IP_TOS, (void *)&tos , sizeof(tos));
+	// int tos = 0xe0;
+	// setsockopt(rtpfd, IPPROTO_IP, IP_TOS, (void *)&tos , sizeof(tos));
 
 //	int tos = 0xb8;
 //	setsockopt(rtpfd, IPPROTO_IP, IP_TOS, (void *)&tos , sizeof(tos));
@@ -514,7 +514,9 @@ void rtsp_tcp_send_event(void *ei, void *d)
 		tcp_head[3] = conn->send_buf_len & 0xFF; // 低字节
 		send_len = conn->send_buf_len+SPOOK_CACHE_BUF_HEAD_LEN;
 		again:
+		os_event_wait(&conn->evt, RTSP_TCP_READ_MUTEX, NULL, OS_EVENT_WMODE_AND | OS_EVENT_WMODE_CLEAR, -1);
 		len = lwip_send( conn->fd, tcp_head+offset, send_len,0);
+		os_event_set(&conn->evt, RTSP_TCP_READ_MUTEX, NULL);
 		if(len == 0)
 		{
 			goto rtsp_tcp_send_event_end;
@@ -576,8 +578,15 @@ int send_rtp_packet_more( struct rtp_endpoint *ep, unsigned char *sendbuf, int s
 			ep->session->conn->sendbuf = sendbuf; //发送数据的buf
 			ep->session->conn->send_buf_len = sendLen; //发送数据的长度
 			//RTSP_TCP_SEND_FINISH
+			#if 0
 			eloop_add_alarm(os_jiffies(),EVENT_F_ENABLED,rtsp_tcp_send_event,(void*)ep);
 			os_event_wait(&ep->session->conn->evt, RTSP_TCP_SEND_FINISH, NULL, OS_EVENT_WMODE_CLEAR, -1);
+			#else
+			//需要可写
+			os_event_wait(&ep->session->conn->evt, RTSP_TCP_WRITE_MUTEX, NULL, OS_EVENT_WMODE_AND|OS_EVENT_WMODE_CLEAR, -1);
+			rtsp_tcp_send_event(NULL,(void*)ep);
+			os_event_set(&ep->session->conn->evt, RTSP_TCP_WRITE_MUTEX, NULL);
+			#endif
 		}
 		
 		//os_printf("%s:%d\n",__FUNCTION__,__LINE__);

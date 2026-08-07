@@ -156,9 +156,10 @@ void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,
 	dual_fs_trig(dual_dev,460);
 	dual_rd_trig(dual_dev,10,452);
 #else
-	dual_timer_cfg(dual_dev,16,2,1000);	
-	dual_fs_trig(dual_dev,460);
-	dual_rd_trig(dual_dev,475,452);
+	//master:gc2053, slave:jxv03
+	dual_timer_cfg(dual_dev,32,1,256);	
+	dual_fs_trig(dual_dev,734);
+	dual_rd_trig(dual_dev,300,400);
 #endif
 	//dual_timer_cfg(dual_dev,16,20,500);	
 	//dual_rd_trig(dual_dev,16,336);	

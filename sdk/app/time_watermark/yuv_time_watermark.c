@@ -190,10 +190,11 @@ static int32_t watermark_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
             {
                 ret = RET_ERR;
             }
-            else
-            {
-                os_run_work(&watermark->work);
-            }
+        }
+        break;
+        case MSI_CMD_TRANS_FB_END:
+        {
+            os_run_work(&watermark->work);
         }
         break;
         default:

@@ -142,7 +142,7 @@ struct hgusb20_dev {
     struct ep_trx_ctrl      ep_recevice_ctrl[7];
     
 #ifdef CONFIG_SLEEP
-    uint32                  sys_regs[2];
+    uint32                  sys_regs[4];
 #endif
 };
 

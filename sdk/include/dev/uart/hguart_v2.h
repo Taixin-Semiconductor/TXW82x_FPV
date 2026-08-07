@@ -7,8 +7,8 @@ extern "C" {
 #endif
 
 
-#define __PSRAM_ADDR_START (0x18800000)
-#define __PSRAM_ADDR_END   (0x18800000 + (8*1024*1024))
+#define __PSRAM_ADDR_START (0x28000000)
+#define __PSRAM_ADDR_END   (0x28800000 + (0x1800000))
 
 struct hguart_v2 {
     struct uart_device   dev;
@@ -32,9 +32,6 @@ struct hguart_v2 {
         uint32 rs485_tat;
         uint32 tocon;
     }bp_regs;
-    uint32               bp_irq_flags;
-    uart_irq_hdl         bp_irq_hdl;
-    uint32               bp_irq_data;
 #endif
 };
 

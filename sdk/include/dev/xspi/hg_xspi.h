@@ -9,6 +9,8 @@ extern "C" {
 enum hg_xspi_flags {
     hg_xspi_flags_ready,
     hg_xspi_flags_suspend,
+    hg_xspi_flags_suspend_ulp,
+    hg_xspi_flags_suspend_pd,
 };
 
 struct hg_xspi {

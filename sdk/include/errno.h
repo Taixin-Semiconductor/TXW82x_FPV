@@ -8,7 +8,8 @@
 extern "C" {
 #endif
 
-extern int errno;
+extern int *__errno_location(void);
+#define errno (*__errno_location())
 
 #ifndef MAX_ERRNO
 #define MAX_ERRNO   4095

@@ -9,22 +9,109 @@
 #include "usbh_video.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "sysevt_usb/sysevt_usb.h"
 
+#define MAX_UVC_APP                     10
 
-
-#define MAX_UVC_APP 2
+#define UVC_YUV422_MJPEG_FORMAT         0     /* 对于 U、V 量化表单独指向的 Mjpeg 图片，需要软件修改指向同一份量化表 (Mjpeg 硬件解码需要) */
 
 // data申请空间函数
-#define STREAM_MALLOC av_psram_malloc
-#define STREAM_FREE av_psram_free
-#define STREAM_ZALLOC av_psram_zalloc
+#define STREAM_MALLOC                   av_psram_malloc
+#define STREAM_FREE                     av_psram_free
+#define STREAM_ZALLOC                   av_psram_zalloc
 
 // 结构体申请空间函数
-#define STREAM_LIBC_MALLOC av_malloc
-#define STREAM_LIBC_FREE av_free
-#define STREAM_LIBC_ZALLOC av_zalloc
+#define STREAM_LIBC_MALLOC              av_malloc
+#define STREAM_LIBC_FREE                av_free
+#define STREAM_LIBC_ZALLOC              av_zalloc
 
-#define UVC_PSRAM_MALLOC_SIZE_INIT (100 * 1024)
+#define UVC_PSRAM_MALLOC_SIZE_INIT      (100 * 1024)
+
+#if UVC_YUV422_MJPEG_FORMAT
+// 获取jpeg的w和h,没有做太多容错,所以尽量给的是正确的jpeg,否则可能异常
+#define GET_16(p) (((p)[0] << 8) | (p)[1])
+
+static int parse_SOF(uint8_t *d, uint32_t *w, uint32_t *h)
+{
+    if (d[0] != 8)
+    {
+        printf("Invalid precision %d in SOF0\n", d[0]);
+        return -1;
+    }
+    *h = GET_16(d + 1);
+    *w = GET_16(d + 3);
+
+    *(d+14) = 0x1;  /* 对于 U、V 量化表单独指向的 Mjpeg 图片，需要软件修改指向同一份量化表 */
+
+    return 0;
+}
+
+static int parse_jpg(uint8_t *jpg_buf, uint32_t maxsize, uint32_t *w, uint32_t *h)
+{
+    uint8_t *buf = jpg_buf;
+    uint8_t EOI_flag = 0;
+    uint32_t i = 0;
+    int res = 1;
+    int blen = 0;
+    for (i = 0; i < maxsize; i += blen + 2)
+    {
+        if (buf[i] != 0xFF)
+        {
+            printf("usb Found %02X at %d, expecting FF\n", buf[i], i);
+            goto parse_jpg_end;
+        }
+        while (buf[i + 1] == 0xFF)
+            ++i;
+        if (buf[i + 1] == 0xD8)
+            blen = 0;
+        else
+            blen = GET_16(buf + i + 2);
+
+        switch (buf[i + 1])
+        {
+            case 0xDB: /* Quantization Table */
+                break;
+            case 0xC0: /* Start of Frame */
+                parse_SOF(buf + i + 4, w, h);
+                res = 0;
+                // printf("w:%d\th:%d\n",*w,*h);
+                break;
+            case 0xC4: /* Huffman Table */
+
+                break;
+            case 0xDD: /* DRI */
+                break;
+            case 0xDA: /* Start of Scan */
+                goto parse_jpg_end;
+        }
+    }
+
+
+parse_jpg_end:
+
+    if (!res) {
+        for (i = maxsize - 1; i >= maxsize - 16; i--)
+        {
+            if (buf[i] != 0xFF) {
+                // os_printf("EOI Found %02X at %d, expecting FF\n", buf[i], i);
+                continue;
+            }
+    
+            if ((i < maxsize - 1) && (buf[i + 1] == 0xD9)) {
+                EOI_flag = 1;
+                break;
+            }
+        }
+    }
+
+    if ((!res) && (!EOI_flag)) {
+        res = 1;
+        os_printf("EOI No found FF D9\n");
+    }
+
+    return res;
+}
+#endif
 
 static void msi_get_usb_psram_thread(void *d)
 {
@@ -52,7 +139,7 @@ static void msi_get_usb_psram_thread(void *d)
     uint8_t uvc_fps = 0;
     uint32_t last_record_time = 0;
 
-    switch ((uvc->uvc_format >> 16) & 0xFFFF)
+    switch ((uvc->uvc_format >> 8) & 0xFF)
     {
         case F_JPG:
             os_printf("F_JPG DETECT\n");
@@ -71,6 +158,8 @@ static void msi_get_usb_psram_thread(void *d)
             ctlnum = 30;
             break;
     }
+    
+    system_event_usbh_video_new_event(uvc->func->dev_num, SYSEVT_USB_DEVICE_CONNECT);
 
     while (1)
     {
@@ -84,6 +173,7 @@ static void msi_get_usb_psram_thread(void *d)
         os_event_wait(&uvc->evt, UVC_TASK_STOP, (uint32 *)&stop_flag, OS_EVENT_WMODE_OR, 0);
         if (stop_flag)
         {
+            os_printf("%s %d\n",__FUNCTION__,__LINE__);
             goto uvc_get_psram_err_deal;
         }
 
@@ -115,7 +205,7 @@ static void msi_get_usb_psram_thread(void *d)
         uvc->func->set_frame_using(uvc_message);
         enable_irq(flags);
 
-        while ((uvc_message->frame_end != 2) && ((list_empty(&uvc_message->list) != TRUE) || (uvc_message->frame_end == 0)))
+        while ((uvc_message->frame_end != UVC_DEVICE_FRAME_ERROR) && ((list_empty(&uvc_message->list) != TRUE) || (uvc_message->frame_end == UVC_DEIVCE_FRAME_NOT_END)))
         {
 
             if (stop_flag)
@@ -143,14 +233,17 @@ static void msi_get_usb_psram_thread(void *d)
                     {
                         _os_printf("#");
                         malloc_buf = (uint8_t *)STREAM_MALLOC(uvc->malloc_max_size);
-                        sys_dcache_invalid_range(malloc_buf, uvc->malloc_max_size);
+                        if(malloc_buf)
+                        {
+                            sys_dcache_invalid_range((uint32_t*)malloc_buf, uvc->malloc_max_size);
+                        }
                         uvc->malloc_count_near++;
                         // os_printf("uvc->malloc_max_size:%d\tmalloc_buf:%X\n",uvc->malloc_max_size,malloc_buf);
                     }
                     if (malloc_buf)
                     {
                         // 判断一下偏移后是否大于当前最大的size,如果是,则需要重新去申请空间了,这种情况申请大于20%,自动调整,则增加10%
-                        if (offset + uvc_b->blank_len > uvc->malloc_max_size)
+                        if (offset + (uvc_b->blank_len-uvc_b->re_space) > uvc->malloc_max_size)
                         {
                             _os_printf("{}\n");
                             uint32_t last_malloc_size = uvc->malloc_max_size;
@@ -162,9 +255,8 @@ static void msi_get_usb_psram_thread(void *d)
                             os_printf("uvc->malloc_max_size:%d\t%X\n", uvc->malloc_max_size, m_buf);
                             if (m_buf)
                             {
-                                sys_dcache_invalid_range(m_buf, uvc->malloc_max_size);
-                                hw_memcpy0(m_buf, malloc_buf, offset);
-                                sys_dcache_clean_range(m_buf, uvc->malloc_max_size);
+                                sys_dcache_invalid_range((uint32_t*)m_buf, uvc->malloc_max_size);
+                                hw_memcpy_no_cache(m_buf, malloc_buf, offset);
                                 STREAM_FREE(malloc_buf);
                                 malloc_buf = m_buf;
                             }
@@ -194,8 +286,9 @@ static void msi_get_usb_psram_thread(void *d)
                     else
                     {
                         // 申请空间
-                        hw_memcpy0(malloc_buf + offset, uvc_b->buf_ptr, uvc_b->blank_len);
-                        offset += uvc_b->blank_len;
+                        sys_dcache_clean_range((uint32_t*)uvc_b->buf_ptr, (uvc_b->blank_len - uvc_b->re_space));
+                        hw_memcpy_no_cache(malloc_buf + offset, uvc_b->buf_ptr, (uvc_b->blank_len - uvc_b->re_space));
+                        offset += (uvc_b->blank_len - uvc_b->re_space);
                     }
                 }
                 else
@@ -236,11 +329,13 @@ static void msi_get_usb_psram_thread(void *d)
 
         if (err || !malloc_buf)
         {
+            os_printf("%s %d\n",__FUNCTION__,__LINE__);
             goto uvc_get_psram_err_deal;
         }
 
-        if (uvc_message->frame_end == 2)
+        if (uvc_message->frame_end == UVC_DEVICE_FRAME_ERROR || uvc_message->frame_end == UVC_DEIVCE_FRAME_NOT_END)
         {
+            // os_printf("%s %d\n",__FUNCTION__,__LINE__);
             goto uvc_get_psram_err_deal;
         }
         else
@@ -250,8 +345,6 @@ static void msi_get_usb_psram_thread(void *d)
             {
                 fb->len = uvc_message->frame_len;
                 fb->data = (uint8_t *)malloc_buf;
-
-                sys_dcache_clean_range((uint32_t *)fb->data, fb->len);
 
                 current_photo_size = uvc_message->frame_len;
 
@@ -267,7 +360,28 @@ static void msi_get_usb_psram_thread(void *d)
                 fb->time = os_jiffies();
                 fb->datatag ++;
                 // os_printf("fb mtype:%x stype:%x\n",fb->mtype,fb->stype);
-                msi_output_fb(msi, fb);
+
+                #if UVC_YUV422_MJPEG_FORMAT
+                if (fb->mtype == F_JPG) {
+                    int res = 0;
+                    uint32_t decode_w = 0;
+                    uint32_t decode_h = 0;
+                    res = parse_jpg(fb->data, fb->len, &decode_w, &decode_h);
+                    if (!res)
+                    {
+                        sys_dcache_invalid_range((uint32_t *)fb->data, fb->len);
+                        msi_output_fb(msi, fb);
+                    }
+                    else
+                    {
+                        msi_delete_fb(msi, fb);
+                    }
+                } else {
+                    msi_output_fb(msi, fb);
+                }
+                #else
+                    msi_output_fb(msi, fb);
+                #endif
 
                 uvc_fps ++;
                 if(os_jiffies() - last_record_time >= 1000)
@@ -336,6 +450,9 @@ static void msi_get_usb_psram_thread(void *d)
             break;
         }
     }
+
+    system_event_usbh_video_new_event(uvc->func->dev_num, SYSEVT_USB_DEVICE_DISCONNECT);
+
     // 发送一个evt,通知线程需要退出了
     os_event_set(&uvc->evt, UVC_TASK_EXIT, NULL);
     // 代表任务退出,并且将流也退出

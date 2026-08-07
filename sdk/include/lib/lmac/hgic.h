@@ -247,6 +247,13 @@ enum hgic_cmd {
     HGIC_CMD_GET_LINK_QUALITY       =  194,
     HGIC_CMD_SET_NAV_LIMIT_MAX      =  195,
     HGIC_CMD_SET_TXPOWER_MODE       =  196,
+    HGIC_CMD_SET_DISABLE_BSS        =  197,
+    HGIC_CMD_SET_RESP_IND           =  198,
+    HGIC_CMD_SET_SHORT_GI           =  199,
+    HGIC_CMD_SET_NDP_PROBE          =  200,
+    HGIC_CMD_SET_CTRL_RESP_1M       =  201,
+    HGIC_CMD_SET_AMPDU_EN           =  202,
+    HGIC_CMD_SET_DUP_1M             =  203,
 };
 
 enum hgic_event {
@@ -286,6 +293,7 @@ enum hgic_event {
     HGIC_EVENT_UNKNOWN_STA         = 34,
     HGIC_EVENT_ROAM_FAIL           = 35,
     HGIC_EVENT_BEACON_TX_DONE      = 36,
+    HGIC_EVENT_WIFI_FATAL_ERR      = 37,
 };
 
 enum HGIC_EXCEPTION_NUM {

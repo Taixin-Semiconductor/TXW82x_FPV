@@ -1,3 +1,17 @@
+/* 
+针对 USB DMA RX , 需做的内存预留大小为 4 字节, 防止 DMA 内存越界引起的内存错误问题
+
+USB1.1 SIE:
+(1) rx len % 4 == 1 实际 dma sram 会少 1 byte , 即 rx len - 1 (USB1.1驱动已修复)
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+USB2.0 SIE: 
+(1) rx len % 4 == 1 实际 dma sram 会多 2 byte , 即 rx len + 2
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+*/
 #include <rtthread.h>
 #include <include/rttusb_host.h>
 #include "hal/usb_device.h"
@@ -159,8 +173,8 @@ static int drv_pipe_xfer(upipe_t pipe, rt_uint8_t token, void *buffer, int nbyte
     hgusb11_v0_host_set_address(pipe->inst->address);
 
     if ((pipe->ep.bEndpointAddress & USB_DIR_MASK) == USB_DIR_IN) {
-        // RX不用互斥
-        ret = os_event_wait(&_hg_usbh.trx_lock, BIT(pipe->pipe_index+16), NULL,
+        // RX需要互斥
+        ret = os_event_wait(&_hg_usbh.trx_lock, BIT(16)/*BIT(pipe->pipe_index+16)*/, NULL,
                             OS_EVENT_WMODE_AND|OS_EVENT_WMODE_CLEAR, osWaitForever);
         if (ret) {
             LOG_D("drv_pipe_xfer rx req timeout!\r\n");
@@ -188,7 +202,7 @@ static int drv_pipe_xfer(upipe_t pipe, rt_uint8_t token, void *buffer, int nbyte
             }
             else
             {
-                total_len = hgusb11_v0_host_ep_get_rx_dma_len(pipe->pipe_index);
+                usb_device_ioctl((struct usb_device *)hgusb, USB_HOST_GET_RX_DMA_LEN, pipe->pipe_index, (rt_uint32_t)&total_len);
                 if (hgusb11_v0_host_is_xact_err(pipe->pipe_index, USB_DIR_IN) 
                     || hgusb11_v0_host_is_rx_stall(pipe->pipe_index, USB_DIR_IN))
                 {
@@ -197,9 +211,8 @@ static int drv_pipe_xfer(upipe_t pipe, rt_uint8_t token, void *buffer, int nbyte
             }
 
         }
-        os_event_set(&_hg_usbh.trx_lock, BIT(pipe->pipe_index+16), NULL);
+        os_event_set(&_hg_usbh.trx_lock, BIT(16)/*BIT(pipe->pipe_index+16)*/, NULL);
     } else {
-        // TX需要互斥
         ret = os_event_wait(&_hg_usbh.trx_lock, BIT(pipe->pipe_index), NULL,
                     OS_EVENT_WMODE_AND|OS_EVENT_WMODE_CLEAR, osWaitForever);
         if (ret) {

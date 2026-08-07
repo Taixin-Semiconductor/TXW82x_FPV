@@ -19,12 +19,12 @@ static rt_err_t rt_rndis_msg_send_recv(struct usb_rndis *rndis, rt_uint8_t *send
 {
     uinst_t device = rndis->device;
     int ret = 0;
-    rt_uint32_t rndis_avial[2] = {0};
+    rt_uint32_t rndis_avial[2 + (USB_RX_BUFF_RESERVE_SIZE / 4)] = {0};  // 防止越界
     
     ret = rt_usbh_cdc_send_command(device, send_buf, send_len);
     if (ret == send_len) {
         /* waite for the interrupt ep */
-        ret = rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_int, rndis_avial, sizeof(rndis_avial), USB_TIMEOUT_BASIC);
+        ret = rt_usb_hcd_pipe_xfer(device->hcd, rndis->pipe_int, rndis_avial, 8, USB_TIMEOUT_BASIC);
         if (ret == 8 && rndis_avial[0] == 1 && rndis_avial[1] == 0) {
             ret = rt_usbh_cdc_get_response(device, recv_buf, recv_size);
             if (ret > 0) {

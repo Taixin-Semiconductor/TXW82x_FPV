@@ -61,6 +61,8 @@ enum psram_type {
 enum psram_clk_alt {
     PSRAM_CLK_240M,
     PSRAM_CLK_320M,
+    PSRAM_CLK_274M,
+    PSRAM_CLK_160M,
     PSRAM_CLK_USER = 0xf0,
     PSRAM_CLK_END,
 };

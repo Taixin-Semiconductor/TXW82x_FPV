@@ -7,6 +7,22 @@
  * Date           Author            Notes
  * 2017-10-30     ZYH            the first version
  */
+
+ /* 
+针对 USB DMA RX , 需做的内存预留大小为 4 字节, 防止 DMA 内存越界引起的内存错误问题
+
+USB1.1 SIE:
+(1) rx len % 4 == 1 实际 dma sram 会少 1 byte , 即 rx len - 1 (USB1.1驱动已修复)
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+USB2.0 SIE: 
+(1) rx len % 4 == 1 实际 dma sram 会多 2 byte , 即 rx len + 2
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+*/
+
 #include "drv_usbd.h"
 #include <rtthread.h>
 #include "include/rttusb_device.h"

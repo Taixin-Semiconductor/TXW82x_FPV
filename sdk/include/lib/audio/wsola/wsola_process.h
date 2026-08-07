@@ -1,7 +1,8 @@
 #ifndef _WSOLA_PROCESS_H_
 #define _WSOLA_PROCESS_H_
 
-#include "basic_include.h"
+#include "typesdef.h"
+#include "osal/string.h"
 #include "lib/audio/ring_buffer/ring_buffer.h"
 
 typedef void *(*WSOLA_MALLOC)(int size);

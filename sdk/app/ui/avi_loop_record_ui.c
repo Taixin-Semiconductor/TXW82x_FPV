@@ -15,8 +15,8 @@ S_PREVIEW_SCALE3   ---->   R_VIDEO_P0(320x180)
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
 #include "avi_encode/avi_encode_msi.h"
-int32 auadc_msi_del_output(const char *msi_name);
-int32 auadc_msi_add_output(const char *msi_name);
+#include "audio_msi/audio_adc.h"
+
 struct msi *avi_encode_msi_init(const char *avi_msi_name, uint16_t filter_type, uint8_t rec_time);
 
 //data申请空间函数
@@ -94,10 +94,10 @@ static void start_avi_record_ui(lv_event_t * e)
         {
             lv_obj_add_flag(ui_s->now_ui, LV_OBJ_AVI_RECORD_FLAG); 
             #if AUDIO_EN
-            auadc_msi_add_output(R_AVI_ENCODE_MSI);
-            #else
-            ret = avi_encode_msi_init(R_AVI_ENCODE_MSI, (uint16_t)~0, 60*1);
+            auadc_msi_add_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
             #endif
+            ret = avi_encode_msi_init(R_AVI_ENCODE_MSI, (uint16_t)~0, 60*1);
+            
             if (!ret) {
                 lv_obj_clear_flag(ui_s->now_ui, LV_OBJ_AVI_RECORD_FLAG);
             }
@@ -122,7 +122,7 @@ static void exit_avi_record_ui(lv_event_t * e)
         lv_group_del(ui_s->now_group);
         ui_s->now_group = NULL;
         #if AUDIO_EN
-        auadc_msi_del_output(R_AVI_ENCODE_MSI);
+        auadc_msi_del_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
         #endif
         msi_del_output(ui_s->jpg_s, NULL, R_AVI_ENCODE_MSI);
         msi_put(ui_s->jpg_s);

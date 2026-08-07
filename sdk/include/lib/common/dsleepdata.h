@@ -11,6 +11,7 @@ enum system_sleepdata_id {
     SYSTEM_SLEEPDATA_ID_PSCONNECT,
     SYSTEM_SLEEPDATA_ID_WKDATA,
     SYSTEM_SLEEPDATA_ID_USER,
+    SYSTEM_SLEEPDATA_ID_SLEEPLOG,
     SYSTEM_SLEEPDATA_ID_MAX,
 };
 
@@ -19,6 +20,9 @@ extern void *sys_sleepdata_request(uint8 id, uint32 size);
 extern void sys_sleepdata_reset(void);
 extern uint32 sys_sleepdata_freesize(void);
 extern void *sys_sleepdata_get(uint8 id);
+extern int32 dsleeplog_int(uint32 size);
+extern void dsleeplog_print(void);
+extern void dsleeplog_save(char c);
 
 
 #ifdef __cplusplus

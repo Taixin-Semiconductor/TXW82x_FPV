@@ -121,9 +121,9 @@ struct rtsp_priv
 	//stream *audio_s;
 	stream *webfile_s;
 	struct msi *video_msi;
+	struct msi *audio_msi;
 	struct msi *v_msi;
 	struct msi *a_msi;
-	int32 audio_coder_ret;
 };
 
 

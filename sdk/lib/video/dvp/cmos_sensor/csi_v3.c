@@ -38,7 +38,6 @@ static uint8 g_byDevReadAddr;
 
 _Sensor_Ident_ *devSensorInit=NULL;
 
-extern Vpp_stream photo_msg;
 SNSER snser; 
 struct dvp_device *dvp_test;
 struct i2c_device *iic_test;
@@ -654,11 +653,6 @@ bool csi_yuv_mode(){
 	image_h = p_sensor_cmd->pixelh;
 	image_w = p_sensor_cmd->pixelw;
 #endif
-	photo_msg.in_h  = image_h;
-	photo_msg.in_w  = image_w;
-	photo_msg.out0_h = image_h;
-	photo_msg.out0_w = image_w;
-
 	video_msg.dvp_iw = image_w;
 	video_msg.dvp_ih = image_h;
 //	video_msg.dvp_ow = image_w;

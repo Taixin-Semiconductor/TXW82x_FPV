@@ -304,16 +304,38 @@ static int32 hg_crc_calc(struct crc_dev *crc, struct crc_dev_req *req, uint32 *c
     return ret > 0 ? RET_OK : RET_ERR;
 }
 
+void hg_crc_test_printf(struct crc_dev *crc)
+{
+    uint8_t src[64];
+    for (int i = 0;i<64;i++)
+        src[i] = 99+i;
+    struct crc_dev_req req = {
+        .type = CRC_TYPE_CRC32_WINRAR,
+        .data = src,
+        .len = 64,
+    };
+    uint32 crc_val = 0;
+    hg_crc_calc(crc, &req, &crc_val, 0);
+    _os_printf("crc r: 0x%08x\r\n", crc_val);
+    if (crc_val != 0x81efdc25) {
+        _os_printf("crc lp err\r\n");
+    }
+}
+
 #ifdef CONFIG_SLEEP
+//#define HGCRC_SLEEP_TEST(dev) hg_crc_test_printf(dev)
+ #define HGCRC_SLEEP_TEST(dev)
 int32 hg_crc_suspend(struct dev_obj *dev)
 {
     int32 ret = 0;
     struct hg_crc *crc = (struct hg_crc *)dev;
     struct hg_crc_hw *hw  = (struct hg_crc_hw *)crc->hw;
 
+    
     if ((crc->flags & BIT(HGCRC_FLAGS_SUSPEND))) {
         return RET_OK;
     }	
+    HGCRC_SLEEP_TEST(dev);
     ret = os_mutex_lock(&crc->lock, osWaitForever);
     if (ret < 0) {
         return ret;
@@ -321,16 +343,7 @@ int32 hg_crc_suspend(struct dev_obj *dev)
     irq_disable(crc->irq_num);
     crc->flags |= BIT(HGCRC_FLAGS_SUSPEND);
     
-    crc->regs = (uint32 *)os_malloc(sizeof(struct hg_crc_hw));
-    if (NULL == crc->regs) {
-        return RET_ERR;
-    }
-    /* register backup */
-    crc->regs[0] = hw->CRC_CFG;
-    crc->regs[1] = hw->CRC_INIT;
-    crc->regs[2] = hw->CRC_INV;
-    crc->regs[3] = hw->CRC_POLY;
-    crc->regs[4] = hw->DMA_ADDR;
+    /* register backup ?*/
     
     sysctrl_crc_clk_close();
 
@@ -343,24 +356,17 @@ int32 hg_crc_resume(struct dev_obj *dev)
     struct hg_crc *crc = (struct hg_crc *)dev;
     struct hg_crc_hw *hw  = (struct hg_crc_hw *)crc->hw;
     
-    if ((crc->flags & BIT(HGCRC_FLAGS_SUSPEND) && crc->regs)) {
+    if ((crc->flags & BIT(HGCRC_FLAGS_SUSPEND))) {
         ret = os_mutex_unlock(&crc->lock);
         if (ret < 0) {
             return ret;
         }
         sysctrl_crc_clk_open();
-        /* register recovery */
-        hw->CRC_INIT = crc->regs[1];
-        hw->CRC_INV  = crc->regs[2];
-        hw->CRC_POLY = crc->regs[3];
-        hw->DMA_ADDR = crc->regs[4];
-        hw->CRC_CFG  = crc->regs[0];
+        sysctrl_crc_reset();
+        /* register recovery ?*/
         crc->flags &= ~ BIT(HGCRC_FLAGS_SUSPEND);
         irq_enable(crc->irq_num);
-    }
-
-    if (crc->regs) {
-        os_free(crc->regs);
+        HGCRC_SLEEP_TEST(dev);
     }
     return RET_OK;
 }

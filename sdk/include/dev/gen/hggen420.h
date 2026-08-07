@@ -13,7 +13,7 @@ struct hggen420 {
     struct gen420_device       dev;
 	uint32                  hw;
     uint32                  irq_num;
-    uint32                  opened;
+    uint32              opened:1, use_dma:1, dsleep:1;
 	uint32 *cfg_backup;
 };
 

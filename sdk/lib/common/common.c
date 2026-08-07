@@ -83,15 +83,16 @@ void cpu_loading_print(uint8 all, struct os_task_info *tsk_info, uint32 size)
     uint32 _time_ = 0;
     uint32 count;
     uint64 jiff = os_jiffies();
+    uint32 total_time = 0;
 
     if(tsk_info == NULL) return;
     diff_tick = DIFF_JIFFIES(cpu_loading_tick, jiff);
     cpu_loading_tick = jiff;
 
-    os_printf(KERN_ALERT"--------------------------------------------------------------------\r\n");
-    os_printf(KERN_ALERT"Task Runtime Statistic, interval:%dms, Loading:%d%%\r\n", (uint32)os_jiffies_to_msecs(diff_tick), os_cpuloading());
-    os_printf(KERN_ALERT"PID     Name            %%CPU(Time)    Stack  Prio              Status\r\n");
-    os_printf(KERN_ALERT"--------------------------------------------------------------------\r\n");
+    os_printf(KERN_ALERT"----------------------------------------------------------------------------------\r\n");
+    os_printf(KERN_ALERT"Task Runtime Statistic, interval:%dms\r\n", (uint32)os_jiffies_to_msecs(diff_tick));
+    os_printf(KERN_ALERT"PID         Name                    %%CPU(Time)    Stack  Prio              Status\r\n");
+    os_printf(KERN_ALERT"----------------------------------------------------------------------------------\r\n");
 
     cpu_loading_api_time("sram_heap", sysheap_time(&sram_heap), diff_tick);
 #ifdef PSRAM_HEAP
@@ -104,12 +105,13 @@ void cpu_loading_print(uint8 all, struct os_task_info *tsk_info, uint32 size)
 #endif
     //CPU_TIME_API(hw_memcpy);
 
-    os_printf(KERN_ALERT"--------------------------------------------------------------------\r\n");
+    os_printf(KERN_ALERT"----------------------------------------------------------------------------------\r\n");
 
     count = os_task_runtime(tsk_info, size);
     for (i = 0; i < count; i++) {
         if (tsk_info[i].time > 0 || all) {
-            os_printf(KERN_ALERT"%2d     %-12s\t%2d%%(%6d)   %4d  %2d (%08x)  %s\r\n",
+            total_time += tsk_info[i].time;
+            os_printf(KERN_ALERT"%2d     %-28s\t%2d%%(%6d)   %4d  %2d (%08x)  %s\r\n",
                       tsk_info[i].id,
                       tsk_info[i].name ? tsk_info[i].name : "----",
 #ifdef CSKY_OS
@@ -125,7 +127,12 @@ void cpu_loading_print(uint8 all, struct os_task_info *tsk_info, uint32 size)
                       tsk_info[i].status);
         }
     }
-    os_printf(KERN_ALERT"--------------------------------------------------------------------\r\n");
+#ifdef CSKY_OS
+    os_printf(KERN_ALERT"--------------------------- CPU Loading: %d%% [%dms] -------------------------\r\n",
+        (total_time*100)/diff_tick, (uint32)os_jiffies_to_msecs(total_time));
+#elif defined(OHOS)
+    os_printf(KERN_ALERT"--------------------------- CPU Loading: %d%%  -------------------------------\r\n", total_time);
+#endif
 }
 
 int strncasecmp(const char *s1, const char *s2, size_t n)
@@ -268,15 +275,25 @@ void *os_memdup(const void *ptr, uint32 len)
 int32 os_random_bytes(uint8 *data, int32 len)
 {
     int32 i = 0;
-    int32 seed;
+    int32 seed, seed_uuid, rand_val = 0;
+    uint8 uuid[6];
+
+    sysctrl_get_chip_uuid((uint8 *)&uuid[0], 6);
+    memcpy((void *)&seed_uuid, &uuid[2], 4);
+    
 #ifdef TXW4002ACK803
     seed = CPU_CYCLE_VALUE() ^ (CPU_CYCLE_VALUE() << 8) ^ (CPU_CYCLE_VALUE() >> 8);
 #else
-    seed = CPU_CYCLE_VALUE() ^ sysctrl_get_trng() ^ (sysctrl_get_trng() >> 8);
+    seed = CPU_CYCLE_VALUE() ^ sysctrl_get_trng() ^ (seed_uuid);
 #endif
     for (i = 0; i < len; i++) {
-        seed = seed * 214013L + 2531011L;
-        data[i] = (uint8)(((seed >> 16) & 0x7fff) & 0xff);
+        if (i & 1) {
+            rand_val = rand_val >> 8;
+        } else {
+            seed = (seed * 214013L + 2531011L) >> 16;
+            rand_val = seed;
+        }
+        data[i] = (uint8)(rand_val & 0xFF);
     }
     return 0;
 }
@@ -439,7 +456,7 @@ uint8 *scatter_offset(scatter_data *data, uint32 count, uint32 off)
 {
     uint8 i;
     for (i = 0; i < count; i++) {
-        if (off <= data[i].size) {
+        if (off < data[i].size) {
             return data[i].addr + off;
         }
         off -= data[i].size;

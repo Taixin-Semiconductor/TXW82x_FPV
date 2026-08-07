@@ -116,8 +116,8 @@ static int32 hg_sysaes_v3_hdl(struct sysaes_dev *dev, struct sysaes_para *para, 
     // READ_ADDR
     sys_dcache_clean_range_unaligned((uint32 *)para->src, para->aes_len);
     // WRITE_ADDR
-    sys_dcache_clean_invalid_range((uint32 *)para->dest, para->aes_len);
-
+    sys_dcache_invalid_range_unaligned((uint32 *)para->dest, para->aes_len);
+    
     hw->SADDR = (uint32)para->src;
     hw->DADDR = (uint32)para->dest;
     hw->BLOCK_NUM = para->aes_len;
@@ -136,7 +136,6 @@ static int32 hg_sysaes_v3_hdl(struct sysaes_dev *dev, struct sysaes_para *para, 
     while(ll_sysctrl_dma2ahb_is_busy(DMA2AHB_BURST_CH_SYSAES_WR));
     hw->AES_CTRL |= AES_CTRL_START_MSK;
     ret = os_sema_down(&sysaes->done, 2000);
-
     if (!ret) {
         sysctrl_sysaes_reset();
         if (flags == ENCRYPT) {
@@ -173,24 +172,70 @@ static int32 hg_sysaes_v3_decrypt(struct sysaes_dev *dev, struct sysaes_para *pa
     }
 }
 
+
 #ifdef CONFIG_SLEEP
+// #define HGAES_SLEEP_TEST(PARA) hg_sysaes_test_printf(PARA)
+#define HGAES_SLEEP_TEST(PARA)
+
+void hg_sysaes_test_printf(struct sysaes_dev *dev)
+{
+    uint32_t iv[4] = {0};
+    volatile uint32_t pt[8];
+    volatile uint32_t ct[8];
+    uint32_t ptsum = 0;   
+    uint32_t ctsum = 0;
+    uint32_t decsum = 0;
+    for (int i = 0;i<8;i++)
+    {
+        pt[i] = 0x12345678+i;
+        ptsum += pt[i];
+    }
+        
+    struct sysaes_para para = {
+        .mode = AES_MODE_ECB,
+        .key_len = AES_KEY_LEN_BIT_256,
+        .dest = (void*)ct,
+        .src = (void*)pt, 
+        .iv = (void*)iv,
+        .aes_len = 32,
+    };
+    memset(para.key, 0, 32);
+    hg_sysaes_v3_encrypt(dev, &para);
+    for (int i = 0;i<8;i++)
+    {
+        ctsum += ct[i];
+    }
+    _os_printf("ptsum: %x\r\n", ptsum);
+    _os_printf("ctsum: %x\r\n", ctsum);
+
+    para.dest = (void*)pt;
+    para.src = (void*)ct;
+    hg_sysaes_v3_decrypt(dev, &para);
+    for (int i = 0;i<8;i++)
+    {
+        decsum += pt[i];
+    }
+    _os_printf("decsum: %x\r\n", decsum);
+    if ((ptsum != decsum) || (ptsum != 0x91a2b3dc) || (ctsum != 0x2e3c234f)) {
+        _os_printf("sysaes lp err\r\n");
+    }
+}
+
 
 int32 hg_sysaes_v3_suspend(struct dev_obj *dev)
 {
     int32 ret = 0;
     struct hg_sysaes_v3 *sysaes = (struct hg_sysaes_v3 *)dev;
     struct hg_sysaes_v3_hw *hw = (struct hg_sysaes_v3_hw *)sysaes->hw;
-    uint32 *p_hw = (uint32 *)hw;
-    
+    (void)hw;
+    if (sysaes->flags & BIT(HG_SYSAES_FLAGS_SUSPEND)) {
+        return RET_OK;
+    }
+    HGAES_SLEEP_TEST(dev);
     ret = os_mutex_lock(&sysaes->lock, osWaitForever);
     if (ret < 0)
         return ret;
     irq_disable(sysaes->irq_num);
-
-    /* register backup */
-    for (int i=0; i<sizeof(struct hg_sysaes_v3_hw)/sizeof(uint32); i++) {
-        sysaes->regs[i] = *p_hw++;
-    }
     
     sysctrl_sysaes_clk_close();
     sysaes->flags |= BIT(HG_SYSAES_FLAGS_SUSPEND);
@@ -202,22 +247,17 @@ int32 hg_sysaes_v3_resume(struct dev_obj *dev)
     int32 ret = 0;
     struct hg_sysaes_v3 *sysaes = (struct hg_sysaes_v3 *)dev;
     struct hg_sysaes_v3_hw *hw = (struct hg_sysaes_v3_hw *)sysaes->hw;
-    uint32 *p_hw = (uint32 *)hw;
-    
+    (void)hw;
     if (sysaes->flags & BIT(HG_SYSAES_FLAGS_SUSPEND)) {
         ret = os_mutex_unlock(&sysaes->lock);
         if (ret < 0)
             return ret;
         
         sysctrl_sysaes_clk_open();
-        
-        /* register recovery */
-        for (int i=0; i<sizeof(struct hg_sysaes_v3_hw)/sizeof(uint32); i++) {
-            *p_hw++ = sysaes->regs[i]; 
-        }
-        
+        sysctrl_sysaes_reset();
         sysaes->flags &= ~ BIT(HG_SYSAES_FLAGS_SUSPEND);
         irq_enable(sysaes->irq_num);
+        HGAES_SLEEP_TEST(dev);
     }
     return RET_OK;
 }

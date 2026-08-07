@@ -933,8 +933,8 @@ int sd_multiple_read(struct sdh_device * host,uint32 lba, uint32 len, uint8* buf
     uint8  curr_index  = 0;
     uint8  sel_index   = 0;
     uint8  *kick_buf    = buf;
-    uint8  data_rev = 0;
-	uint8  *s = NULL;
+    //uint8  data_rev = 0;
+	//uint8  *s = NULL;
 
     os_mutex_lock(&host->lock,osWaitForever);
 
@@ -978,10 +978,7 @@ __retry:
 #endif
 
     if(!retry_cnt && ((uint32)kick_buf >= PSRAM_BASE) ) {
-		data_rev = (uint32)kick_buf % SYSCTRL_GET_DCACHE_LINE_SIZE;
-        s = (uint8*)((uint32)kick_buf - data_rev);
-        data_rev += ((uint32)kick_buf + len) % SYSCTRL_GET_DCACHE_LINE_SIZE;
-		sys_dcache_invalid_range((void *)s, len + data_rev); 
+		sys_dcache_invalid_range_unaligned((void *)kick_buf, len); 
 	}
 
 

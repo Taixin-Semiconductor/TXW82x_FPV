@@ -31,6 +31,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 {
 	source->priv = (struct rtsp_priv*)os_zalloc(sizeof(struct rtsp_priv));
 	struct rtsp_priv *r = (struct rtsp_priv*)source->priv;
+	AUENC_INIT auenc_init;
 	if(source->priv)
 	{	
 		r->live_node = &source->live_node;
@@ -40,12 +41,12 @@ static void self_creat(struct rtsp_source *source,void *priv)
 			r->v_msi = rtsp_msi_init(R_RTP_JPEG,~0,0);
 #if AUDIO_EN == 1
 			r->a_msi = rtsp_audio_msi_init(R_RTP_AUDIO2);
-			if(audio_encode_init(AAC_ENC, AUADC_SAMPLERATE) != NULL) {
-				auadc_msi_add_output(audio_code_msi_name(AAC_ENC));
-				r->audio_coder_ret = 1;
+            auenc_init.destroy_self = 0;
+            auenc_init.src_msi = get_auadc_msi(AUSYS_AUAD);
+			r->audio_msi = audio_encode_init(AAC_ENC, audio_adc_get_samplerate(AUSYS_AUAD), &auenc_init);
+			if(r->audio_msi) {
+				audio_code_add_output(r->audio_msi, R_RTP_AUDIO2);
 			}
-			if(r->audio_coder_ret) 
-				audio_code_add_output(AAC_ENC, R_RTP_AUDIO2);
 #endif
 			//r->write_test_sd_msi = mp4_encode_msi_init("mp4_write");
 			if(r->v_msi)
@@ -87,10 +88,9 @@ static void self_destory(struct rtsp_source *source)
 		}
 		rtsp_msi_deinit((void*)r->v_msi);
 #if AUDIO_EN == 1
-		if(r->audio_coder_ret) {
-			audio_code_del_output(AAC_ENC, R_RTP_AUDIO2);
-			if(audio_encode_deinit(AAC_ENC) == RET_OK)
-				auadc_msi_del_output(audio_code_msi_name(AAC_ENC));
+		if(r->audio_msi) {
+			audio_code_del_output(r->audio_msi, R_RTP_AUDIO2);
+			audio_encode_deinit(r->audio_msi);
 		}
 		rtsp_audio_msi_deinit((void*)r->a_msi);
 #endif

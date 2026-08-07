@@ -9,8 +9,8 @@
 #ifndef TARGET_JPG_LEN
 #define TARGET_JPG_LEN      50000   
 #endif
-#define QUALITY_CTRL_P      131
-#define QUALITY_CTRL_I      8
+#define QUALITY_CTRL_P      40
+#define QUALITY_CTRL_I      1
 #define QUALITY_CTRL_D      0
 #define LIMITING(x,x1,x2)     (x>x1)?x1:(x<x2?x2:x)
 

@@ -4,6 +4,7 @@
 #include "lib/atcmd/libatcmd.h"
 #include "lib/common/atcmd.h"
 #include "lib/umac/ieee80211.h"
+#include "syscfg.h"
 
 /* WiFi配对 */
 #if SYS_WIFI_PAIR

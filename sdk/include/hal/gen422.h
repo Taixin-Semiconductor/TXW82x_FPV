@@ -37,6 +37,8 @@ struct gen422_device {
 struct gen422_hal_ops{
     struct devobj_ops ops;
     int32(*open)(struct gen422_device *gen422);
+	int32(*suspend)(struct gen422_device *gen422);
+	int32(*resume)(struct gen422_device *gen422);	
     int32(*close)(struct gen422_device *gen422);
     int32(*ioctl)(struct gen422_device *gen422, enum gen422_ioctl_cmd cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct gen422_device *gen422, uint32 irq_flag, gen422_irq_hdl irq_hdl, uint32 irq_data);
@@ -44,7 +46,8 @@ struct gen422_hal_ops{
 };
 
 
-
+int32 gen422_suspend(struct gen422_device *p_gen);
+int32 gen422_resume(struct gen422_device *p_gen);
 int32 gen422_open(struct gen422_device *p_gen);
 int32 gen422_close(struct gen422_device *p_gen);
 int32 gen422_request_irq(struct gen422_device *p_gen, uint32 irq_flags, gen422_irq_hdl irq_hdl, uint32 irq_data);

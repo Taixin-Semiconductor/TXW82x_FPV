@@ -80,8 +80,7 @@
 
 #include "easy_lock.h"
 
-/* The last 3 #include files should be in this order */
-#include "curl_printf.h"
+/* The last 2 #include files should be in this order */
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -107,7 +106,7 @@ static curl_simple_lock s_lock = CURL_SIMPLE_LOCK_INIT;
  * ways, but at this point it must be defined as the system-supplied strdup
  * so the callback pointer is initialized correctly.
  */
-#if defined(UNDER_CE)
+#ifdef UNDER_CE
 #define system_strdup _strdup
 #elif !defined(HAVE_STRDUP)
 #define system_strdup Curl_strdup
@@ -157,42 +156,42 @@ static CURLcode global_init(long flags, bool memoryfuncs)
   }
 
   if(Curl_trc_init()) {
-    DEBUGF(fprintf(stderr, "Error: Curl_trc_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_trc_init failed\n"));
     goto fail;
   }
 
   if(!Curl_ssl_init()) {
-    DEBUGF(fprintf(stderr, "Error: Curl_ssl_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_ssl_init failed\n"));
     goto fail;
   }
 
   if(!Curl_vquic_init()) {
-    DEBUGF(fprintf(stderr, "Error: Curl_vquic_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_vquic_init failed\n"));
     goto fail;
   }
 
   if(Curl_win32_init(flags)) {
-    DEBUGF(fprintf(stderr, "Error: win32_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: win32_init failed\n"));
     goto fail;
   }
 
   if(Curl_amiga_init()) {
-    DEBUGF(fprintf(stderr, "Error: Curl_amiga_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_amiga_init failed\n"));
     goto fail;
   }
 
   if(Curl_macos_init()) {
-    DEBUGF(fprintf(stderr, "Error: Curl_macos_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_macos_init failed\n"));
     goto fail;
   }
 
   if(Curl_async_global_init()) {
-    DEBUGF(fprintf(stderr, "Error: resolver_global_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: resolver_global_init failed\n"));
     goto fail;
   }
 
   if(Curl_ssh_init()) {
-    DEBUGF(fprintf(stderr, "Error: Curl_ssh_init failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_ssh_init failed\n"));
     goto fail;
   }
 
@@ -361,7 +360,7 @@ CURL *curl_easy_init(void)
     result = global_init(CURL_GLOBAL_DEFAULT, TRUE);
     if(result) {
       /* something in the global init failed, return nothing */
-      DEBUGF(fprintf(stderr, "Error: curl_global_init failed\n"));
+      DEBUGF(curl_mfprintf(stderr, "Error: curl_global_init failed\n"));
       global_init_unlock();
       return NULL;
     }
@@ -371,7 +370,7 @@ CURL *curl_easy_init(void)
   /* We use curl_open() with undefined URL so far */
   result = Curl_open(&data);
   if(result) {
-    DEBUGF(fprintf(stderr, "Error: Curl_open failed\n"));
+    DEBUGF(curl_mfprintf(stderr, "Error: Curl_open failed\n"));
     return NULL;
   }
 
@@ -407,7 +406,7 @@ static int events_timer(CURLM *multi,    /* multi handle */
   struct events *ev = userp;
   (void)multi;
 #if DEBUG_EV_POLL
-  fprintf(stderr, "events_timer: set timeout %ldms\n", timeout_ms);
+  curl_mfprintf(stderr, "events_timer: set timeout %ldms\n", timeout_ms);
 #endif
   ev->ms = timeout_ms;
   ev->msbump = TRUE;
@@ -465,8 +464,8 @@ static int events_socket(CURL *easy,      /* easy handle */
   bool found = FALSE;
   struct Curl_easy *data = easy;
 
-#if defined(CURL_DISABLE_VERBOSE_STRINGS)
-  (void) easy;
+#ifdef CURL_DISABLE_VERBOSE_STRINGS
+  (void)easy;
 #endif
   (void)socketp;
 
@@ -559,12 +558,45 @@ static unsigned int populate_fds(struct pollfd *fds, struct events *ev)
     f->events = m->socket.events;
     f->revents = 0;
 #if DEBUG_EV_POLL
-    fprintf(stderr, "poll() %d check socket %d\n", numfds, f->fd);
+    curl_mfprintf(stderr, "poll() %d check socket %d\n", numfds, f->fd);
 #endif
     f++;
     numfds++;
   }
   return numfds;
+}
+
+/* poll_fds()
+ *
+ * poll the fds[] array
+ */
+static CURLcode poll_fds(struct events *ev,
+                         struct pollfd *fds,
+                         const unsigned int numfds,
+                         int *pollrc)
+{
+  if(numfds) {
+    /* wait for activity or timeout */
+#if DEBUG_EV_POLL
+    curl_mfprintf(stderr, "poll(numfds=%u, timeout=%ldms)\n", numfds, ev->ms);
+#endif
+    *pollrc = Curl_poll(fds, numfds, ev->ms);
+#if DEBUG_EV_POLL
+    curl_mfprintf(stderr, "poll(numfds=%u, timeout=%ldms) -> %d\n",
+                  numfds, ev->ms, *pollrc);
+#endif
+    if(*pollrc < 0)
+      return CURLE_UNRECOVERABLE_POLL;
+  }
+  else {
+#if DEBUG_EV_POLL
+    curl_mfprintf(stderr, "poll, but no fds, wait timeout=%ldms\n", ev->ms);
+#endif
+    *pollrc = 0;
+    if(ev->ms > 0)
+      curlx_wait_ms(ev->ms);
+  }
+  return CURLE_OK;
 }
 
 /* wait_or_timeout()
@@ -587,34 +619,16 @@ static CURLcode wait_or_timeout(struct Curl_multi *multi, struct events *ev)
     /* get the time stamp to use to figure out how long poll takes */
     before = curlx_now();
 
-    if(numfds) {
-      /* wait for activity or timeout */
-#if DEBUG_EV_POLL
-      fprintf(stderr, "poll(numfds=%u, timeout=%ldms)\n", numfds, ev->ms);
-#endif
-      pollrc = Curl_poll(fds, numfds, ev->ms);
-#if DEBUG_EV_POLL
-      fprintf(stderr, "poll(numfds=%u, timeout=%ldms) -> %d\n",
-              numfds, ev->ms, pollrc);
-#endif
-      if(pollrc < 0)
-        return CURLE_UNRECOVERABLE_POLL;
-    }
-    else {
-#if DEBUG_EV_POLL
-      fprintf(stderr, "poll, but no fds, wait timeout=%ldms\n", ev->ms);
-#endif
-      pollrc = 0;
-      if(ev->ms > 0)
-        curlx_wait_ms(ev->ms);
-    }
+    result = poll_fds(ev, fds, numfds, &pollrc);
+    if(result)
+      return result;
 
     ev->msbump = FALSE; /* reset here */
 
     if(!pollrc) {
       /* timeout! */
       ev->ms = 0;
-      /* fprintf(stderr, "call curl_multi_socket_action(TIMEOUT)\n"); */
+      /* curl_mfprintf(stderr, "call curl_multi_socket_action(TIMEOUT)\n"); */
       mcode = curl_multi_socket_action(multi, CURL_SOCKET_TIMEOUT, 0,
                                        &ev->running_handles);
     }
@@ -643,8 +657,8 @@ static CURLcode wait_or_timeout(struct Curl_multi *multi, struct events *ev)
         timediff_t timediff = curlx_timediff(curlx_now(), before);
         if(timediff > 0) {
 #if DEBUG_EV_POLL
-        fprintf(stderr, "poll timeout %ldms not updated, decrease by "
-                "time spent %ldms\n", ev->ms, (long)timediff);
+        curl_mfprintf(stderr, "poll timeout %ldms not updated, decrease by "
+                      "time spent %ldms\n", ev->ms, (long)timediff);
 #endif
           if(timediff > ev->ms)
             ev->ms = 0;
@@ -822,7 +836,6 @@ static CURLcode easy_perform(struct Curl_easy *data, bool events)
   return result;
 }
 
-
 /*
  * curl_easy_perform() is the external interface that performs a blocking
  * transfer as previously setup.
@@ -841,7 +854,6 @@ CURLcode curl_easy_perform_ev(struct Curl_easy *data)
 {
   return easy_perform(data, TRUE);
 }
-
 #endif
 
 /*
@@ -864,11 +876,15 @@ void curl_easy_cleanup(CURL *ptr)
  * information from a performed transfer and similar.
  */
 #undef curl_easy_getinfo
-CURLcode curl_easy_getinfo(CURL *data, CURLINFO info, ...)
+CURLcode curl_easy_getinfo(CURL *easy, CURLINFO info, ...)
 {
+  struct Curl_easy *data = easy;
   va_list arg;
   void *paramp;
   CURLcode result;
+
+  if(!GOOD_EASY_HANDLE(data))
+    return CURLE_BAD_FUNCTION_ARGUMENT;
 
   va_start(arg, info);
   paramp = va_arg(arg, void *);
@@ -950,7 +966,11 @@ static void dupeasy_meta_freeentry(void *p)
 CURL *curl_easy_duphandle(CURL *d)
 {
   struct Curl_easy *data = d;
-  struct Curl_easy *outcurl = calloc(1, sizeof(struct Curl_easy));
+  struct Curl_easy *outcurl = NULL;
+
+  if(!GOOD_EASY_HANDLE(data))
+    goto fail;
+  outcurl = calloc(1, sizeof(struct Curl_easy));
   if(!outcurl)
     goto fail;
 
@@ -1074,6 +1094,9 @@ fail:
 void curl_easy_reset(CURL *d)
 {
   struct Curl_easy *data = d;
+  if(!GOOD_EASY_HANDLE(data))
+    return;
+
   Curl_req_hard_reset(&data->req, data);
   Curl_hash_clean(&data->meta_hash);
 
@@ -1086,7 +1109,7 @@ void curl_easy_reset(CURL *d)
   /* zero out UserDefined data: */
   Curl_freeset(data);
   memset(&data->set, 0, sizeof(struct UserDefined));
-  (void)Curl_init_userdefined(data);
+  Curl_init_userdefined(data);
 
   /* zero out Progress data: */
   memset(&data->progress, 0, sizeof(struct Progress));
@@ -1096,7 +1119,7 @@ void curl_easy_reset(CURL *d)
 
   data->progress.hide = TRUE;
   data->state.current_speed = -1; /* init to negative == impossible */
-  data->state.retrycount = 0;     /* reset the retry counter */
+  data->state.recent_conn_id = -1; /* clear remembered connection id */
 
   /* zero out authentication data: */
   memset(&data->state.authhost, 0, sizeof(struct auth));
@@ -1142,7 +1165,8 @@ CURLcode curl_easy_pause(CURL *d, int action)
   send_paused = Curl_xfer_send_is_paused(data);
   send_paused_new = (action & CURLPAUSE_SEND);
 
-  if(send_paused != send_paused_new) {
+  if((send_paused != send_paused_new) ||
+     (send_paused_new != Curl_creader_is_paused(data))) {
     changed = TRUE;
     result = Curl_1st_err(result, Curl_xfer_pause_send(data, send_paused_new));
   }
@@ -1154,13 +1178,15 @@ CURLcode curl_easy_pause(CURL *d, int action)
 
   /* If not completely pausing both directions now, run again in any case. */
   if(!Curl_xfer_is_blocked(data)) {
-    Curl_expire(data, 0, EXPIRE_RUN_NOW);
     /* reset the too-slow time keeper */
     data->state.keeps_speed.tv_sec = 0;
-    /* On changes, tell application to update its timers. */
-    if(changed && data->multi) {
-      if(Curl_update_timer(data->multi) && !result)
-        result = CURLE_ABORTED_BY_CALLBACK;
+    if(data->multi) {
+      Curl_multi_mark_dirty(data); /* make it run */
+      /* On changes, tell application to update its timers. */
+      if(changed) {
+        if(Curl_update_timer(data->multi) && !result)
+          result = CURLE_ABORTED_BY_CALLBACK;
+      }
     }
   }
 
@@ -1213,6 +1239,8 @@ CURLcode curl_easy_recv(CURL *d, void *buffer, size_t buflen, size_t *n)
   struct connectdata *c;
   struct Curl_easy *data = d;
 
+  if(!GOOD_EASY_HANDLE(data))
+    return CURLE_BAD_FUNCTION_ARGUMENT;
   if(Curl_is_in_callback(data))
     return CURLE_RECURSIVE_API_CALL;
 
@@ -1288,6 +1316,8 @@ CURLcode curl_easy_send(CURL *d, const void *buffer, size_t buflen, size_t *n)
   size_t written = 0;
   CURLcode result;
   struct Curl_easy *data = d;
+  if(!GOOD_EASY_HANDLE(data))
+    return CURLE_BAD_FUNCTION_ARGUMENT;
   if(Curl_is_in_callback(data))
     return CURLE_RECURSIVE_API_CALL;
 
@@ -1317,7 +1347,7 @@ CURLcode curl_easy_ssls_import(CURL *d, const char *session_key,
                                const unsigned char *shmac, size_t shmac_len,
                                const unsigned char *sdata, size_t sdata_len)
 {
-#ifdef USE_SSLS_EXPORT
+#if defined(USE_SSL) && defined(USE_SSLS_EXPORT)
   struct Curl_easy *data = d;
   if(!GOOD_EASY_HANDLE(data))
     return CURLE_BAD_FUNCTION_ARGUMENT;
@@ -1338,7 +1368,7 @@ CURLcode curl_easy_ssls_export(CURL *d,
                                curl_ssls_export_cb *export_fn,
                                void *userptr)
 {
-#ifdef USE_SSLS_EXPORT
+#if defined(USE_SSL) && defined(USE_SSLS_EXPORT)
   struct Curl_easy *data = d;
   if(!GOOD_EASY_HANDLE(data))
     return CURLE_BAD_FUNCTION_ARGUMENT;

@@ -36,7 +36,6 @@
 #include "../urldata.h"
 #include "../curl_gssapi.h"
 #include "../sendf.h"
-#include "../curl_printf.h"
 
 /* The last #include files should be: */
 #include "../curl_memory.h"
@@ -99,8 +98,8 @@ CURLcode Curl_auth_create_gssapi_user_message(struct Curl_easy *data,
   gss_buffer_desc input_token = GSS_C_EMPTY_BUFFER;
   gss_buffer_desc output_token = GSS_C_EMPTY_BUFFER;
 
-  (void) userp;
-  (void) passwdp;
+  (void)userp;
+  (void)passwdp;
 
   if(!krb5->spn) {
     gss_buffer_desc spn_token = GSS_C_EMPTY_BUFFER;
@@ -226,6 +225,7 @@ CURLcode Curl_auth_create_gssapi_security_message(struct Curl_easy *data,
   /* Not 4 octets long so fail as per RFC4752 Section 3.1 */
   if(output_token.length != 4) {
     infof(data, "GSSAPI handshake failure (invalid security data)");
+    gss_release_buffer(&unused_status, &output_token);
     return CURLE_BAD_CONTENT_ENCODING;
   }
 

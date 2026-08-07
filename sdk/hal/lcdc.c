@@ -5,6 +5,23 @@
 #include "devid.h"
 #include "hal/lcdc.h"
 #include "osal/string.h"
+
+int32 lcdc_suspend(struct lcdc_device *p_lcdc)
+{
+    if (p_lcdc && ((const struct lcdc_hal_ops *)p_lcdc->dev.ops)->suspend) {
+		return ((const struct lcdc_hal_ops *)p_lcdc->dev.ops)->suspend(p_lcdc);
+    }
+    return RET_ERR;
+}
+
+int32 lcdc_resume(struct lcdc_device *p_lcdc)
+{
+    if (p_lcdc && ((const struct lcdc_hal_ops *)p_lcdc->dev.ops)->resume) {
+        return ((const struct lcdc_hal_ops *)p_lcdc->dev.ops)->resume(p_lcdc);
+    }
+    return RET_ERR;
+}
+
 int32 lcdc_init(struct lcdc_device *p_lcdc)
 {
     if (p_lcdc && ((const struct lcdc_hal_ops *)p_lcdc->dev.ops)->init) {

@@ -321,7 +321,7 @@ const _Sensor_LSC          sc2336p_lsc_init = {
     .p_lsc_tbl = (uint32 *)sc2336p_lsc_tbl,
 };
 
-void SC2336p_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void SC2336p_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint8  i;
     uint8  gain_segment[]     = {1, 2, 4, 8, 16, 32};

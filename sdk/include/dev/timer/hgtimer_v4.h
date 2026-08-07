@@ -78,6 +78,7 @@ struct hgtimer_v4 {
         uint32 tmr_con;
         uint32 tmr_en;
         uint32 tmr_ie;
+        uint32 tmr_cnt;
         uint32 tmr_cap1;
         uint32 tmr_cap2;
         uint32 tmr_cap3;
@@ -90,14 +91,6 @@ struct hgtimer_v4 {
         uint32 tmr_ir_bcnt;
     }bp_regs;
     uint32               bp_irq_flags;
-    timer_irq_hdl         bp_irq_hdl_timer;
-    pwm_irq_hdl          bp_irq_hdl_pwm;
-    capture_irq_hdl      bp_irq_hdl_capture;
-    uint32               bp_irq_data_timer;
-    uint32               bp_irq_data_pwm;
-    uint32               bp_irq_data_capture;
-    os_mutex_t      bp_suspend_lock;
-    os_mutex_t      bp_resume_lock;
 #endif
 
 };

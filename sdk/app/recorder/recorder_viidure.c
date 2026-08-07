@@ -10,6 +10,7 @@
 #include "stdio.h"
 #include "sys_config.h"
 #include "basic_include.h"
+#include "file_process.h"
 #include "recorder_viidure.h"
 #include "lwip/netif.h"
 #include "lwip/inet.h"
@@ -44,18 +45,24 @@
 #include "audio_msi/audio_adc.h"
 #include "audio_media_ctrl/audio_code_ctrl.h"
 #include "loop_record_moudle/loop_record_moudle.h"
+#include "sysevt_usb/sysevt_usb.h"
+
 
 #ifndef RECORDER_MODE
     #define RECORDER_MODE 0
 #endif
 
 
-struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_t filter_type, 
-                                   uint8_t rec_time, uint32_t audio_encode, void *file_create, 
-                                   void *loop_free, uint8_t mode);
+struct msi *mp4_encode_msi2_init(const char *mp4_msi_name, uint8_t srcID, uint8_t filter_type, uint8_t rec_time, 
+                                 uint32_t audio_encode, struct file_process *file_process, uint8_t mode);
+
+struct msi *avi_encode_msi2_init(const char *avi_msi_name, uint16_t filter_type, uint8_t rec_time, 
+                                uint32_t audio_encode, struct file_process *file_process, uint8_t mode);
 
 static struct os_work recorder_wk;
 static int itemcfg_save(uint8_t type);
+uint8_t get_mipi_video_status(void);
+uint8_t get_usb_video_status(void);
 
 struct media_s
 {
@@ -72,23 +79,25 @@ const struct media_s video_media[] =
     //{"h264?0","tcp"},
     {"h264?1","tcp"},
     // {"webcam","udp"},
+	{"custom?route-usb", "udp"},
 };
 #else
 const struct media_s video_media[] = 
 {
-    //{"h264?0","tcp"},
+    {"h264?0","tcp"},
     //{"h264?1","tcp"},
-    {"webcam","udp"},
+    // {"webcam","udp"},
+	{"custom?route-usb", "udp"},
 };
 #endif
 
 //需要与items_list中设置分辨的一致才行
 static const int http_dpi[][2] = {
-        {1280, 720},  // 720P
-        {1920, 1080}, // 1080P
-        {2560, 1440}, // 2K
-        {3840, 2160}, // 4K
-        {7680, 4320}, // 8K
+    {1280, 720},  // 720P
+    {1920, 1080}, // 1080P
+    {2560, 1440}, // 2K
+    {3840, 2160}, // 4K
+    {7680, 4320}, // 8K
 };
 
 #define addWeb(web, url, type,reponse,queue) { url,type,(reponse),queue }
@@ -109,7 +118,6 @@ static const int http_dpi[][2] = {
 #define STREAM_LIBC_ZALLOC os_zalloc
 #endif
 
-
 // data申请空间函数
 #define STREAM_MALLOC av_psram_malloc
 #define STREAM_FREE   av_psram_free
@@ -123,7 +131,13 @@ static const int http_dpi[][2] = {
 
 // 停车监控相册
 #define PARKING_MOR_ALBUM_EN    0
+// APP锁存功能开关
+#define APP_LOCK_VIDEO_EN       0
+// 多目
+#define MULTI_CAMERA_EN         0
 
+// 配置项数量
+#define ITEMS_CONFIG_COUNT      (sizeof(items_cfg_f) / sizeof(items_cfg_f[0]))
 #define ITEM_MAX_NUM            8
 
 typedef enum {
@@ -425,10 +439,11 @@ static const struct items_config items_cfg_f[] = {
         NULL),                                                                                        // 时区，记录状态，不使能
     ITEMS_CONFIG_INIT("saveflag",                    0,      0,     ITEM_DISABLE,          NULL,                         
         NULL),                                                                                        // 保存状态标志位，记录状态，不使能
+    ITEMS_CONFIG_INIT("lockvideo",                   0,      0,     ITEM_DISABLE,          NULL,                         
+        NULL),                                                                                        // 锁存，记录状态，不使能
+    ITEMS_CONFIG_INIT("cameranum",                   0,      0,     ITEM_DISABLE,          NULL,                         
+        NULL),                                                                                        // 镜头数量，记录状态，不使能
 };
-
-// 配置项数量
-#define ITEMS_CONFIG_COUNT      (sizeof(items_cfg_f) / sizeof(items_cfg_f[0]))
 
 int get_items_counts(int num) {
     int count = 0;
@@ -441,7 +456,7 @@ int get_items_counts(int num) {
     return 0;
 }
 
-int items_value_process(const char* name, int value, ItemsProcessType type) {
+int items_value_process(const char* name, uint8_t value, ItemsProcessType type) {
     int name_len = 0;
     int items_cfg_len = 0;
     if(items_cfg == NULL)
@@ -475,6 +490,27 @@ int items_value_process(const char* name, int value, ItemsProcessType type) {
     return -1;
 }
 
+static char* remove_suffix(char* filename) 
+{
+    if (!filename) 
+        return NULL;
+
+#if MULTI_CAMERA_EN
+    char* underscore = strrchr(filename, '_');
+    char* dot = strrchr(filename, '.');
+
+    if (underscore && dot && underscore < dot) 
+    {
+        if (os_strstr(underscore, FRONT_SUFFIX) || os_strstr(underscore, BACK_SUFFIX) ||  os_strstr(underscore, INTER_SUFFIX)) 
+        {
+            *underscore = '\0';
+            strcat(filename, dot);
+        }
+    }
+#endif
+    return filename;
+}
+
 static void http_reponse_getproductinfo(struct httpClient *httpClient);
 static void http_reponse_settimezone(struct httpClient *httpClient);
 static void http_reponse_setsystime(struct httpClient *httpClient);
@@ -487,6 +523,7 @@ static void http_reponse_getsdinfo(struct httpClient *httpClient);
 static void http_reponse_getbatteryinfo(struct httpClient *httpClient);
 static void http_reponse_getadasitems(struct httpClient *httpClient);
 static void http_reponse_getstorageinfo(struct httpClient *httpClient);
+static void http_reponse_lockvideo(struct httpClient *httpClient);
 static void http_reponse_getlockvideostatus(struct httpClient *httpClient);
 static void http_reponse_setting(struct httpClient *httpClient);
 static void http_reponse_setparamvalue(struct httpClient *httpClient);
@@ -501,13 +538,12 @@ static void http_reponse_setwifi(struct httpClient *httpClient);
 static void http_reponse_reset(struct httpClient *httpClient);
 static void http_reponse_sdformat(struct httpClient *httpClient);
 static void http_reponse_wifireboot(struct httpClient *httpClient);
-static void http_reponse_mp4(struct httpClient *httpClient);
+static void http_reponse_video(struct httpClient *httpClient);
 static void http_reponse_event(struct httpClient *httpClient);
 static void http_reponse_deletefile(struct httpClient *httpClient);
 static void http_reponse_snapshot(struct httpClient *httpClient);
 static void http_reponse_rec(struct httpClient *httpClient);
 static void http_getparamvalue_rec(struct httpClient *httpClient);
-static void http_reponse_lockvideo(struct httpClient *httpClient);
 
 
 static const struct url getweb[] = 
@@ -522,7 +558,8 @@ static const struct url getweb[] =
 	addWeb(web, "app/getsdinfo", 1, http_reponse_getsdinfo, NULL),
 	addWeb(web, "app/getbatteryinfo", 1, http_reponse_getbatteryinfo, NULL),
 	addWeb(web, "app/capability", 1, http_reponse_capability, NULL),
-	addWeb(web, "app/getlockvideostatus", 2, http_reponse_getlockvideostatus, NULL),
+    addWeb(web, "app/lockvideo", 1, http_reponse_lockvideo, NULL),
+	addWeb(web, "app/getlockvideostatus", 1, http_reponse_getlockvideostatus, NULL),
 	addWeb(web, "app/getstorageinfo", 1, http_reponse_getstorageinfo, NULL),
 	addWeb(web, "app/setting?", 2, http_reponse_setting, NULL),
 	addWeb(web, "app/setparamvalue?", 2, http_reponse_setparamvalue, NULL),
@@ -537,14 +574,13 @@ static const struct url getweb[] =
 	addWeb(web, "app/reset", 1, http_reponse_reset, NULL),
 	addWeb(web, "app/sdformat", 2, http_reponse_sdformat, NULL),
 	addWeb(web, "app/wifireboot", 1, http_reponse_wifireboot, NULL),
-	addWeb(web, "LOOP/", 2, http_reponse_mp4, NULL),
+	addWeb(web, "LOOP/", 2, http_reponse_video, NULL),
 	addWeb(web, "EVENT/", 2, http_reponse_event, NULL),
-    addWeb(web, "EMR/", 2, http_reponse_mp4, NULL),
-    addWeb(web, "PARK/", 2, http_reponse_mp4, NULL),
+    addWeb(web, "EMR/", 2, http_reponse_video, NULL),
+    addWeb(web, "PARK/", 2, http_reponse_video, NULL),
 	addWeb(web, "app/deletefile?file=", 2, http_reponse_deletefile, NULL),
     addWeb(web, "app/getadasitems", 2, http_reponse_getadasitems, NULL),
     addWeb(web, "app/getadasvalue", 2, http_reponse_getadasvalue, NULL),
-    addWeb(web, "app/lockvideo", 1, http_reponse_lockvideo, NULL),
 
     //搜索到url为NULL代表结束
     addWeb(web, NULL, 1, http_send_error, NULL),
@@ -564,9 +600,10 @@ static uint32_t json_setsuccess(cJSON **root2, char **post_content)
 static void http_reponse_success(struct httpClient *httpClient)
 {
     if(httpClient == NULL)
-    {
-        return;
-    }
+	{
+		return;
+	}
+        
 	cJSON *root = NULL;
     char *post_content;
     uint32_t sendlen = 0;
@@ -707,11 +744,11 @@ static uint32_t json_deviceattr(cJSON **root2, char **post_content)
     *root2 = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "uuid", mac);
     cJSON_AddStringToObject(root, "softver", "v0.0.8");
-    cJSON_AddStringToObject(root, "otaver", "v1.20230312.1");
+    cJSON_AddStringToObject(root, "otaver", "v1.20260119.0");
     cJSON_AddStringToObject(root, "hwver", "v1.2");
     cJSON_AddStringToObject(root, "ssid", ssid);
     cJSON_AddStringToObject(root, "bssid", mac);
-    cJSON_AddNumberToObject(root, "camnum", sizeof(video_media)/sizeof(struct media_s));
+    cJSON_AddNumberToObject(root, "camnum", items_value_process("cameranum", 0, GET_ITEMS_VALUE));
     cJSON_AddNumberToObject(root, "curcamid", 0);
     cJSON_AddNumberToObject(root, "wifireboot", 0);
 
@@ -745,236 +782,113 @@ static void http_reponse_getdeviceattr(struct httpClient *httpClient)
     cJSON_Delete(root);
 }
 
-// 创建MP4文件，循环录卡
-#define MP4_LOOP_REMAIN_CAP (256) // 循环录像剩余空间控制
-#define MAX_SINGLE_SIZE (100 * 1024 * 1024) // 单个MP4文件大小
-
-static void *creat_mp4_file(void **loop, char *file_name)
+void rec_lock_file(char *file_name, char *file_path)
 {
-    void    *fp   = NULL;
-    void    *node = NULL;
-    char    *dir_path;
-    char     file_path[64];
-    char     sub_path[32];
-    uint32_t sd_cap     = 0;
-    int      res        = 0;
-    uint8_t  changeflag = 0;
-    uint32_t file_size = 0;
-
-    res = osal_fatfsfree("0:", NULL, &sd_cap);
-    os_printf(KERN_INFO"sd_cap: %d\n", sd_cap);
-    if (res != 0 || sd_cap == 0) {
-        goto creat_mp4_file_end;
-    }
-
-get_node:
-    if (sd_cap < MP4_LOOP_REMAIN_CAP)
+#if APP_LOCK_VIDEO_EN
+    if(items_value_process("lockvideo", 0, GET_ITEMS_VALUE))
     {
-        if (!*loop) {
-            *loop = get_file_list(REC_PATH, MP4_EXTENSION_NAME);
-        }
+        int res = 0;
+        char new_file_path[64];
 
-        if (*loop) {
-            node = get_file_node(*loop);
-            if (!node) {
-                free_file_list(*loop);
-                *loop = get_file_list(REC_PATH, MP4_EXTENSION_NAME);
-                if (!*loop) {
-                    _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
-                    goto creat_mp4_file_end;
-                }
-                node = get_file_node(*loop);
-            }
-            while (!node) {
-                dir_path = get_file_dir(*loop);
-                res = osal_unlink_dir(dir_path, 0);
-                if (res != FR_OK) {
-                    _os_printf("unlink dir %s err, res: %d\r\n", dir_path, res);
-                    res = osal_unlink_dir(dir_path, 1);
-                    if (res != FR_OK) {
-                        _os_printf("%s %d, force unlink dir %s err, res: %d\r\n", __FUNCTION__, __LINE__, dir_path, res);
-                        goto creat_mp4_file_end;
-                    }
-                    _os_printf("force unlink dir %s\r\n", dir_path);
-                }
-                _os_printf("unlink dir %s\r\n", dir_path);
-                free_file_list(*loop);
-                *loop = get_file_list(REC_PATH, MP4_EXTENSION_NAME);
-                if (!*loop) {
-                    _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
-                    goto creat_mp4_file_end;
-                }
-                node = get_file_node(*loop);
-                if (node) {
-                    break;
-                }
-            }
-            file_size = get_file_size(node);
-            if(file_size < MAX_SINGLE_SIZE) {
-                char path[64];
-                char *name = get_file_name(node);
-                dir_path = get_file_dir(*loop);
-                os_sprintf(path, "%s/%s", dir_path, name);
-                res = osal_unlink(path);
-                if(res == FR_OK) {
-                    _os_printf("unlink file %s, filesize: %d\r\n", path, file_size);
-                } else {
-                    _os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, path, res);
-                }
-                free_file_node(node);
-                node = NULL;
-                goto get_node;
-            }
-            changeflag = 1;
+#if MULTI_CAMERA_EN
+        char suffix[3];
+        uint8_t type = 0;
+        if(os_strstr(file_path, RECA_PATH)) {
+            os_strncpy(suffix, FRONT_SUFFIX, sizeof(suffix));
+            type = 1;
+        } else if(os_strstr(file_path, RECB_PATH)) {
+            os_strncpy(suffix, INTER_SUFFIX, sizeof(suffix));
+            type = 2;
+        } else if(os_strstr(file_path, RECC_PATH)) {
+            os_strncpy(suffix, BACK_SUFFIX, sizeof(suffix));
+            type = 3;
         } else {
-            _os_printf("%s %d\r\n", __FUNCTION__, __LINE__);
-            goto creat_mp4_file_end;
+            os_strncpy(suffix, FRONT_SUFFIX, sizeof(suffix));
+            type = 1;
         }
-    }
-
-    if (get_mp4_file_name(REC_PATH, sub_path, file_name)) {
-        _os_printf("%s %d\tget_mp4_file_name fail\r\n", __FUNCTION__, __LINE__);
-        goto creat_mp4_file_end;
-    }
-    os_sprintf(file_path, "%s/%s", sub_path, file_name);
-    os_printf(KERN_INFO "mp4 file_path: %s\r\n", file_path);
-
-    void *sub_dir = osal_opendir(sub_path);
-    if (!sub_dir) {
-        res = osal_fmkdir(sub_path);
-        if (res != FR_OK) {
-            if(res == FR_DENIED) {
-                char path[64];
-                char *name = get_file_name(node);
-                dir_path = get_file_dir(*loop);
-                os_sprintf(path, "%s/%s", dir_path, name);
-                res = osal_unlink(path);
-                if(res != FR_OK) {
-                    _os_printf("%s %d\tunlink file %s fail, res: %d\r\n", __FUNCTION__, __LINE__, path, res);
-                    goto creat_mp4_file_end;
-                }
-                _os_printf("unlink file %s\r\n", path);
-                free_file_node(node);
-                node = NULL;
-                res = osal_fmkdir(sub_path);
-                if (res == FR_OK) {
-                    goto get_node;
-                } else {
-                    _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
-                    goto creat_mp4_file_end;
-                }
-            }
-            _os_printf("mkdir %s err, create rec dir\r\n", sub_path);
-
-            void *rec_dir = osal_opendir(REC_PATH);
+        char *extension_name = (type == 1) ? MP4_EXTENSION_NAME : AVI_EXTENSION_NAME;
+        os_snprintf(new_file_path, sizeof(new_file_path), "%s/%.*s%s%s", EMR_PATH, FILE_NAME_LEN, file_name, suffix, extension_name);
+#else
+        os_snprintf(new_file_path, sizeof(new_file_path), "%s/%s", EMR_PATH, file_name);
+#endif
+        
+rename:
+        res = osal_rename(file_path, new_file_path);
+        if(res != FR_OK) {
+            void *rec_dir = osal_opendir(EMR_PATH);
             if (!rec_dir) {
-                res = osal_fmkdir(REC_PATH);
+                res = osal_fmkdir(EMR_PATH);
                 if (res != FR_OK) {
-                    _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, REC_PATH, res);
-                    goto creat_mp4_file_end;
-                } else {
-                    res = osal_fmkdir(sub_path);
-                    if (res != FR_OK) {
-                        _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
-                        goto creat_mp4_file_end;
-                    }
+                    _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, EMR_PATH, res);
+                    return;
                 }
+                _os_printf("mkdir %s\r\n", EMR_PATH);
+                goto rename;
             } else {
                 osal_closedir(rec_dir);
-                _os_printf("%s %d\tmkdir %s fail, res: %d\r\n", __FUNCTION__, __LINE__, sub_path, res);
-                goto creat_mp4_file_end;
-            }
-        }
-        _os_printf("mkdir %s\r\n", sub_path);
-    } else {
-        osal_closedir(sub_dir);
-    }
-
-    if (changeflag) {
-        char old_filepath[64];
-        char *name = get_file_name(node);
-        dir_path = get_file_dir(*loop);
-        os_sprintf(old_filepath, "%s/%s", dir_path, name);
-        res = osal_rename(old_filepath, file_path);
-        if (res != FR_OK) {
-            _os_printf("rename file %s err, res: %d\r\n", old_filepath, res);
-            if (sd_cap < MP4_LOOP_REMAIN_CAP) {
-                _os_printf("%s %d\tsd_cap: %d\r\n", __FUNCTION__, __LINE__, sd_cap);
-                free_file_node(node);
-                node = NULL;
-                goto get_node;
+                _os_printf("lock failed, rename file %s to %s err, res: %d\r\n", file_path, new_file_path, res);
+                return;
             }
         } else {
-            _os_printf("rename file %s to %s\r\n", old_filepath, file_path);
-        }
-        char thumb_path[64];
-        gen_thumb_path(name, thumb_path, sizeof(thumb_path));
-        res = osal_unlink(thumb_path);
-        if (res != FR_OK) {
-            _os_printf("unlink thumb_path %s err, res: %d\r\n", thumb_path, res);
-        } else {
-            _os_printf("unlink thumb_path: %s\r\n", thumb_path);
-        }
-
-        free_file_node(node);
-        node = NULL;
-
-        char *min_file = get_min_file(*loop);
-        if (min_file && (os_strcmp(file_name, min_file) < 0)) {
-            free_file_list(*loop);
-            *loop = NULL;
-            _os_printf("%s %d\tfree_file_list\r\n", __FUNCTION__, __LINE__);
+            _os_printf("lock success, rename file %s to %s\r\n", file_path, new_file_path);
         }
     }
-
-    fp = osal_fopen(file_path, "wb+");
-creat_mp4_file_end:
-    if(node) {
-        free_file_node(node);
-        node = NULL;
-    }
-    return fp;
+#endif
 }
 
-void loop_free(void **loop)
-{
-    if(*loop) {
-        free_file_list(*loop);
-        *loop = NULL;
-    }
-}
-
-struct msi *rec_msi = NULL;
+struct msi *mp4_msi = NULL;
+struct msi *avi_msi = NULL;
 struct msi *h264_msi = NULL;
+struct msi *jpg_msi = NULL;
 static struct msi *aac_msi = NULL;
 
 int open_h264_msi(void)
 {
-    _os_printf("rec open\r\n");
-    if (!rec_msi)
+    _os_printf("h264 open\r\n");
+    if (!mp4_msi && get_mipi_video_status())
     {
         h264_msi = msi_find(AUTO_H264, 1);
         if (h264_msi)
         {
-#if AUDIO_EN
-            rec_msi = mp4_encode_msi2_init("http_mp4", FRAMEBUFF_SOURCE_CAMERA0, FSTYPE_H264_VPP_DATA0, 
-                                            items_value_process("rec_split_duration", 0, GET_ITEMS_VALUE), 
-                                            items_value_process("mic", 0, GET_ITEMS_VALUE), 
-                                            creat_mp4_file, loop_free, 0);
+#if MULTI_CAMERA_EN
+            struct file_process mp4_file_process = {
+                .loop = NULL,
+                .rec_path = RECA_PATH,
+                .ext_name = MP4_EXTENSION_NAME,
+                .create_file = rec_create_file,
+                .loop_free = rec_loop_free,
+                .lock_file = rec_lock_file,
+            };
 #else
-            rec_msi = mp4_encode_msi2_init("http_mp4",FRAMEBUFF_SOURCE_CAMERA0,FSTYPE_H264_VPP_DATA0, 
+            struct file_process mp4_file_process = {
+                .loop = NULL,
+                .rec_path = REC_PATH,
+                .ext_name = MP4_EXTENSION_NAME,
+                .create_file = rec_create_file,
+                .loop_free = rec_loop_free,
+                .lock_file = rec_lock_file,
+            };
+#endif
+
+#if AUDIO_EN
+            mp4_msi = mp4_encode_msi2_init("recorder_mp4", FRAMEBUFF_SOURCE_CAMERA0, FSTYPE_H264_VPP_DATA0, 
+                                           items_value_process("rec_split_duration", 0, GET_ITEMS_VALUE), 
+                                           items_value_process("mic", 0, GET_ITEMS_VALUE), 
+                                           &mp4_file_process, 0);
+#else
+            mp4_msi = mp4_encode_msi2_init("recorder_mp4",FRAMEBUFF_SOURCE_CAMERA0, FSTYPE_H264_VPP_DATA0, 
                                             items_value_process("rec_split_duration", 0, GET_ITEMS_VALUE), 0, 
-                                            creat_mp4_file, loop_free, 0);
+                                            &mp4_file_process, 0);
+
 #endif
             
-            if (rec_msi)
+            if (mp4_msi)
             {
-                msi_add_output(h264_msi, NULL, "http_mp4");
+                msi_add_output(h264_msi, NULL, mp4_msi->name);
                 return 1;
             }
             else
             {
-                msi_del_output(h264_msi, NULL, "http_mp4");
                 msi_put(h264_msi);
                 h264_msi = NULL;
                 return 0;
@@ -986,52 +900,137 @@ int open_h264_msi(void)
 
 int close_h264_msi(void)
 {
-    _os_printf("rec close\r\n");
-    if (rec_msi)
+    _os_printf("h264 close\r\n");
+    if (mp4_msi)
     {
         if (h264_msi)
         {
-            msi_del_output(h264_msi, NULL, "http_mp4");
+            msi_del_output(h264_msi, NULL, mp4_msi->name);
         }
-        msi_destroy(rec_msi);
-        rec_msi = NULL;
+        msi_destroy(mp4_msi);
+        mp4_msi = NULL;
         msi_put(h264_msi);
         h264_msi = NULL;
+        _os_printf("%s %d end\r\n", __func__, __LINE__);
     }
     return 1;
+}
+
+int open_jpg_msi(void)
+{
+#if MULTI_CAMERA_EN
+    _os_printf("jpg open\r\n");
+    if(!avi_msi && get_usb_video_status())
+    {
+        jpg_msi = msi_find(ROUTE_USB, 1);
+        if(jpg_msi)
+        {
+            struct file_process avi_file_process = {
+                .loop = NULL,
+                .rec_path = RECC_PATH,
+                .ext_name = AVI_EXTENSION_NAME,
+                .create_file = rec_create_file,
+                .loop_free = rec_loop_free,
+                .lock_file = rec_lock_file,
+            };
+#if AUDIO_EN
+            avi_msi = avi_encode_msi2_init("recorder_avi", (uint16_t) ~0, items_value_process("rec_split_duration", 0, GET_ITEMS_VALUE),
+                                          items_value_process("mic", 0, GET_ITEMS_VALUE), &avi_file_process, 0);
+#else
+            avi_msi = avi_encode_msi2_init("recorder_avi", (uint16_t) ~0, items_value_process("rec_split_duration", 0, GET_ITEMS_VALUE),
+                                          0, &avi_file_process, 0);
+#endif
+            if(avi_msi)
+            {
+                msi_add_output(jpg_msi, NULL, avi_msi->name);
+            }
+            else
+            {
+                msi_put(jpg_msi);
+                jpg_msi = NULL;
+                return 0;
+            }
+        }
+    }
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int close_jpg_msi(void)
+{
+#if MULTI_CAMERA_EN
+    _os_printf("jpg close\r\n");
+    if (avi_msi)
+    {
+        if (jpg_msi)
+        {
+            msi_del_output(jpg_msi, NULL, avi_msi->name);
+        }
+        msi_destroy(avi_msi);
+        avi_msi = NULL;
+        msi_put(jpg_msi);
+        jpg_msi = NULL;
+        _os_printf("%s %d end\r\n", __func__, __LINE__);
+    }
+    return 1;
+#else
+    return 0;
+#endif
 }
 
 static int open_aac_msi(void)
 {
 #if AUDIO_EN
-    if(items_value_process("mic", 0, GET_ITEMS_VALUE) == AAC_ENC) {
-        aac_msi = audio_encode_init(AAC_ENC, AUADC_SAMPLERATE);
-        if(aac_msi) {
-            audio_code_add_output(AAC_ENC, "http_mp4");
-            auadc_msi_add_output(audio_code_msi_name(AAC_ENC));
-			return 1;
+    AUENC_INIT auenc_init;
+    if(items_value_process("mic", 0, GET_ITEMS_VALUE) == 1) {
+        auenc_init.destroy_self = 0;
+        auenc_init.src_msi = get_auadc_msi(AUSYS_AUAD);
+        aac_msi = audio_encode_init(AAC_ENC, audio_adc_get_samplerate(AUSYS_AUAD), &auenc_init);
+        if(aac_msi && mp4_msi) {
+            audio_code_add_output(aac_msi, mp4_msi->name);
         }
-    }
-	return 0;
-#else
-	return 0;
+#if MULTI_CAMERA_EN
+        if(avi_msi) {
+            auadc_msi_add_output(AUSYS_AUAD, avi_msi->name);
+        }
 #endif
+        return 1;
+    }
+#endif
+    return 0;
 }
 
 static int close_aac_msi(void)
 {
 #if AUDIO_EN
     if(aac_msi) {
-        audio_code_del_output(AAC_ENC, "http_mp4");
-        if(audio_encode_deinit(AAC_ENC) == RET_OK) {
-            auadc_msi_del_output(audio_code_msi_name(AAC_ENC));
-        }
+        audio_code_del_output(aac_msi, "recorder_mp4");
+        audio_encode_deinit(aac_msi);
     }
     aac_msi = NULL;
+#if MULTI_CAMERA_EN
+    auadc_msi_del_output(AUSYS_AUAD, "recorder_avi");
+#endif
 	return 1;
 #else
 	return 0;
 #endif
+}
+
+void close_record(void)
+{
+    close_h264_msi();
+    close_jpg_msi();
+    close_aac_msi();
+}
+
+int recorder_sd_start(void)
+{
+    msi_do_cmd(mp4_msi, MSI_CMD_MEDIA_CTRL, MSI_MEDIA_CTRL_RECORD_START, 0);
+    msi_do_cmd(avi_msi, MSI_CMD_MEDIA_CTRL, MSI_MEDIA_CTRL_RECORD_START, 0);
+	return 0;
 }
 
 extern uint8_t get_fat_isready();
@@ -1042,39 +1041,34 @@ static uint32_t json_rec_status(cJSON **root2, char **post_content)
     root = cJSON_CreateObject();
     *root2 = cJSON_CreateObject();
     uint8_t rec_status = 0;
+    uint8_t rec_status_g = 0;
 	uint8_t sd_status = 0;
 #if FS_EN
     sd_status = get_fat_isready();
 #endif
-    if (!rec_msi || sd_status == 0)
+
+    if (!h264_msi || sd_status == 0)
     {
         rec_status = 0;
     }
     else
     {
-        msi_do_cmd(rec_msi, MSI_CMD_GET_RUNNING, (uint32_t)&rec_status, 0);
+        msi_do_cmd(mp4_msi, MSI_CMD_GET_RUNNING, (uint32_t)&rec_status_g, 0);
+        rec_status = rec_status_g;
+#if MULTI_CAMERA_EN
+        if(avi_msi)
+        {
+            msi_do_cmd(avi_msi, MSI_CMD_GET_RUNNING, (uint32_t)&rec_status_g, 0);
+            rec_status &= rec_status_g;
+        }
+#endif
         // 意外停止了，手动去关掉录像相关资源
         if (!rec_status)
         {
-            if (h264_msi)
-            {
-                msi_del_output(h264_msi, NULL, "http_mp4");
-            }
-            msi_destroy(rec_msi);
-            rec_msi = NULL;
-            msi_put(h264_msi);
-            h264_msi = NULL;
-            if(aac_msi)
-            {
-                audio_code_del_output(AAC_ENC, "http_mp4");
-                if(audio_encode_deinit(AAC_ENC) == RET_OK)
-                {
-                    auadc_msi_del_output(audio_code_msi_name(AAC_ENC));
-                }             
-            }
-            aac_msi = NULL;
+            close_record();
         }
     }
+
     items_value_process("rec", rec_status, SET_ITEMS_VALUE);
     cJSON_AddNumberToObject(root, "value", rec_status);
     cJSON_AddNumberToObject(*root2, "result", 0);
@@ -1208,12 +1202,13 @@ static uint32_t json_mediainfo(cJSON **root2, char **post_content2)
     char *ip8;
     cJSON *root = NULL;
     char rtsp_path[100];
-    char path_for_file[20];
+    char path_for_file[32];
     ip8 = (char*)&sys_cfgs.ipaddr;
 
     uint8_t video_num = items_value_process("switchcam", 0, GET_ITEMS_VALUE);
+    uint8_t camera_num = items_value_process("cameranum", 0, GET_ITEMS_VALUE);
     //设置超过范围,则直接配置第一个摄像头
-    if(video_num > sizeof(video_media)/sizeof(struct media_s))
+    if(video_num > sizeof(video_media) / sizeof(struct media_s) || video_num > camera_num)
     {
         video_num = 0;
     }
@@ -1267,11 +1262,19 @@ uint32_t json_capability(cJSON **root2, char **post_content2)
     root = cJSON_CreateObject();
     *root2 = cJSON_CreateObject();
     if(PARKING_MOR_ALBUM_EN) {
-        cJSON_AddStringToObject(root, "value", "00000100010001");
+        if(APP_LOCK_VIDEO_EN) {
+            cJSON_AddStringToObject(root, "value", "000101000000010");
+        } else {
+            cJSON_AddStringToObject(root, "value", "000001000000010");
+        }
     } else {
-        cJSON_AddStringToObject(root, "value", "00100100010001");
+        if(APP_LOCK_VIDEO_EN) {
+            cJSON_AddStringToObject(root, "value", "001100000000010");
+        } else {
+            cJSON_AddStringToObject(root, "value", "001000000000010");
+        }
     }
-    
+
     cJSON_AddNumberToObject(*root2, "result", 0);
     cJSON_AddItemToObject(*root2, "info", root);
 
@@ -1392,7 +1395,9 @@ static void http_reponse_enterrecorder(struct httpClient *httpClient)
     if(items_value_process("rec" , 0, GET_ITEMS_ENABLE) == ITEM_ENABLE) {
         if(items_value_process("rec", 0, GET_ITEMS_DEFAULT_VALUE)) {
             open_h264_msi();
+            open_jpg_msi();
             open_aac_msi();
+            recorder_sd_start();
             items_value_process("rec", 1, SET_ITEMS_VALUE);
         }
     }
@@ -1418,10 +1423,14 @@ static uint32_t json_recduration(cJSON **root2, char **post_content)
     *root2 = cJSON_CreateObject();
     uint32_t rec_second = 0;
 
-    if(rec_msi && rec_msi->action)
+    if(mp4_msi && mp4_msi->action)
     {
-        rec_msi->action(rec_msi, MSI_CMD_MEDIA_CTRL, (uint32_t)&rec_second, 0);
+        mp4_msi->action(mp4_msi, MSI_CMD_MEDIA_CTRL, MSI_MEDIA_CTRL_GET_RECTIME, (uint32_t)&rec_second);
     }
+    // if(avi_msi && avi_msi->action)
+    // {
+    //     avi_msi->action(avi_msi, MSI_CMD_MEDIA_CTRL, MSI_MEDIA_CTRL_GET_RECTIME, (uint32_t)&rec_second);
+    // }
     cJSON_AddNumberToObject(root, "duration", rec_second);
     cJSON_AddNumberToObject(*root2, "result", 0);
     cJSON_AddItemToObject(*root2, "info", root);
@@ -1468,7 +1477,9 @@ static void http_reponse_playback(struct httpClient *httpClient)
         _os_printf("playback exit\r\n");
         // 退出回放界面后打开录像，可根据需要修改
         // open_h264_msi();
+        // open_jpg_msi();
         // open_aac_msi();
+        // recorder_sd_start();
         // items_value_process("rec", 1, SET_ITEMS_VALUE);
     }
     else {
@@ -1492,7 +1503,16 @@ static void http_reponse_getadasvalue(struct httpClient *httpClient)
 
 static void http_reponse_lockvideo(struct httpClient *httpClient)
 {
+#if APP_LOCK_VIDEO_EN
+    if (items_value_process("lockvideo", 0, GET_ITEMS_VALUE)) {
+        items_value_process("lockvideo", 0, SET_ITEMS_VALUE);
+    } else {
+        items_value_process("lockvideo", 1, SET_ITEMS_VALUE);
+    }
+    http_reponse_success(httpClient);
+#else
     http_reponse_unsupport(httpClient);
+#endif
 }
 
 static uint32_t json_lockvideostatus(cJSON **root2, char **post_content2)
@@ -1500,7 +1520,7 @@ static uint32_t json_lockvideostatus(cJSON **root2, char **post_content2)
     cJSON *root = NULL;
     root = cJSON_CreateObject();
     *root2 = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "status", 0);
+    cJSON_AddNumberToObject(root, "status", items_value_process("lockvideo", 0, GET_ITEMS_VALUE));
 
     cJSON_AddNumberToObject(*root2, "result", 0);
     cJSON_AddItemToObject(*root2, "info", root);
@@ -1513,25 +1533,27 @@ static uint32_t json_lockvideostatus(cJSON **root2, char **post_content2)
 
 static void http_reponse_getlockvideostatus(struct httpClient *httpClient)
 {
-    // cJSON *root = NULL;
-    // char *post_content;
-    // uint32_t sendlen = 0;
-    // struct httpresp *head;
-    // int fd = httpClient->fdClient;
+#if APP_LOCK_VIDEO_EN
+    cJSON *root = NULL;
+    char *post_content;
+    uint32_t sendlen = 0;
+    struct httpresp *head;
+    int fd = httpClient->fdClient;
 
-    // head = http_create_reply(200, "OK");
-    // http_add_header(head, httpIndex.Connection, "close");
-    // http_add_header(head, httpIndex.Type, "application/json");
+    head = http_create_reply(200, "OK");
+    http_add_header(head, httpIndex.Connection, "close");
+    http_add_header(head, httpIndex.Type, "application/json");
 
-    // sendlen = json_lockvideostatus(&root, &post_content);
+    sendlen = json_lockvideostatus(&root, &post_content);
 
-    // http_header_send(head, httpIndex.Length, sendlen, fd);
-    // send(fd, post_content, sendlen, 0);
-    // closeRes(httpClient);
-    // cJSON_free(post_content);
-    // cJSON_Delete(root);
-
+    http_header_send(head, httpIndex.Length, sendlen, fd);
+    send(fd, post_content, sendlen, 0);
+    closeRes(httpClient);
+    cJSON_free(post_content);
+    cJSON_Delete(root);
+#else
 	http_reponse_unsupport(httpClient);
+#endif
 }
 
 static void http_reponse_getstorageinfo(struct httpClient *httpClient)
@@ -1563,7 +1585,9 @@ static void http_reponse_setting(struct httpClient *httpClient)
         _os_printf("setting exit\r\n");
         // 退出设置界面后打开录像，可根据需要修改
         // open_h264_msi();
+        // open_jpg_msi();
         // open_aac_msi();
+        // recorder_sd_start();
         // items_value_process("rec", 1, SET_ITEMS_VALUE);
     }
     else {
@@ -1577,14 +1601,14 @@ static void http_reponse_setting(struct httpClient *httpClient)
 
 static void set_rec(struct items_config *item, uint8_t value, struct httpClient *httpClient)
 {
-    //int ret = 0;
-    os_printf("rec_msi:%X\n", rec_msi);
+    os_printf("mp4_msi:%X\n", mp4_msi);
 	// 录像
 	if(value == 0)
 	{
 		// 关闭录像
 		_os_printf("rec close\r\n");
         close_h264_msi();
+        close_jpg_msi();
         close_aac_msi();
 	}
 	else if(value == 1)
@@ -1592,7 +1616,9 @@ static void set_rec(struct items_config *item, uint8_t value, struct httpClient 
 		// 打开录像
         _os_printf("rec open\r\n");
         open_h264_msi();
+        open_jpg_msi();
         open_aac_msi();
+        recorder_sd_start();
 	}
 	else
 	{
@@ -1613,7 +1639,6 @@ static void set_default(struct items_config *item, uint8_t value, struct httpCli
 
 static void set_mic(struct items_config *item, uint8_t value, struct httpClient *httpClient)
 {
-    //int ret = 0;
 	// 录像声音
 	if(value == 0)
 	{
@@ -3428,12 +3453,29 @@ static int get_extension_string(int fd, const char *search_dir, const char *exte
 {
     int      file_count = 0;
     char     send_buffer[256];
-    char     timestr[15];
     char     path[64];
+    char     suffix[3];
+    char     filename_suffix[32];
+    uint8_t  locate = 0;
 
-	uint8_t  type = (os_strcmp(gen_prefix, EVENT_PREFIX) == 0) ? 1 : 
-                    (os_strcmp(gen_prefix, LOOP_PREFIX) == 0) ? 2 : 
-                    (os_strcmp(gen_prefix, EMR_PREFIX) == 0) ? 3 : 4;
+	uint8_t type = (os_strcmp(gen_prefix, EVENT_PREFIX) == 0) ? 1 : 
+                   (os_strcmp(gen_prefix, LOOP_PREFIX) == 0) ? 2 : 
+                   (os_strcmp(gen_prefix, EMR_PREFIX) == 0) ? 3 : 4;
+    
+    if(os_strcmp(search_dir, REC_PATH) == 0 || os_strcmp(search_dir, IMG_PATH) == 0) {
+        locate = 0;
+    }
+    else if(os_strcmp(search_dir, RECA_PATH) == 0 || os_strcmp(search_dir, IMGA_PATH) == 0) {
+        locate = 1;
+        os_strncpy(suffix, FRONT_SUFFIX, sizeof(suffix));
+    } else if(os_strcmp(search_dir, RECB_PATH) == 0 || os_strcmp(search_dir, IMGB_PATH) == 0) {
+        locate = 2;
+        os_strncpy(suffix, INTER_SUFFIX, sizeof(suffix));
+    } else if(os_strcmp(search_dir, RECC_PATH) == 0 || os_strcmp(search_dir, IMGC_PATH) == 0) {
+        locate = 3;
+        os_strncpy(suffix, BACK_SUFFIX, sizeof(suffix));
+    }
+
     FILINFO *fil;
     void *dir = osal_opendir((char *) search_dir);
     if (dir)
@@ -3468,8 +3510,6 @@ static int get_extension_string(int fd, const char *search_dir, const char *exte
 
                         char    *filename     = osal_dirent_name(sub_fil);
                         uint32_t filesize     = osal_dirent_size(sub_fil);
-                        uint32_t filedate     = osal_dirent_date(sub_fil);
-                        uint32_t filetime     = osal_dirent_time(sub_fil);
                         uint8_t  filename_len = strlen(filename);
 
                         // 进行全部转换成大写
@@ -3482,21 +3522,27 @@ static int get_extension_string(int fd, const char *search_dir, const char *exte
                             // 后缀名匹配
                             if (memcmp(extension_name, extension_filename, extension_name_len) == 0)
                             {
-                                os_snprintf(timestr, sizeof(timestr), "%04d%02d%02d%02d%02d%02d",
-                                            ((filedate & 0xFE00)>>9)+1980,
-                                            (filedate & 0x1E0)>>5,
-                                            (filedate & 0x1F),
-                                            (filetime & 0xF800)>>11,
-                                            (filetime & 0x7E0)>>5,
-                                            (filetime & 0x1F)*2);
-
-                                os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s/%s\",\"size\":%d,\"createtimestr\":\"%s\",\"type\":%d}",
+                                if(locate)
+                                {
+                                    os_snprintf(filename_suffix, sizeof(filename_suffix), "%.*s%s%s", filename_len - extension_name_len, filename, suffix, extension_name);
+                                    os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s/%s\",\"size\":%d,\"createtimestr\":\"%.14s\",\"type\":%d}",
+                                           (file_count++ > 0) ? "," : "",
+                                            gen_prefix,
+                                            filename_suffix,
+                                            filesize / 1024,
+                                            filename,
+                                            2);
+                                }
+                                else
+                                {
+                                    os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s/%s\",\"size\":%d,\"createtimestr\":\"%.14s\",\"type\":%d}",
                                            (file_count++ > 0) ? "," : "",
                                             gen_prefix,
                                             filename,
                                             filesize / 1024,
-                                            timestr,
+                                            filename,
                                             2);
+                                }
                                 // 发送数据
                                 send_chunk(fd, send_buffer, strlen(send_buffer));
                             }
@@ -3513,8 +3559,6 @@ static int get_extension_string(int fd, const char *search_dir, const char *exte
 
                 char    *filename     = osal_dirent_name(fil);
                 uint32_t filesize     = osal_dirent_size(fil);
-                uint32_t filedate     = osal_dirent_date(fil);
-                uint32_t filetime     = osal_dirent_time(fil);
                 uint8_t  filename_len = strlen(filename);
 
                 // 进行全部转换成大写
@@ -3527,21 +3571,27 @@ static int get_extension_string(int fd, const char *search_dir, const char *exte
                     // 后缀名匹配
                     if (memcmp(extension_name, extension_filename, extension_name_len) == 0)
                     {
-                        os_snprintf(timestr, sizeof(timestr), "%04d%02d%02d%02d%02d%02d",
-                                    ((filedate & 0xFE00)>>9)+1980,
-                                    (filedate & 0x1E0)>>5,
-                                    (filedate & 0x1F),
-                                    (filetime & 0xF800)>>11,
-                                    (filetime & 0x7E0)>>5,
-                                    (filetime & 0x1F)*2);
-
-                        os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s/%s\",\"size\":%d,\"createtimestr\":\"%s\",\"type\":%d}",
+                        if(locate)
+                        {
+                            os_snprintf(filename_suffix, sizeof(filename_suffix), "%.*s%s%s", filename_len - extension_name_len, filename, suffix, extension_name);
+                            os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s/%s\",\"size\":%d,\"createtimestr\":\"%.14s\",\"type\":%d}",
+                                   (file_count++ > 0) ? "," : "",
+                                    gen_prefix,
+                                    filename_suffix,
+                                    filesize / 1024,
+                                    filename,
+                                    (type == 1) ? 1 : 2);
+                        }
+                        else
+                        {
+                            os_snprintf(send_buffer, sizeof(send_buffer), "%s{\"name\":\"%s/%s\",\"size\":%d,\"createtimestr\":\"%.14s\",\"type\":%d}",
                                    (file_count++ > 0) ? "," : "",
                                     gen_prefix,
                                     filename,
                                     filesize / 1024,
-                                    timestr,
+                                    filename,
                                     (type == 1) ? 1 : 2);
+                        }
                         // 发送数据
                         send_chunk(fd, send_buffer, strlen(send_buffer));
                     }
@@ -3559,6 +3609,7 @@ static void stream_response(int fd)
     int     photo_count = 0;
     int     sos_count = 0;
     int     park_count = 0;
+    int     last_count = 0;
     char    send_buffer[256];
 
     // 创建HTTP响应头
@@ -3573,23 +3624,64 @@ static void stream_response(int fd)
     // 获取视频
     os_snprintf(send_buffer, sizeof(send_buffer), "{\"result\":0,\"info\":[{\"folder\":\"%s\",\"files\":[", LOOP_PREFIX);
     send_chunk(fd, send_buffer, strlen(send_buffer));
-    video_count = get_extension_string(fd, REC_PATH, MP4_EXTENSION_NAME, LOOP_PREFIX);
+    if(MULTI_CAMERA_EN) {
+        last_count = 0;
+        video_count = get_extension_string(fd, RECA_PATH, MP4_EXTENSION_NAME, LOOP_PREFIX);
+        if(video_count != last_count)
+            send_chunk(fd, ",", strlen(","));
+        last_count = video_count;
+        video_count += get_extension_string(fd, RECB_PATH, AVI_EXTENSION_NAME, LOOP_PREFIX);
+        if(video_count != last_count)
+            send_chunk(fd, ",", strlen(","));
+        video_count += get_extension_string(fd, RECC_PATH, AVI_EXTENSION_NAME, LOOP_PREFIX);
+    } else {
+        video_count = get_extension_string(fd, REC_PATH, MP4_EXTENSION_NAME, LOOP_PREFIX);
+    }
 
     // 获取照片
     os_snprintf(send_buffer, sizeof(send_buffer), "],\"count\":%d},{\"folder\":\"%s\",\"files\":[", video_count, EVENT_PREFIX);
     send_chunk(fd, send_buffer, strlen(send_buffer));
-    photo_count = get_extension_string(fd, IMG_PATH, JPG_EXTENSION_NAME, EVENT_PREFIX);
+    if(MULTI_CAMERA_EN) {
+        last_count = 0;
+        photo_count = get_extension_string(fd, IMGA_PATH, JPG_EXTENSION_NAME, EVENT_PREFIX);
+        if(photo_count != last_count)
+            send_chunk(fd, ",", strlen(","));
+        last_count = photo_count;
+        photo_count += get_extension_string(fd, IMGB_PATH, JPG_EXTENSION_NAME, EVENT_PREFIX);
+        if(photo_count != last_count)
+            send_chunk(fd, ",", strlen(","));
+        photo_count += get_extension_string(fd, IMGC_PATH, JPG_EXTENSION_NAME, EVENT_PREFIX);
+    } else {
+        photo_count = get_extension_string(fd, IMG_PATH, JPG_EXTENSION_NAME, EVENT_PREFIX);
+    }
 
     // 紧急事件
     os_snprintf(send_buffer, sizeof(send_buffer), "],\"count\":%d},{\"folder\":\"%s\",\"files\":[", photo_count, EMR_PREFIX);
     send_chunk(fd, send_buffer, strlen(send_buffer));
-    sos_count = get_extension_string(fd, EMR_PATH, MP4_EXTENSION_NAME, EMR_PREFIX);
+    if(MULTI_CAMERA_EN) {
+        last_count = 0;
+        sos_count = get_extension_string(fd, EMR_PATH, MP4_EXTENSION_NAME, EMR_PREFIX);
+        if(sos_count != last_count)
+            send_chunk(fd, ",", strlen(","));
+        last_count = sos_count;
+        sos_count = get_extension_string(fd, EMR_PATH, AVI_EXTENSION_NAME, EMR_PREFIX);
+    } else {
+        sos_count = get_extension_string(fd, EMR_PATH, MP4_EXTENSION_NAME, EMR_PREFIX);
+    }
 
     if(PARKING_MOR_ALBUM_EN) {
         os_snprintf(send_buffer, sizeof(send_buffer), "],\"count\":%d},{\"folder\":\"%s\",\"files\":[", sos_count, PARK_PREFIX);
         send_chunk(fd, send_buffer, strlen(send_buffer));
-        park_count = get_extension_string(fd, PARK_PATH, MP4_EXTENSION_NAME, PARK_PREFIX);
-
+        if(MULTI_CAMERA_EN) {
+            last_count = 0;
+            park_count = get_extension_string(fd, PARK_PATH, MP4_EXTENSION_NAME, PARK_PREFIX);
+            if(park_count != last_count)
+                send_chunk(fd, ",", strlen(","));
+            last_count = park_count;
+            park_count = get_extension_string(fd, PARK_PATH, AVI_EXTENSION_NAME, PARK_PREFIX);
+        } else {
+            park_count = get_extension_string(fd, PARK_PATH, MP4_EXTENSION_NAME, PARK_PREFIX);
+        }
         os_snprintf(send_buffer, sizeof(send_buffer), "],\"count\":%d}]}", park_count);
         send_chunk(fd, send_buffer, strlen(send_buffer));
     } else {
@@ -3614,34 +3706,16 @@ static void http_reponse_thumbnail(struct httpClient *httpClient)
     uint32_t sendlen = 0;
     struct httpresp *head;
     int fd = httpClient->fdClient;
-    uint8_t offset = 0;
     _os_printf("thumbnail:%s\r\n", httpClient->http_request->value);
-
-    if (strncmp(httpClient->pattern, EVENT_PREFIX, strlen(EVENT_PREFIX)) == 0) {
-		offset = strlen(EVENT_PREFIX) + 1;
-    }
-    else if (strncmp(httpClient->pattern, LOOP_PREFIX, strlen(LOOP_PREFIX)) == 0) {
-        offset = strlen(LOOP_PREFIX) + 1;
-    }
-    else if (strncmp(httpClient->pattern, EMR_PREFIX, strlen(EMR_PREFIX)) == 0) {
-        offset = strlen(EMR_PREFIX) + 1;
-    }
-	else if (strncmp(httpClient->pattern, PARK_PREFIX, strlen(PARK_PREFIX)) == 0) {
-        offset = strlen(PARK_PREFIX) + 1;
-    }
-    else {
-        _os_printf("Unknown parameter: %s\n", httpClient->pattern);
-		closeRes(httpClient);
-		return;
-    }
 
     head = http_create_reply(200, "OK");
     http_add_header(head, httpIndex.Connection, "close");
     http_add_header(head, httpIndex.Type, "image/jpeg");
 
-    post_content = (char *)jpg_file_read(httpClient->pattern + offset, 1, (int32_t*)&sendlen);
-    os_printf("httpClient->pattern:%s\n", httpClient->pattern);
-    os_printf("post_content:%x sendlen:%d\r\n", post_content, sendlen);
+    char *filename = remove_suffix(httpClient->pattern);
+    // 获取缩略图
+    post_content = (char *)jpg_file_read(filename, 1, (int32_t*)&sendlen);
+    os_printf("post_content:%x, sendlen:%d\r\n", post_content, sendlen);
     http_header_send(head, httpIndex.Length, sendlen, fd);
     if (post_content)
     {
@@ -3761,7 +3835,6 @@ static void http_reponse_sdformat(struct httpClient *httpClient)
 {
 #if FS_EN
     FRESULT res;
-    //uint8_t disk_status;
     uint8_t *work = STREAM_LIBC_MALLOC(4096);
     ASSERT(work);
     fatfs_unregister();
@@ -3769,8 +3842,9 @@ static void http_reponse_sdformat(struct httpClient *httpClient)
     STREAM_LIBC_FREE(work);
     if (res)
     {
-    	os_printf("SD format failed, res:%d\r\n",res);
-    	return;
+        os_printf("SD format failed, res:%d\r\n",res);
+        closeRes(httpClient);
+        return;
     }
     fatfs_register();
 	http_reponse_success(httpClient);
@@ -3784,30 +3858,36 @@ static void http_reponse_wifireboot(struct httpClient *httpClient)
 	http_reponse_unsupport(httpClient);
 }
 
-static void http_reponse_mp4(struct httpClient *httpClient)
+static void http_reponse_video(struct httpClient *httpClient)
 {
-    //char *post_content; 
-	//char *filepath;
     uint32_t sendlen = 0;
     char path[64];
     uint32_t read_len;
     struct httpresp *head;
+    F_FILE *fp = NULL;
     uint8_t *tmp_buf = NULL;
     int res = 0;
     int fd = httpClient->fdClient;
-    //uint32_t want_read_len = 0;
     uint32_t offset_start = 0;
     uint32_t offset_end = ~0;
     uint8_t flag = 0;
+    uint8_t file_type = 0;
     struct httpEntry *next = httpClient->http_request;
     int type = (strncmp(next->value, "/" LOOP_PREFIX, strlen("/" LOOP_PREFIX)) == 0) ? 2 : 
                (strncmp(next->value, "/" EMR_PREFIX, strlen("/" EMR_PREFIX)) == 0) ? 3 : 
                (strncmp(next->value, "/" PARK_PREFIX, strlen("/" PARK_PREFIX)) == 0) ? 4 : 0;
+    
+    if(os_strstr(httpClient->pattern, BACK_SUFFIX)) {
+        file_type = 2;
+    } else {
+        file_type = 1;
+    }
 
+    _os_printf("file_type: %d\r\n", file_type);
+    
     if(type == 0) {
         _os_printf("type error\r\n");
-        closeRes(httpClient);
-        return;
+        goto reponse_video_end;
     }
 
     while(next)
@@ -3838,36 +3918,47 @@ static void http_reponse_mp4(struct httpClient *httpClient)
         head = http_create_reply(200, "OK");
     }
     http_add_header(head, httpIndex.Connection, "close");
-    http_add_header(head, httpIndex.Type, "video/mp4");
+    if(file_type == 1)
+    {
+        http_add_header(head, httpIndex.Type, "video/mp4");
+    } 
+    else 
+    {
+        http_add_header(head, httpIndex.Type, "video/x-msvideo");
+    }
+    
     http_add_header(head, httpIndex.Accept_Range, "bytes");
     
     if(gen_file_path(httpClient->pattern, path, sizeof(path), type))
     {
         os_printf("%s %d, error\r\n", __FUNCTION__, __LINE__);
-        closeRes(httpClient);
-        return;
+        goto reponse_video_end;
     }
-    os_printf("mp4 path:%s\n",path);
-    F_FILE *fp = osal_fopen((const char*)path, "rb");
+    os_printf("file path: %s\n", path);
+    fp = osal_fopen((const char*)path, "rb");
     if(fp)
     {
         sendlen = osal_fsize(fp);
-        if(offset_end==(uint32_t)~0)
+        if(offset_start > sendlen)
+        {
+            os_printf("offset_start out of range\r\n");
+            goto reponse_video_end;
+        }
+        if(offset_end == (uint32_t)~0)
         {
             offset_end = sendlen;
         }
         else
         {
-            offset_end = sendlen>offset_end?sendlen:offset_end;
+            offset_end = sendlen > offset_end ? offset_end : sendlen;
         }
-        
     }
     if(flag)
     {
-        sprintf(path,"bytes %d-%d/%d",offset_start,offset_end-1,sendlen);
+        sprintf(path, "bytes %d-%d/%d", offset_start, offset_end - 1, sendlen);
         http_add_header(head, "Content-Range", path);
-        http_header_send(head, httpIndex.Length, offset_end-offset_start, fd);
-        osal_fseek(fp,offset_start);
+        http_header_send(head, httpIndex.Length, offset_end - offset_start, fd);
+        osal_fseek(fp, offset_start);
     }
     else
     {
@@ -3879,13 +3970,13 @@ static void http_reponse_mp4(struct httpClient *httpClient)
         tmp_buf = STREAM_MALLOC(4096);
         while(tmp_buf)
         {
-            read_len = osal_fread(tmp_buf,1,4096,fp);
+            read_len = osal_fread(tmp_buf, 1, 4096, fp);
             if(read_len)
             {
                 res = send(fd, tmp_buf, read_len, 0);
                 if(res != 4096)
                 {
-                    os_printf("##################res:%d\n",res);
+                    os_printf("##################res: %d\n", res);
                 }
                 if(res <= 0)
                 {
@@ -3898,6 +3989,8 @@ static void http_reponse_mp4(struct httpClient *httpClient)
             }
         }
     }
+
+reponse_video_end:
 
     if(fp)
     {
@@ -3914,7 +4007,6 @@ static void http_reponse_mp4(struct httpClient *httpClient)
 static void http_reponse_event(struct httpClient *httpClient)
 {
 	char *post_content;
-// 	char *filepath;
     uint32_t sendlen = 0;
     struct httpresp *head;
     int fd = httpClient->fdClient;
@@ -3938,10 +4030,6 @@ static void http_reponse_event(struct httpClient *httpClient)
 
 static void http_reponse_deletefile(struct httpClient *httpClient)
 {
-    //char *post_content;
-    //uint32_t sendlen = 0;
-    //struct httpresp *head;
-    //int fd = httpClient->fdClient;
     uint8_t offset = 0;
     uint8_t type = 0;
 
@@ -3977,8 +4065,8 @@ static void http_reponse_deletefile(struct httpClient *httpClient)
     closeRes(httpClient);
 }
 
-typedef void (*takephoto_fn)(uint8_t takephoto_num,uint16_t w, uint16_t h);
-void takephoto_over_dpi_func(uint8_t takephoto_num,uint16_t w, uint16_t h)
+typedef void (*takephoto_fn)(uint8_t takephoto_num, uint16_t w, uint16_t h);
+void takephoto_over_dpi_func(uint8_t takephoto_num, uint16_t w, uint16_t h)
 {
     struct msi *over_dpi_recode_msi = msi_find(R_SCALE1_JPG_RECODE, 1);
     uint32_t    dpi_w_h             = w << 16 | h;
@@ -3997,17 +4085,33 @@ void takephoto_over_dpi_func(uint8_t takephoto_num,uint16_t w, uint16_t h)
 }
 
 //这里的w和h是没有用的,一位内是原来分辨率拍照
-void takephoto_normal_func(uint8_t takephoto_num,uint16_t w, uint16_t h)
+void takephoto_normal_func(uint8_t takephoto_num, uint16_t w, uint16_t h)
 {
-    struct msi *jpg_thumb_msi = msi_find(R_JPG_THUMB,1); // 需要预先创建,否则不会真正拍照
+    struct msi *jpg_thumb_msi = msi_find(R_JPG_THUMB, 1); // 需要预先创建,否则不会真正拍照
     if (jpg_thumb_msi)
     {
+#if MULTI_CAMERA_EN 
+        msi_do_cmd(jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t)IMGA_PATH);
+#else
+        msi_do_cmd(jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t)IMG_PATH);
+#endif
         msi_do_cmd(jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO, takephoto_num);
         msi_put(jpg_thumb_msi);
     }
 }
 
-static void http_reponse_snapshot(struct httpClient *httpClient)
+void usb_takephoto_normal_func(uint8_t takephoto_num)
+{
+    struct msi *usb_jpg_thumb_msi = msi_find(R_JPG_PHOTO_USB, 1);
+    if (usb_jpg_thumb_msi)
+    {
+        msi_do_cmd(usb_jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t)IMGC_PATH);
+        msi_do_cmd(usb_jpg_thumb_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO, takephoto_num);
+        msi_put(usb_jpg_thumb_msi);
+    }
+}
+
+static void takephoto_mipi(void)
 {
     uint8_t dpi_v = items_value_process("image_size", 0, GET_ITEMS_VALUE);
     takephoto_fn t_fn;
@@ -4060,8 +4164,39 @@ static void http_reponse_snapshot(struct httpClient *httpClient)
         take_photo_num = 10;
         break;
     }
-    t_fn(take_photo_num,w,h);
-    
+    t_fn(take_photo_num, w, h);
+}
+
+static void takephoto_usb(void)
+{
+    uint8_t take_photo_num = 1;
+    int continue_shot = items_value_process("continue_shot", 0, GET_ITEMS_VALUE);
+    switch (continue_shot)
+    {
+    case 0:
+        take_photo_num = 1;
+        break;
+    case 1:
+        take_photo_num = 2;
+        break;
+    case 2:
+        take_photo_num = 10;
+        break;
+    }
+    usb_takephoto_normal_func(take_photo_num);
+}
+
+static void http_reponse_snapshot(struct httpClient *httpClient)
+{
+    uint8_t video_num = items_value_process("switchcam", 0, GET_ITEMS_VALUE); // 0:主摄像头 1:副摄像头
+    if(video_num == 0)
+    {
+        takephoto_mipi();
+    }
+    else if(video_num == 1)
+    {
+        takephoto_usb();
+    }
     http_reponse_success(httpClient);
 }
 
@@ -4072,8 +4207,10 @@ static uint32_t json_return_sdmsg(cJSON **root2, char **post_content)
     root = cJSON_CreateObject();
     *root2 = cJSON_CreateObject();
     uint32_t totalsize = 0, freesize = 0;
-    int sd_status = get_fat_isready() ? 0 : 2;  // 0: 正常 2: 未插入
-
+	int sd_status = 0;
+#if FS_EN
+    sd_status = get_fat_isready() ? 0 : 2;  // 0: 正常 2: 未插入
+#endif
     if(sd_status == 0) {
         res = osal_fatfsfree("0:", &totalsize, &freesize);
         if (res) {
@@ -4297,6 +4434,121 @@ void sd_status_push(int fd)
     }
 }
 
+void lock_status_push(int fd)
+{
+    static uint8_t lock_status = 0;   // 0：停止加锁 1：开始加锁
+    uint8_t lock_status_new = 0;
+    char *push_content = NULL;
+    lock_status_new = items_value_process("lockvideo", 0, GET_ITEMS_VALUE);
+    if(lock_status != lock_status_new)
+    {
+        cJSON *root = NULL;
+        lock_status = lock_status_new;
+        root = cJSON_CreateObject();
+        if (!root)
+            goto clean_up;
+        cJSON_AddStringToObject(root, "msgid", "rec_lock");
+        cJSON *info = cJSON_CreateObject();
+        if (!info)
+            goto clean_up;
+        cJSON_AddItemToObject(root, "info", info);
+        cJSON_AddNumberToObject(info, "value", lock_status);
+        push_content = cJSON_PrintUnformatted(root);
+        _os_printf("postcontent: %s\r\n", push_content);
+        _os_printf("postlen: %d\r\n", strlen(push_content));
+        if (push_content && fd > 0) {
+            send(fd, push_content, strlen(push_content), 0);
+        }
+    clean_up:
+        if (push_content) cJSON_free(push_content);
+        if (root) cJSON_Delete(root);
+    }
+}
+
+uint8_t get_mipi_video_status(void)
+{
+    return 1;
+}
+
+uint8_t get_usb_video_status(void)
+{
+    uint8_t camera_num = 0;
+    struct sysevt_usbh_video_priv_data info;
+    for(int i = 0; i < CONFIG_SYSEVT_USB_VIDEO_MAX_NUM; i++)
+    {
+        system_event_usbh_video_get_info(i, &info);
+        if(info.status == SYSEVT_USB_STATUS_CONNECT)
+        {
+            camera_num++;
+        }
+    }
+    return camera_num;
+}
+
+uint8_t get_camera_status(uint8_t *num)
+{
+    uint8_t camera_num = 0;
+    camera_num += get_mipi_video_status();
+    camera_num += get_usb_video_status();
+    if(camera_num != *num)
+    {
+        _os_printf("camera_num: %d\r\n", camera_num);
+        *num = camera_num;
+        items_value_process("cameranum", camera_num, SET_ITEMS_VALUE);
+        return 1;
+    }
+    return 0;
+}
+
+void camera_status_push(int fd)
+{
+    uint8_t camera_status = 0;   // 0：拔出 1：插入
+    static uint8_t count = 0;
+    static uint8_t last_camera_num = 0;
+    if(!count)
+    {
+        last_camera_num = items_value_process("cameranum", 0, GET_ITEMS_VALUE);
+        count = 1;
+    }
+    uint8_t camera_num = last_camera_num;
+    uint8_t change_flag = 0;
+    char *push_content = NULL;
+    change_flag = get_camera_status(&camera_num);
+    if(change_flag)
+    {
+        cJSON *root = NULL;
+        if(camera_num > last_camera_num) {
+            camera_status = 1;
+        } else if(camera_num < last_camera_num) {
+            camera_status = 0;
+        } else {
+            return;
+        }
+        last_camera_num = camera_num;
+
+        root = cJSON_CreateObject();
+        if (!root)
+            goto clean_up;
+        cJSON_AddStringToObject(root, "msgid", "cam_plugin");
+        cJSON *info = cJSON_CreateObject();
+        if (!info)
+            goto clean_up;
+        cJSON_AddItemToObject(root, "info", info);
+        cJSON_AddNumberToObject(info, "action", camera_status);
+        cJSON_AddNumberToObject(info, "curcamid", 0);
+        cJSON_AddNumberToObject(info, "camnum", camera_num);
+        push_content = cJSON_PrintUnformatted(root);
+        _os_printf("postcontent: %s\r\n", push_content);
+        _os_printf("postlen: %d\r\n", strlen(push_content));
+        if (push_content && fd > 0) {
+            send(fd, push_content, strlen(push_content), 0);
+        }
+    clean_up:
+        if (push_content) cJSON_free(push_content);
+        if (root) cJSON_Delete(root);
+    }
+}
+
 // 若需要按键或其他APP外的操作更新录卡状态，可以启用
 void rec_status_push(int fd)
 {
@@ -4336,6 +4588,12 @@ typedef void (*message_handler_t)(int fd);
 
 message_handler_t handlers[] = {
     sd_status_push,
+#if APP_LOCK_VIDEO_EN
+    lock_status_push,
+#endif
+#if MULTI_CAMERA_EN
+    camera_status_push,
+#endif
     // rec_status_push,   // rec消息推送，根据需要启用
 };
 
@@ -4416,7 +4674,7 @@ static int itemcfg_save(uint8_t type)
 
 static void item_cfg_load(void)
 {
-    if (syscfg_init("recorder", item_cfg, sizeof(struct item_config)) == RET_OK) {
+    if (syscfg_read("recorder", item_cfg, sizeof(struct item_config)) == RET_OK) {
         if(item_cfg->front_check == 0x66666666 && item_cfg->rear_check == 0x88888888) {
             itemcfg_handle();
 
@@ -4528,9 +4786,6 @@ static int Viidure_listen(int port)
 
     os_task_create("queue1", (void*)thread_rec_pool_queue, httpserver, OS_TASK_PRIORITY_NORMAL, 0, NULL, 2048);
     os_task_create("queue2", (void*)thread_rec_pool_queue, httpserver, OS_TASK_PRIORITY_NORMAL, 0, NULL, 2048);
-
-    //initWeb(&getweb);
-    //Viidure_default_getweb(&getweb);
 
     eloop_add_fd(fd, EVENT_READ, EVENT_F_ENABLED, do_accept, (void *)httpserver);
 
@@ -4645,6 +4900,10 @@ int config_Viidure(int port)
     }
 
     item_cfg_load();
+
+    uint8_t camera_num = 0;
+    get_camera_status(&camera_num);
+
     OS_WORK_INIT(&recorder_wk, recorder_save_loop, 0);
     os_run_work_delay(&recorder_wk, 3000);
 

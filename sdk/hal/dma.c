@@ -114,7 +114,7 @@ void dma_memcpy(struct dma_device *dma, void *dst, const void *src, uint32 n)
 	addr = addr&((0x7FFFFFFUL << 5));
 	d = (uint8*)addr;//&CACHE_CIR_INV_ADDR_Msk;
     sys_dcache_clean_range((void *)s, (int32_t)s2-(int32_t)s);          //cache->psram
-	sys_dcache_clean_invalid_range((void *)d, (int32_t)d2-(int32_t)d);	//psram cache invalid  //最后一行可能没有无效化	
+	sys_dcache_invalid_range((void *)d, (int32_t)d2-(int32_t)d);	//psram cache invalid  //最后一行可能没有无效化	
 //	printf("===============s:%08x  d:%08x\r\n\r\n",s,d);
 //    xfer_data.irq_data          = 0;
     ((const struct dma_hal_ops *)dma->dev.ops)->xfer(dma, &xfer_data);
@@ -203,12 +203,10 @@ void dma_memset_word(struct dma_device *dma, void *dst, uint32 c, uint32 n)
 	addr = (uint32)d;
 	addr = addr&((0x7FFFFFFUL << 5));
 	d    = (uint8 *)addr;//&CACHE_CIR_INV_ADDR_Msk;		
-	sys_dcache_clean_invalid_range((void *)d, (int32_t)d2-(int32_t)d);
+	sys_dcache_invalid_range((void *)d, (int32_t)d2-(int32_t)d);
 
     ((const struct dma_hal_ops *)dma->dev.ops)->xfer(dma, &xfer_data);
-    
-    sys_dcache_invalid_range((void *)d, (int32_t)d2-(int32_t)d);
-    
+
     i    = (uint32)dst % 4;
     size = i + 32;
 	for(;i < (size);i++){        //处理头
@@ -347,11 +345,9 @@ void dma_memcpy_endian(struct dma_device *dma, void *dst, const void *src, uint3
 	addr = addr&((0x7FFFFFFUL << 5));
 	d = (uint8*)addr;//&CACHE_CIR_INV_ADDR_Msk;
     sys_dcache_clean_range((void *)s, (int32_t)s2-(int32_t)s);          //cache->psram
-	sys_dcache_clean_invalid_range((void *)d, (int32_t)d2-(int32_t)d);	//psram cache invalid  //最后一行可能没有无效化	
+	sys_dcache_invalid_range((void *)d, (int32_t)d2-(int32_t)d);	//psram cache invalid  //最后一行可能没有无效化	
 
     ((const struct dma_hal_ops *)dma->dev.ops)->xfer(dma, &xfer_data);
-    
-    sys_dcache_invalid_range((void *)d, (int32_t)d2-(int32_t)d);
     memcpy(d1, dma_buf, 32);
     memcpy(d2, (void *)((uint32)dma_buf+32), 32);
 }

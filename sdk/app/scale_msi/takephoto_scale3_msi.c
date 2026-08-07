@@ -34,13 +34,14 @@ struct takephoto_scale3_msi_s
     struct msi          *msi;
     struct scale_device *scale_dev;
     uint8_t             *buf;
+    uint32_t             buf_max_size;
     uint32_t             kick_times;
     uint16_t             iw, ih;
     struct framebuff    *fb;
     uint32_t             thumb_magic;
     uint32_t             normal_magic;
-    char              filename[64];
-    uint8_t              ready;
+    char                 filename[64];
+    uint8_t              ready : 1, start : 1, only_one_buf : 1, rev : 5;
 };
 
 void   *get_vpp_buf(uint8_t which);
@@ -57,6 +58,10 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
         // 能进来这里,就是代表所有fb都已经用完了
         case MSI_CMD_POST_DESTROY:
         {
+            if (scale3->only_one_buf && scale3->buf)
+            {
+                STREAM_FREE(scale3->buf);
+            }
             STREAM_LIBC_FREE(scale3);
         }
         break;
@@ -71,12 +76,20 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
             struct framebuff *fb = (struct framebuff *) param1;
             if (fb->data)
             {
-                STREAM_FREE(fb->data);
+                if (scale3->only_one_buf)
+                {
+                    scale3->start = 1;
+                }
+                else
+                {
+                    STREAM_FREE(fb->data);
+                }
             }
             if (fb->priv)
             {
                 STREAM_LIBC_FREE(fb->priv);
             }
+            os_run_work(&scale3->work);
         }
         break;
 
@@ -88,7 +101,15 @@ static int32_t const_scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_
             {
                 case MSI_TAKEPHOTO_SCALE3_KICK:
                 {
-                    scale3->kick_times += (arg * 2);
+                    if (scale3->thumb_magic)
+                    {
+                        scale3->kick_times += (arg * 2);
+                    }
+                    else
+                    {
+                        scale3->kick_times += (arg);
+                    }
+
                     os_run_work(&scale3->work);
                     break;
                 }
@@ -148,18 +169,22 @@ static int32 takephoto_scale3_msi_work(struct os_work *work)
         {
             // 还需要配置一些默认私有结构体参数
             msi_output_fb(scale3->msi, scale3->fb);
-            scale3->fb  = NULL;
+            scale3->fb = NULL;
+        }
+        if (!scale3->start)
+        {
+            goto takephoto_scale3_msi_work_end;
         }
         if (scale3->kick_times)
         {
             // os_printf("scale3->kick_times:%d\n", scale3->kick_times);
             //  原图?
-            if (scale3->kick_times % 2 == 0)
+            if (!scale3->thumb_magic || scale3->kick_times % 2 == 0)
             {
                 ow    = scale3->iw;
                 oh    = scale3->ih;
                 magic = scale3->normal_magic;
-                takephoto_name_no_dir(scale3->filename,sizeof(scale3->filename));
+                takephoto_name_no_dir(scale3->filename, sizeof(scale3->filename));
             }
             // 缩略图
             else
@@ -169,7 +194,33 @@ static int32 takephoto_scale3_msi_work(struct os_work *work)
                 magic = scale3->thumb_magic;
             }
             yuvsize = ow * oh * 3 / 2;
-            buf     = STREAM_MALLOC(yuvsize);
+            if (scale3->only_one_buf)
+            {
+                if (yuvsize > scale3->buf_max_size)
+                {
+                    STREAM_FREE(scale3->buf);
+                    scale3->buf = STREAM_MALLOC(yuvsize);
+                    if (scale3->buf)
+                    {
+                        sys_dcache_clean_invalid_range((uint32_t *) scale3->buf, yuvsize);
+                        scale3->buf_max_size = yuvsize;
+                    }
+                    else
+                    {
+                        scale3->buf_max_size = 0;
+                    }
+                }
+                buf = scale3->buf;
+            }
+            else
+            {
+                buf = STREAM_MALLOC(yuvsize);
+                if (buf)
+                {
+                    sys_dcache_clean_invalid_range((uint32_t *) buf, yuvsize);
+                }
+            }
+
             if (buf)
             {
                 arg = STREAM_LIBC_ZALLOC(sizeof(struct takephoto_yuv_arg_s));
@@ -195,10 +246,9 @@ static int32 takephoto_scale3_msi_work(struct os_work *work)
                 arg->yuv_arg.out_h  = oh;
                 arg->yuv_arg.magic  = magic;
                 arg->yuv_arg.type   = YUV_ARG_TAKEPHOTO;
-                os_memcpy(arg->name,scale3->filename,os_strlen(scale3->filename)+1);
-                os_printf("scale3->filename:%s\tthumb_magic:%X\n",scale3->filename,magic);
-                arg                 = NULL;
-                buf                 = NULL;
+                os_memcpy(arg->name, scale3->filename, os_strlen(scale3->filename) + 1);
+                arg = NULL;
+                buf = NULL;
             }
             else
             {
@@ -223,9 +273,24 @@ static int32 takephoto_scale3_msi_work(struct os_work *work)
             scale_request_irq(scale_dev, FRAME_END, takephoto_scale3_stream_done, (uint32) scale3);
             scale_request_irq(scale_dev, INBUF_OV, scale3_stream_ov, (uint32) scale3);
             scale3->ready = 0;
+            if (scale3->only_one_buf)
+            {
+                scale3->start = 0;
+            }
+
             scale_open(scale_dev);
 
             scale3->kick_times--;
+        }
+        // scale3的拍照模式完成,释放空间
+        else
+        {
+            if (scale3->buf)
+            {
+                STREAM_FREE(scale3->buf);
+                scale3->buf = NULL;
+				scale3->buf_max_size = 0;
+            }
         }
     }
 
@@ -249,28 +314,27 @@ takephoto_scale3_msi_work_end:
     return 0;
 }
 
-struct msi *scale3_msi_pic_thumb(const char *name, uint32_t normal_magic, uint32_t thumb_magic)
+struct msi *scale3_msi_pic_thumb(const char *name, uint8_t only,uint32_t normal_magic, uint32_t thumb_magic)
 {
     uint8_t     isnew;
     struct msi *msi = msi_new(name, 0, &isnew);
     if (isnew)
     {
-        struct scale_device *scale_dev = (struct scale_device *) dev_get(HG_SCALE3_DEVID);
-        os_printf("%s:%d new success\n", __FUNCTION__, __LINE__);
-        struct takephoto_scale3_msi_s *scale3 = (struct takephoto_scale3_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct takephoto_scale3_msi_s));
-        scale3->scale_dev                     = scale_dev;
-        scale3->ready                         = 1;
-        scale3->msi                           = msi;
-        msi->priv                             = (void *) scale3;
-        msi->action                           = const_scale3_msi_action;
-        scale3->kick_times                    = 0;
-        scale3->normal_magic                  = normal_magic;
-        scale3->thumb_magic                   = thumb_magic;
-        msi->enable                           = 1;
+        struct scale_device           *scale_dev = (struct scale_device *) dev_get(HG_SCALE3_DEVID);
+        struct takephoto_scale3_msi_s *scale3    = (struct takephoto_scale3_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct takephoto_scale3_msi_s));
+        scale3->scale_dev                        = scale_dev;
+        scale3->ready                            = 1;
+        scale3->msi                              = msi;
+        msi->priv                                = (void *) scale3;
+        msi->action                              = const_scale3_msi_action;
+        scale3->kick_times                       = 0;
+        scale3->normal_magic                     = normal_magic;
+        scale3->thumb_magic                      = thumb_magic;
+        scale3->start                            = 1;
+        scale3->only_one_buf                     = only;
+        msi->enable                              = 1;
         get_vpp_w_h(&scale3->iw, &scale3->ih);
         OS_WORK_INIT(&scale3->work, takephoto_scale3_msi_work, 0);
-        // os_run_work(&scale3->work);
     }
-    os_printf("%s:%d\tmsi:%X\n", __FUNCTION__, __LINE__, msi);
     return msi;
 }

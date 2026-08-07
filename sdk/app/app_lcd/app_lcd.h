@@ -9,6 +9,8 @@
 #include "lib/multimedia/msi.h"
 
 typedef void (*app_lcd_callback)(void *lcd_s);
+#define LCD_RB_COUNT 4
+#define LCD_DELETE_RB_COUNT 8
 
 struct app_lcd_s
 {
@@ -17,9 +19,19 @@ struct app_lcd_s
     struct msi *lcd_osd_msi;
     struct msi *video_p0_msi;
     struct msi *video_p1_msi;
+    struct msi *csc_video_p2_msi;
+
+    //创建多个队列,分别是osd、p0、p1以及csc_p2(将收到的fb放到队列,然后中断去获取队列,这里采用ringbuf的形式)
+    RBUFFER_DEF(osd_rb, struct framebuff *, LCD_RB_COUNT);
+    RBUFFER_DEF(p0_rb, struct framebuff *, LCD_RB_COUNT);
+    RBUFFER_DEF(p1_rb, struct framebuff *, LCD_RB_COUNT);
+    RBUFFER_DEF(p2_rb, struct framebuff *, LCD_RB_COUNT);
+
+    RBUFFER_DEF(delete_rb, struct framebuff *, LCD_DELETE_RB_COUNT);
 
     struct framebuff * p0_fb;
     struct framebuff * p1_fb;
+    struct framebuff * p2_fb;
     struct framebuff * osd_fb;
 
     app_lcd_callback app_lcd_cb;
@@ -42,8 +54,10 @@ struct app_lcd_s
     uint8_t rotate;
     uint8_t video_rotate;
     uint8_t hardware_auto_ks : 1, // 由应用层写入,由lcd模块读取
-        get_auto_ks : 1,          // 由应用层去读取,由lcd的模块去设置
-        hardware_ready : 1, thread_exit : 1;
+            get_auto_ks      : 1, // 由应用层去读取,由lcd的模块去设置
+            hardware_ready   : 1, 
+            thread_exit      : 1,
+            rekick_lcd       : 1;
 };
 extern struct app_lcd_s lcd_msg_s;
 
@@ -93,9 +107,11 @@ typedef void (*osd_finish_cb)(void *self);
 typedef void (*osd_free_cb)(void *self, void *data);
 struct encode_data_s_callback
 {
-    osd_finish_cb finish_cb;
-    osd_free_cb free_cb;
-    void *user_data;
+    osd_finish_cb               finish_cb;
+    osd_free_cb                 free_cb;
+    void *                      user_data;
+    uint8_t                     rot_flag : 1,
+                                res      : 7;
 };
 /*************************************************************************************/
 #endif

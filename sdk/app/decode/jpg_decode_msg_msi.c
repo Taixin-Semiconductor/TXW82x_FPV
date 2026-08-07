@@ -37,11 +37,11 @@ static int parse_SOF(uint8_t *d, uint32_t *w, uint32_t *h)
 
 static int parse_jpg(uint8_t *jpg_buf, uint32_t maxsize, uint32_t *w, uint32_t *h)
 {
-    uint8_t *buf = jpg_buf;
-    uint8_t EOI_flag = 0;
-    uint32_t i = 0;
-    int res = 1;
-    int blen = 0;
+    uint8_t *buf      = jpg_buf;
+    uint8_t  EOI_flag = 0;
+    uint32_t i        = 0;
+    int      res      = 1;
+    int      blen     = 0;
     for (i = 0; i < maxsize; i += blen + 2)
     {
         if (buf[i] != 0xFF)
@@ -50,11 +50,17 @@ static int parse_jpg(uint8_t *jpg_buf, uint32_t maxsize, uint32_t *w, uint32_t *
             goto parse_jpg_end;
         }
         while (buf[i + 1] == 0xFF)
+        {
             ++i;
+        }
         if (buf[i + 1] == 0xD8)
+        {
             blen = 0;
+        }
         else
+        {
             blen = GET_16(buf + i + 2);
+        }
 
         switch (buf[i + 1])
         {
@@ -75,25 +81,28 @@ static int parse_jpg(uint8_t *jpg_buf, uint32_t maxsize, uint32_t *w, uint32_t *
         }
     }
 
-
 parse_jpg_end:
 
-    if (!res) {
+    if (!res)
+    {
         for (i = maxsize - 1; i >= maxsize - 16; i--)
         {
-            if (buf[i] != 0xFF) {
+            if (buf[i] != 0xFF)
+            {
                 // os_printf("EOI Found %02X at %d, expecting FF\n", buf[i], i);
                 continue;
             }
-    
-            if ((i < maxsize - 1) && (buf[i + 1] == 0xD9)) {
+
+            if ((i < maxsize - 1) && (buf[i + 1] == 0xD9))
+            {
                 EOI_flag = 1;
                 break;
             }
         }
     }
 
-    if ((!res) && (!EOI_flag)) {
+    if ((!res) && (!EOI_flag))
+    {
         res = 1;
         os_printf("EOI No found FF D9\n");
     }
@@ -103,70 +112,85 @@ parse_jpg_end:
 
 int ex_parse_jpg(uint8_t *jpg_buf, uint32_t maxsize, uint32_t *w, uint32_t *h)
 {
-    return parse_jpg(jpg_buf,maxsize,w,h);
+    return parse_jpg(jpg_buf, maxsize, w, h);
 }
 // data申请空间函数
 #define STREAM_MALLOC av_psram_malloc
-#define STREAM_FREE av_psram_free
+#define STREAM_FREE   av_psram_free
 #define STREAM_ZALLOC av_psram_zalloc
 
 // 结构体申请空间函数
 #define STREAM_LIBC_MALLOC av_malloc
-#define STREAM_LIBC_FREE av_free
+#define STREAM_LIBC_FREE   av_free
 #define STREAM_LIBC_ZALLOC av_zalloc
 
 struct jpg_decode_msg_s
 {
-    struct os_work work;
-    struct msi *msi;
+    struct os_work    work;
+    struct msi       *msi;
     struct framebuff *rfb;
-    uint32_t magic; //会赋值到对应参数,用于后续msi的识别,如果为0,就是没有任何处理
-    uint16_t out_w;
-    uint16_t out_h;
-    uint16_t step_w;
-    uint16_t step_h;
-    uint16_t x, y; // 解码配置的x和y,如果没有可以不配置
-    uint16_t filter;    //过滤解码的类型
-    uint16_t force_type; // 强转类型(统一将解码的类型修改,不按照filter,0是无效)
+    uint32_t          magic; // 会赋值到对应参数,用于后续msi的识别,如果为0,就是没有任何处理
+    uint16_t          out_w;
+    uint16_t          out_h;
+    uint16_t          step_w;
+    uint16_t          step_h;
+    uint16_t          x, y;       // 解码配置的x和y,如果没有可以不配置
+    uint16_t          force_type; // 强转类型(统一将解码的类型修改,不按照filter,0是无效)
+    uint8_t           filter;     // 过滤解码的类型
+    uint8_t           ish264;
 };
 
 static int32 jpg_decode_msg_work(struct os_work *work)
 {
-    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *)work;
-    struct framebuff *rfb;
-    struct framebuff *fb;
-    int res;
+    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *) work;
+    struct framebuff        *rfb;
+    struct framebuff        *fb;
+    int                      res;
     if (decode_msg->rfb)
     {
         rfb = decode_msg->rfb;
         // 这里可以考虑用自己的内存管理,后续看情况修改接口
-        fb = fb_alloc(NULL, sizeof(struct jpg_decode_arg_s), 0, decode_msg->msi);
+        fb  = fb_alloc(NULL, sizeof(struct jpg_decode_arg_s), 0, decode_msg->msi);
         // 申请不到就等下次进来再去尝试解码吧
         if (fb)
         {
             fb_ref(fb, rfb);
-            fb->datatag = rfb->datatag;
-            fb->stype = rfb->stype;
-            fb->srcID = rfb->srcID;
-            struct jpg_decode_arg_s *msg = (struct jpg_decode_arg_s *)fb->data;
-            struct yuv_arg_s *yuv_msg = &msg->yuv_arg;
+            fb->datatag                      = rfb->datatag;
+            fb->stype                        = rfb->stype;
+            fb->srcID                        = rfb->srcID;
+            struct jpg_decode_arg_s *msg     = (struct jpg_decode_arg_s *) fb->data;
+            struct yuv_arg_s        *yuv_msg = &msg->yuv_arg;
             memset(msg, 0, sizeof(struct jpg_decode_arg_s));
-            yuv_msg->out_w = decode_msg->out_w;
-            yuv_msg->out_h = decode_msg->out_h;
-            yuv_msg->x = decode_msg->x;
-            yuv_msg->y = decode_msg->y;
-            yuv_msg->magic = decode_msg->magic;
+            yuv_msg->out_w   = decode_msg->out_w;
+            yuv_msg->out_h   = decode_msg->out_h;
+            yuv_msg->x       = decode_msg->x;
+            yuv_msg->y       = decode_msg->y;
+            yuv_msg->magic   = decode_msg->magic;
             yuv_msg->dispcnt = fb->datatag;
-            //os_printf("yuv_msg->dispcnt:%d\n",yuv_msg->dispcnt);
-            msg->step_w = decode_msg->step_w;
-            msg->step_h = decode_msg->step_h;
-            
-            res = parse_jpg(rfb->data, rfb->len, &msg->decode_w, &msg->decode_h);
+            // os_printf("yuv_msg->dispcnt:%d\n",yuv_msg->dispcnt);
+            msg->step_w      = decode_msg->step_w;
+            msg->step_h      = decode_msg->step_h;
+
+            if (rfb->mtype == F_H264)
+            {
+                struct fb_h264_s *h264_priv = (struct fb_h264_s *) rfb->priv;
+                res                         = 0;
+                msg->decode_w               = h264_priv->w;
+                msg->decode_h               = h264_priv->h;
+            }
+            else if (rfb->mtype == F_JPG)
+            {
+                res = parse_jpg(rfb->data, rfb->len, &msg->decode_w, &msg->decode_h);
+            }
+            else
+            {
+                res = 1;
+            }
             if (!res)
             {
                 fb->mtype = F_JPG_DECODE_MSG;
-                fb->stype = decode_msg->force_type ?decode_msg->force_type : rfb->stype;
-                fb->time = rfb->time;
+                fb->stype = decode_msg->force_type ? decode_msg->force_type : rfb->stype;
+                fb->time  = rfb->time;
                 msi_output_fb(decode_msg->msi, fb);
                 msi_delete_fb(NULL, rfb);
                 decode_msg->rfb = NULL;
@@ -175,7 +199,7 @@ static int32 jpg_decode_msg_work(struct os_work *work)
             {
                 msi_delete_fb(NULL, fb);
                 msi_delete_fb(NULL, rfb);
-                decode_msg->rfb = NULL;                
+                decode_msg->rfb = NULL;
             }
         }
     }
@@ -189,8 +213,8 @@ static int32 jpg_decode_msg_work(struct os_work *work)
 
 static int32_t decode_msg_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uint32 param2)
 {
-    int32_t ret = RET_OK;
-    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *)msi->priv;
+    int32_t                  ret        = RET_OK;
+    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *) msi->priv;
     switch (cmd_id)
     {
 
@@ -207,12 +231,12 @@ static int32_t decode_msg_msi_action(struct msi *msi, uint32 cmd_id, uint32 para
         {
             os_work_cancle2(&decode_msg->work, 1);
         }
-            break;
+        break;
 
         case MSI_CMD_DECODE_JPEG_MSG:
         {
-            uint32_t cmd_self = (uint32_t)param1;
-            uint32_t arg = param2;
+            uint32_t cmd_self = (uint32_t) param1;
+            uint32_t arg      = param2;
             switch (cmd_self)
             {
                 case MSI_JPEG_DECODE_X_Y:
@@ -221,8 +245,8 @@ static int32_t decode_msg_msi_action(struct msi *msi, uint32 cmd_id, uint32 para
                     decode_msg->y = arg & 0xffff;
                 }
                 break;
-                
-                //配置强转类型
+
+                // 配置强转类型
                 case MSI_JPEG_DECODE_FORCE_TYPE:
                 {
                     decode_msg->force_type = arg;
@@ -239,13 +263,23 @@ static int32_t decode_msg_msi_action(struct msi *msi, uint32 cmd_id, uint32 para
         break;
         case MSI_CMD_TRANS_FB:
         {
-            struct framebuff *fb = (struct framebuff *)param1;
-            if (fb->mtype != F_JPG)
-            {
-                ret = RET_OK + 1;
-            }
+            struct framebuff *fb = (struct framebuff *) param1;
 
-            if(decode_msg->filter && !(decode_msg->filter == fb->stype))
+            if (decode_msg->ish264)
+            {
+                if (fb->mtype != F_H264)
+                {
+                    ret = RET_OK + 1;
+                }
+            }
+            else
+            {
+                if (fb->mtype != F_JPG)
+                {
+                    ret = RET_OK + 1;
+                }
+            }
+            if (decode_msg->filter && !(decode_msg->filter == fb->stype))
             {
                 ret = RET_OK + 1;
             }
@@ -258,21 +292,49 @@ static int32_t decode_msg_msi_action(struct msi *msi, uint32 cmd_id, uint32 para
 
 struct msi *jpg_decode_msg_msi(const char *name, uint16_t out_w, uint16_t out_h, uint16_t step_w, uint16_t step_h, uint32_t filter)
 {
-    struct msi *msi = msi_new(name, 8, NULL);
-    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *)msi->priv;
+    struct msi              *msi        = msi_new(name, 8, NULL);
+    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *) msi->priv;
     if (!decode_msg)
     {
-        decode_msg = (struct jpg_decode_msg_s *)STREAM_LIBC_ZALLOC(sizeof(struct jpg_decode_msg_s));
-        msi->priv = (void *)decode_msg;
-        msi->action = decode_msg_msi_action;
-        decode_msg->msi = msi;
-        decode_msg->out_w = out_w;
-        decode_msg->out_h = out_h;
+        decode_msg         = (struct jpg_decode_msg_s *) STREAM_LIBC_ZALLOC(sizeof(struct jpg_decode_msg_s));
+        msi->priv          = (void *) decode_msg;
+        msi->action        = decode_msg_msi_action;
+        decode_msg->msi    = msi;
+        decode_msg->out_w  = out_w;
+        decode_msg->out_h  = out_h;
         decode_msg->step_w = step_w;
         decode_msg->step_h = step_h;
         decode_msg->filter = filter;
-        decode_msg->rfb = NULL;
-        msi->enable = 1;
+        decode_msg->rfb    = NULL;
+        decode_msg->ish264 = 0;
+        msi->enable        = 1;
+        // 启动workqueue
+        OS_WORK_INIT(&decode_msg->work, jpg_decode_msg_work, 0);
+        os_run_work_delay(&decode_msg->work, 1);
+    }
+
+    return msi;
+}
+
+struct msi *h264_decode_msg_msi(const char *name, uint16_t out_w, uint16_t out_h, uint16_t step_w, uint16_t step_h, uint32_t filter)
+{
+    struct msi              *msi        = msi_new(name, 8, NULL);
+    struct jpg_decode_msg_s *decode_msg = (struct jpg_decode_msg_s *) msi->priv;
+    if (!decode_msg)
+    {
+        decode_msg         = (struct jpg_decode_msg_s *) STREAM_LIBC_ZALLOC(sizeof(struct jpg_decode_msg_s));
+        msi->priv          = (void *) decode_msg;
+        msi->action        = decode_msg_msi_action;
+        decode_msg->msi    = msi;
+        decode_msg->out_w  = out_w;
+        decode_msg->out_h  = out_h;
+        decode_msg->step_w = step_w;
+        decode_msg->step_h = step_h;
+        decode_msg->filter = filter;
+        decode_msg->rfb    = NULL;
+        decode_msg->ish264 = 0;
+        decode_msg->ish264 = 1;
+        msi->enable        = 1;
         // 启动workqueue
         OS_WORK_INIT(&decode_msg->work, jpg_decode_msg_work, 0);
         os_run_work_delay(&decode_msg->work, 1);

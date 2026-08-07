@@ -24,7 +24,7 @@
 #define ISP_HARDWARE_CLK        ISP_MODULE_CLK_320M
 #endif
 
-extern uint32 y_gamma_tbl[];
+extern _Sensor_YGAMMA y_gamma_tbl[];
 // extern uint32 gamma2p4_tbl[];
 extern uint32 gamma_table_addr[3] ;
 extern uint32 luma_ca_addr[];
@@ -82,19 +82,7 @@ void sensor_info_destory()
     }
 }
 
-void iic_config_handle(uint32 irq, uint32 irq_data, uint32 param1, uint32 param2)
-{
-    _os_printf("iic");
-    struct isp_ae_func_cfg *p_cfg      = (struct isp_ae_func_cfg *)param1;
-    if (p_cfg->devid_id != 0 && p_cfg->cmd_len) {	
-		wake_up_iic_queue(p_cfg->devid_id,(uint8_t*)&p_cfg->data,p_cfg->cmd_len,2,(uint8_t*)NULL);
-        p_cfg->devid_id = 0;
-        p_cfg->cmd_len  = 0;
-	}   
-}
-
-void hgisp_frame_start_handle(uint32 irq, uint32 irq_data, uint32 param1, uint32 param2)
-{
+void hgisp_frame_start_handle(uint32 irq, uint32 irq_data, uint32 param1, uint32 param2) {
     // _os_printf("d");
     // os_printf("%s %d\r\n",__func__,__LINE__);
 }
@@ -124,24 +112,18 @@ volatile struct os_event    isp_event;
 volatile struct os_msgqueue isp_msg;
 int32 isp_task(void *data)
 {
-    struct isp_device *dev = (struct isp_device *)data;
-    struct isp_ae_func_cfg cfg;
-    struct isp_sensor_opt  *p_opt = NULL;
     uint32 flag = 0;
     int32 event_ret = 0;
     int32 msg_ret   = 0;
-    os_memset(&cfg, 0, sizeof(cfg));
-    cfg.data.addr = (uint8 *)av_malloc(ISP_SENSOR_REG_MAX_LEN);
-    if (cfg.data.addr == NULL)
-    {
-        os_printf("isp iic data malloc size %d err\r\n", ISP_SENSOR_REG_MAX_LEN);
-        return RET_ERR;
-    }
+    uint8  msg_cnt     = 0;
+
+    struct isp_device       *dev = (struct isp_device *)data;
+    struct isp_exposure_opt *cfg = NULL;
+    struct isp_sensor_opt   *opt = NULL;
     
     while (1)
     {
-        event_ret = os_event_wait((void *)&isp_event, EVENT_ISP_CALC | EVENT_ISP_FPS_OPT | EVENT_ISP_IMG_OPT, &flag, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 100);
-        // os_printf("%s %d ret : %d\r\n", __func__, __LINE__, ret);
+        event_ret = os_event_wait((void *)&isp_event, EVENT_ISP_CALC | EVENT_ISP_FPS_OPT | EVENT_ISP_IMG_OPT, &flag, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 50);
         if (event_ret)
         {
             continue;
@@ -149,42 +131,40 @@ int32 isp_task(void *data)
 
         if (flag & EVENT_ISP_CALC)
         {
-            _os_printf("c");
-            isp_calculate(dev, &cfg);
-            if (cfg.devid_id != 0 && cfg.cmd_len) {	
-                wake_up_iic_queue(cfg.devid_id, (uint8_t*)&cfg.data, cfg.cmd_len, 2, (uint8_t*)NULL);
-                cfg.devid_id = 0;
-                cfg.cmd_len  = 0;
+            if (cfg && iic_devid_finish(cfg->devid_id) == 1)
+            {
+                cfg->data.size = 0;
+                cfg = NULL;
+            }
+
+            isp_calculate(dev, (void *)&cfg);
+
+            if (cfg)
+            {
+                wake_up_iic_queue(cfg->devid_id, (void *)&cfg->data, cfg->cmd_len, 2, NULL);
             }   
         }
 
-        if (flag & EVENT_ISP_IMG_OPT)
+        if ((flag & EVENT_ISP_IMG_OPT) || (flag & EVENT_ISP_FPS_OPT))
         {
-            p_opt = (struct isp_sensor_opt *)os_msgq_get2((void *)&isp_msg, 100, &msg_ret);
-            if (msg_ret == 0)
+            msg_cnt = os_msgq_cnt((void *)&isp_msg);
+            for (int i = 0; i < msg_cnt; i++)
             {
-                while (1)
+                opt = (struct isp_sensor_opt *)os_msgq_get2((void *)&isp_msg, 100, &msg_ret);
+                if (msg_ret == 0)
                 {
-                    if (iic_devid_finish(p_opt->devid_id))
+                    while(iic_devid_finish(opt->devid_id) != 1)
                     {
-                        break;
-                    } else {
                         os_sleep_ms(1);
                     }
-                    
+                    wake_up_iic_queue(opt->devid_id, (uint8_t*)&opt->data, opt->cmd_len, 2, (uint8_t*)NULL);
                 }
-                wake_up_iic_queue(p_opt->devid_id, (uint8_t*)&p_opt->data, p_opt->cmd_len, 2, (uint8_t*)NULL);
             }
-        }
-
-        if (flag & EVENT_ISP_FPS_OPT)
-        {
-            /* code */
         }
     }
 }
 
-extern const uint16_t __used isp_param[];
+extern const uint16_t isp_param[];
 
 void isp_cfg_dev(){
 	uint8_t ret;
@@ -199,8 +179,10 @@ void isp_cfg_dev(){
     }
 	os_printf("isp cfg....\r\n");
     sensor_init = (struct hgisp_sensor_init *)isp_sensor_param_load((void *)isp_param);
-    if (sensor_init)
+    if (sensor_init && !list_empty((void *)&sensor_info_head))
     {
+        os_event_init((void *)&isp_event);
+        os_msgq_init((void *)&isp_msg, 2);
         ret = isp_open(isp_dev, ISP_HARDWARE_CLK, ISP_INPUT_FIFO_FULL);
         if (!ret)
         {
@@ -208,7 +190,6 @@ void isp_cfg_dev(){
             isp_sensor_param_config(isp_dev, (uint32)sensor_init);
             isp_y_gamma_init(isp_dev  , (uint32)y_gamma_tbl);
             isp_rgb_gamma_init(isp_dev, (uint32)gamma_table_addr[1]);
-            // isp_fifo_init(isp_dev, ISP_INPUT_FIFO_FULL);
             isp_awb_mannul_mode_map(isp_dev, (uint32)isp_awb_mode_map);
             isp_ae_ev_offset_lut(isp_dev, (uint32)ev_offset_lut);
             isp_awb_gain_type(isp_dev, AWB_GAIN_TYPE_AWB, SENSOR_TYPE_MASTER);
@@ -234,10 +215,7 @@ void isp_cfg_dev(){
             isp_request_irq(isp_dev, ISP_IRQ_FLAG_INTF_SLOW, hgisp_frame_slow_handle    , 0);
             isp_request_irq(isp_dev, ISP_IRQ_FLAG_FRM_FAST , hgisp_frame_fast_handle    , 0);
             isp_request_irq(isp_dev, ISP_IRQ_FLAG_MD_DONE  , hgisp_motion_detect_handle , 0);
-            // isp_request_irq(isp_dev, ISP_IRQ_FLAG_IIC_CFG  , iic_config_handle          , 0);
-            os_event_init((void *)&isp_event);
-            os_msgq_init((void *)&isp_msg,1);
-            isp_task_hdl = os_task_create("isp", (void *)isp_task, isp_dev, OS_TASK_PRIORITY_NORMAL, 0, NULL, 2*1024);
+            isp_task_hdl = os_task_create("isp", (void *)isp_task, isp_dev, OS_TASK_PRIORITY_HIGH+1, 0, NULL, 1024);
         } else {
             os_printf("isp open err");
             goto end;

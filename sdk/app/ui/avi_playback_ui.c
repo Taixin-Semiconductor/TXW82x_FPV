@@ -133,6 +133,12 @@ static void enter_playback(lv_event_t * e)
     lv_obj_t *list = list_item->user_data;
     //将当前的流关闭,内部判断是否=NULL,这里就不判断了
 
+    if(ui_s->avi_s)
+    {
+        msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 0);
+        msi_destroy(ui_s->avi_s);
+        ui_s->avi_s = NULL;
+    }
     if(ui_s->play_name)
     {
         STREAM_FREE(ui_s->play_name);
@@ -150,10 +156,11 @@ static void enter_playback(lv_event_t * e)
 
     ui_s->play_name = (uint8_t*)STREAM_MALLOC(PLAY_AVI_STREAM_NAME);
     os_sprintf((char*)ui_s->play_name,"%s_%04d",filename,(uint32_t)os_jiffies());
-    os_printf("struct msi play_name:%s\n",ui_s->play_name);
-    ui_s->avi_s = avi_player_init(S_AVI_PLAYER, (const char *)path);
+    os_printf("struct msi play_name:%s addr:0x%x\n",ui_s->play_name, ui_s->play_name);
+    ui_s->avi_s = avi_player_init((const char *)ui_s->play_name, (const char *)path);
     if(ui_s->avi_s)
     {
+        msi_cmd(R_VIDEO_P0, MSI_CMD_LCD_VIDEO, MSI_VIDEO_ENABLE, 1);
         //设置播放一帧,先去停止播放器
         struct player_forward_stream_s *player_msg = ui_s->player_msi->priv;
         os_work_cancle2(&player_msg->work, 1);
@@ -547,6 +554,11 @@ static void exit_player_ui(lv_event_t * e)
         msi_destroy(ui_s->decode_msi);
         msi_destroy(ui_s->player_msi);
         msi_destroy(ui_s->avi_s);
+        
+        ui_s->avi_s = NULL;
+        ui_s->player_msi = NULL;
+        ui_s->decode_msi = NULL;
+        ui_s->P0_jpg_msi = NULL;
 
         lv_obj_del(ui_s->now_ui);
         if(ui_s->play_name)

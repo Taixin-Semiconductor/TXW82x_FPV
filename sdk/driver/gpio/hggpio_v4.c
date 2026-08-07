@@ -28,7 +28,7 @@
 #endif
 
 /*  debug enable  */
-#define GPIO_ENBUG_EN 0
+#define GPIO_ENBUG_EN 1
 
 /* mode define */
 #define _GPIO_PULL_NONE  0x1
@@ -62,6 +62,7 @@ struct gpio_sysctrl {
     uint32_t                  iofuncin[15];
 #if defined(TXW82X)
     uint32_t                  iomask[9];
+    uint32_t                  io_spare[4];
 #else
     uint32_t                  iomask[2];    
 #endif
@@ -107,7 +108,7 @@ uint32_t hggpio_v4_mask_opa(struct hggpio_v4_hw *reg, uint32_t pin_num, enum gpi
             if ((mask_tmp & ((0xf << (mask_bit %32)))) >> (mask_bit %32) == 0) 
                 return 0;
             else 
-                return __builtin_ctz((mask_tmp & ((0xf << (mask_bit %32)))) >> (mask_bit %32));
+                return 1 + __builtin_ctz((mask_tmp & ((0xf << (mask_bit %32)))) >> (mask_bit %32));
         case IOMASK_OPA_CHECK:
             if (((func_sel-1)%5) < 4) {
                 return ((BIT((func_sel-1)%5))  << ((mask_bit %32))) == 
@@ -308,11 +309,12 @@ static int32_t hggpio_v4_get_omap(struct gpio_device *dev, uint32_t pin)
         return 0;
     }
 
-    iofunc = group_func*5 - 4;
-    if (hggpio_v4_mask_opa(hw, pin, iofunc, IOMASK_OPA_READ))
-        iofunc += hggpio_v4_mask_opa(hw, pin, iofunc, IOMASK_OPA_READ);
+    iofunc = group_func*5 - 5;
+    printf("read mask opa: %d\r\n", hggpio_v4_mask_opa(hw, pin, iofunc+1, IOMASK_OPA_READ));
+    if (hggpio_v4_mask_opa(hw, pin, iofunc+1, IOMASK_OPA_READ))
+        iofunc += hggpio_v4_mask_opa(hw, pin, iofunc+1, IOMASK_OPA_READ);
     else 
-        iofunc += 4;
+        iofunc += 5;
 
     return iofunc;
 }
@@ -371,13 +373,14 @@ static int32_t hggpio_v4_iomap_output(struct gpio_device *gpio, uint32_t pin, en
     struct hggpio_v4_hw *hw      = (struct hggpio_v4_hw *)dev->hw;
     uint32_t iomap_out_pin_pos     = 0;
     uint32_t mode_pin_pos          = 0;
+    uint32_t pio                   = pin;
     uint32_t new_func_sel   = ((iomap_out_func_sel+4)/5);
     volatile uint32_t *operate_ptr = &(hw->IOFUNCOUTCON0);
 
     if (pin < dev->pin_num[0] || pin > dev->pin_num[1]) {
         return -EINVAL;
     }
-
+    
     pin = hggpio_v4_pin_num(dev, pin);
     iomap_out_pin_pos = ((pin & 0x3) << 3);
     mode_pin_pos      = pin *  2;
@@ -400,12 +403,14 @@ static int32_t hggpio_v4_iomap_output(struct gpio_device *gpio, uint32_t pin, en
     hw->AIOEN &= ~(1 << pin);
 #ifdef TXW82X
 	//Config IOFUNCOUTCONx Reg
+    int old_iofunc_sel = 0;
     uint32_t tmp;
 	//如果这个IO已经配置了IOFUNC， 则清空IOFUNC以及对应的IOFUNCMASK
     if( (((*operate_ptr) >> iomap_out_pin_pos)&0xff)) {
 		tmp = ((*operate_ptr) >> iomap_out_pin_pos)&0xff;
 		*operate_ptr = (*operate_ptr & ~(0xFF << iomap_out_pin_pos));
 		hggpio_v4_mask_opa(hw, pin, tmp*5, IOMASK_OPA_CLEAR);
+        old_iofunc_sel = hggpio_v4_get_omap(gpio, pio);
     }
 
 	//iomap_out_func_sel = 0(LL_GPIO_OUTPUT)时不需要配mask
@@ -420,7 +425,11 @@ static int32_t hggpio_v4_iomap_output(struct gpio_device *gpio, uint32_t pin, en
 #endif
     //Config MODE
     hw->MODE = (hw->MODE & ~(0x3 << mode_pin_pos)) | (0x01 << mode_pin_pos);
-    
+    if (old_iofunc_sel) {
+        os_printf("GPIO Output Mapping Warning:"
+            "Pin %d get IOMAP func %d, the IOMAP func %d is disable\n", 
+            pin+dev->pin_num[0], iomap_out_func_sel, old_iofunc_sel);
+    }
     sysctrl_lock();
     return ret_val;
 }
@@ -535,7 +544,7 @@ static int32_t hggpio_v4_somap_config(struct gpio_device *gpio, uint32_t pin, en
 
 	sysctrl_unlock();
 	SYSCTRL->SPAREIO_CON &= ~(0xff << (node<<3));
-	SYSCTRL->SPAREIO_CON |= ((176-smap)<< (node<<3));
+	SYSCTRL->SPAREIO_CON |= ((smap)<< (node<<3));
     sysctrl_lock();
     //同步
     delay_us(10);
@@ -1184,8 +1193,44 @@ static int32 hggpio_v4_enable_irq(struct gpio_device *gpio, uint32 pin, uint32 e
 
 
 #ifdef CONFIG_SLEEP
-int32 hggpio_v4_suspend(struct hggpio_v4 *gpio)
+// #define HGGPIO_SLEEP_TEST(dev) hg_gpio_sleep_test(dev)
+#define HGGPIO_SLEEP_TEST(dev)
+void hg_gpio_sleep_test(struct hggpio_v4 *gpio)
 {
+    uint32_t flag = disable_irq();
+    struct hggpio_v4_hw *hw = (struct hggpio_v4_hw *)gpio->hw;
+    uint32_t *p32;
+    if(hw == (void*)GPIOE_BASE) {
+        p32 = (void*)&SYSCTRL->IOFUNCINCON0;
+        _os_printf("IOFUNCIN:\r\n");
+        for(int i = 0;i<15;i++)
+        {
+            _os_printf("0x%x\r\n", p32[i]);
+        }
+        _os_printf("\r\n");
+        _os_printf("IOFUNCMASK: [0x%x, 0x%x, 0x%x, 0x%x]\r\n"
+            "[0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\r\n""spare: [0x%x, 0x%x, 0x%x, 0x%x]", 
+            SYSCTRL->IOFUNCMASK0, SYSCTRL->IOFUNCMASK1, SYSCTRL->IOFUNCMASK2, 
+            SYSCTRL->IOFUNCMASK3, SYSCTRL->IOFUNCMASK4, SYSCTRL->IOFUNCMASK5,
+            SYSCTRL->IOFUNCMASK6, SYSCTRL->IOFUNCMASK7, SYSCTRL->IOFUNCMASK8,
+            SYSCTRL->SPAREIO_CON, SYSCTRL->SPARE_I_CON0, SYSCTRL->SPARE_I_CON1, 
+            SYSCTRL->SPARE_I_CON2
+        );  
+    }
+
+    _os_printf("*********gpio 0x%x\r\n", hw);
+    p32 = (void*)hw;
+    for(int j = 0;j<0x20+1;j+=4)
+    {
+        _os_printf("0x%08x  0x%08x  0x%08x  0x%08x\r\n", 
+        p32[j], p32[j+1], p32[j+2], p32[j+3]);
+    }
+    enable_irq(flag);
+}
+
+int32 hggpio_v4_suspend(struct dev_obj *obj)
+{
+    struct hggpio_v4 *gpio = (struct hggpio_v4 *)obj;
     struct hggpio_v4_hw *hw = (struct hggpio_v4_hw *)gpio->hw;
 
     gpio->bk.MODE          = hw->MODE;         
@@ -1211,8 +1256,6 @@ int32 hggpio_v4_suspend(struct hggpio_v4 *gpio)
 
     gpio->flag |= GPIO_FLAG_IS_SUSPENDED;
 
-    //irq_disable(gpio->comm_irq_num);
-
     memcpy(gpio_sys.iofuncin, (void*)&SYSCTRL->IOFUNCINCON0, 15*4);
 #if defined(TXW82X)
     gpio_sys.iomask[0] = SYSCTRL->IOFUNCMASK0;
@@ -1224,7 +1267,11 @@ int32 hggpio_v4_suspend(struct hggpio_v4 *gpio)
     gpio_sys.iomask[6] = SYSCTRL->IOFUNCMASK6;
     gpio_sys.iomask[7] = SYSCTRL->IOFUNCMASK7;
     gpio_sys.iomask[8] = SYSCTRL->IOFUNCMASK8;
-#else
+    gpio_sys.io_spare[0] = SYSCTRL->SPAREIO_CON;
+    gpio_sys.io_spare[1] = SYSCTRL->SPARE_I_CON0;
+    gpio_sys.io_spare[2] = SYSCTRL->SPARE_I_CON1;
+    gpio_sys.io_spare[3] = SYSCTRL->SPARE_I_CON2;
+#else	
     gpio_sys.iomask[0] = SYSCTRL->IOFUNCMASK0;
     gpio_sys.iomask[1] = SYSCTRL->IOFUNCMASK1;
 #endif
@@ -1236,35 +1283,13 @@ int32 hggpio_v4_suspend(struct hggpio_v4 *gpio)
     } else {
         gpio_sys.flag &= ~SYSCTRL_FLAG_IS_USB2GPIO;
     }
-    
-#if GPIO_ENBUG_EN
-    uint32_t *p32;
-    if(hw == GPIOE_BASE) {
-        p32 = &SYSCTRL->IOFUNCINCON0;
-        os_printf("IOFUNCIN:\r\n");
-        for(int i = 0;i<15;i++)
-        {
-            os_printf("0x%x\r\n", p32[i]);
-        }
-        os_printf("\r\n");
-        os_printf("IOFUNCMASK: [0x%x, 0x%x]\r\n", SYSCTRL->IOFUNCMASK0, SYSCTRL->IOFUNCMASK1);
-    }
-
-    os_printf("*********gpio_suspend: 0x%x\r\n", hw);
-
-    p32 = (void*)hw;
-    for(int j = 0;j<0x20+1;j+=4)
-    {
-        os_printf("0x%08x  0x%08x  0x%08x  0x%08x\r\n", 
-        p32[j], p32[j+1], p32[j+2], p32[j+3]);
-    }
-#endif
-
+    HGGPIO_SLEEP_TEST(gpio);
     return 0;
 }
 
-int32 hggpio_v4_resume(struct hggpio_v4 *gpio)
+int32 hggpio_v4_resume(struct dev_obj *obj)
 {
+    struct hggpio_v4 *gpio = (struct hggpio_v4 *)obj;
     struct hggpio_v4_hw *hw = (struct hggpio_v4_hw *)gpio->hw;
     if(gpio->flag & GPIO_FLAG_IS_SUSPENDED) {
         hw->MODE          = gpio->bk.MODE;         
@@ -1288,8 +1313,6 @@ int32 hggpio_v4_resume(struct hggpio_v4 *gpio)
         hw->IOFUNCOUTCON2 = gpio->bk.IOFUNCOUTCON2;
         hw->IOFUNCOUTCON3 = gpio->bk.IOFUNCOUTCON3;   
         gpio->flag &= ~GPIO_FLAG_IS_SUSPENDED;
-
-        //irq_enable(gpio->comm_irq_num);
     } 
 
     if(gpio_sys.flag & SYSCTRL_FLAG_IS_SUSPEND) {
@@ -1305,6 +1328,10 @@ int32 hggpio_v4_resume(struct hggpio_v4 *gpio)
             SYSCTRL->IOFUNCMASK6 = gpio_sys.iomask[6];
             SYSCTRL->IOFUNCMASK7 = gpio_sys.iomask[7];
             SYSCTRL->IOFUNCMASK8 = gpio_sys.iomask[8];
+            SYSCTRL->SPAREIO_CON = gpio_sys.io_spare[0];
+            SYSCTRL->SPARE_I_CON0 = gpio_sys.io_spare[1];
+            SYSCTRL->SPARE_I_CON1 = gpio_sys.io_spare[2];
+            SYSCTRL->SPARE_I_CON2 = gpio_sys.io_spare[3];
         #else
             SYSCTRL->IOFUNCMASK0 = gpio_sys.iomask[0];
             SYSCTRL->IOFUNCMASK1 = gpio_sys.iomask[1];
@@ -1320,30 +1347,8 @@ int32 hggpio_v4_resume(struct hggpio_v4 *gpio)
         sysctrl_lock();
         gpio_sys.flag &= ~SYSCTRL_FLAG_IS_SUSPEND;
     }
-
-
-#if GPIO_ENBUG_EN
-    uint32_t *p32;
-    if(hw == (void*)GPIOE_BASE) {
-        p32 = (void*)&SYSCTRL->IOFUNCINCON0;
-        os_printf("IOFUNCIN:\r\n");
-        for(int i = 0;i<15;i++)
-        {
-            os_printf("0x%x\r\n", p32[i]);
-        }
-        os_printf("\r\n");
-        os_printf("IOFUNCMASK: [0x%x, 0x%x]\r\n", SYSCTRL->IOFUNCMASK0, SYSCTRL->IOFUNCMASK1);
-    }
-
-    os_printf("*********gpio_resume 0x%x\r\n", hw);
-    p32 = (void*)hw;
-    for(int j = 0;j<0x20+1;j+=4)
-    {
-        os_printf("0x%08x  0x%08x  0x%08x  0x%08x\r\n", 
-        p32[j], p32[j+1], p32[j+2], p32[j+3]);
-    }
-#endif
-
+    
+    HGGPIO_SLEEP_TEST(gpio);
     return 0;
 }
 #else

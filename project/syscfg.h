@@ -24,6 +24,7 @@ struct system_status {
     int8   evm;
     uint8  channel;
     uint8  wifi_mode;
+    int8   pair_role;
     uint8  bssid[6];
     uint16 wifi_status_code;
     uint16 wifi_reason_code;

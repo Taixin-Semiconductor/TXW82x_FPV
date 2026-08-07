@@ -63,10 +63,6 @@
 #include <unistd.h>
 #endif
 
-#if defined(HAVE_STDINT_H) || defined(USE_WOLFSSL)
-#include <stdint.h>
-#endif
-
 /* Macro to strip 'const' without triggering a compiler warning.
    Use it for APIs that do not or cannot support the const qualifier. */
 #ifdef HAVE_STDINT_H
@@ -208,8 +204,6 @@ struct timeval {
 #  define CURL_SCLOSE(x)  close((x))
 #endif
 
-#define sclose(x)  CURL_SCLOSE(x)
-
 /*
  * Stack-independent version of fcntl() on sockets:
  */
@@ -280,13 +274,14 @@ typedef unsigned int bit;
 
 #include "curl_ctype.h"
 
-/*void assert_internal(const char *__function, unsigned int __line, const char *__assertion);
-
+#ifndef ASSERT
+void assert_internal(const char *__function, unsigned int __line, const char *__assertion, void *lr);
 #define ASSERT(f)   do {                                                            \
         if(!(f)) {                                                  \
-            assert_internal(__ASSERT_FUNC, __LINE__, #f); \
+            assert_internal(__ASSERT_FUNC, __LINE__, #f, __builtin_return_address(0)); \
         }                                                           \
-    } while(0)*/
+    } while(0)
+#endif
 /*
  * Macro used to include code only in debug builds.
  */

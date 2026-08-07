@@ -99,13 +99,16 @@ static rt_err_t _pipe_check(struct uhintf* intf, upipe_t pipe)
  *
  * @return the error code, RT_EOK on successfully.
  */
+
+static rt_uint8_t csw_buff[SIZEOF_CSW + USB_RX_BUFF_RESERVE_SIZE];
+
 static rt_err_t rt_usb_bulk_only_xfer(struct uhintf* intf,
     ustorage_cbw_t cmd, rt_uint8_t* buffer, int timeout)
 {
     rt_size_t size;
     rt_err_t ret;
     upipe_t pipe;
-    struct ustorage_csw csw;
+    ustorage_csw_t csw = (ustorage_csw_t)csw_buff;
     ustor_t stor;
 
     RT_ASSERT(cmd != RT_NULL);
@@ -153,7 +156,8 @@ static rt_err_t rt_usb_bulk_only_xfer(struct uhintf* intf,
 
         /* receive the csw */
         size = rt_usb_hcd_pipe_xfer(stor->pipe_in->inst->hcd, stor->pipe_in,
-            &csw, SIZEOF_CSW, timeout);
+            csw_buff, SIZEOF_CSW, timeout);
+
         if(size != SIZEOF_CSW)
         {
             rt_kprintf("csw size error\n");
@@ -179,15 +183,15 @@ static rt_err_t rt_usb_bulk_only_xfer(struct uhintf* intf,
 
 
     /* check csw status */
-    if(csw.signature != CSW_SIGNATURE || csw.tag != CBW_TAG_VALUE)
+    if(csw->signature != CSW_SIGNATURE || csw->tag != CBW_TAG_VALUE)
     {
         rt_kprintf("csw signature error\n");
         goto __exit_err;
     }
 
-    if(csw.status != 0)
+    if(csw->status != 0)
     {
-        rt_kprintf("csw status error:%d\n",csw.status);
+        rt_kprintf("csw status error:%d\n",csw->status);
         goto __exit_err;
     }
 

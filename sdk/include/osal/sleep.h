@@ -171,7 +171,7 @@ void os_sleep_ms(int32 msec);
 extern void os_sleep_us(int us);
 
 int usleep(useconds_t usec);
-unsigned int sleep(unsigned int us);
+unsigned int sleep(unsigned int sec);
 void delay_us(uint32 n);
 
 int sys_sleepcb_init(void);

@@ -18,7 +18,8 @@ struct hgosd {
     osdenc_irq_hdl         irq_hdl;
     uint32              irq_data;
     uint32              irq_num;
-    uint32              opened:1, use_dma:1;
+    uint32              opened:1, use_dma:1, dsleep:1;
+	uint32 *cfg_backup;
 };
 int32 hgosdenc_attach(uint32 dev_id, struct hgosd *lcdc);
 

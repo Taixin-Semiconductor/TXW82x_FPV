@@ -14,7 +14,8 @@
 #include "osal/task.h"
 #include "osal/sleep.h"
 
-
+//调用外部接口
+void driver_timer_add(int32_t (*func)(void *arg,uint32_t kick_time), void *arg);
 
 struct hgjpg_hw
 {
@@ -138,7 +139,7 @@ void JPG_IRQHandler_action(void *p_jpg)
 		src_from = (hw->DMA_CON& 0xE0)>>5;
 		for(loop = JPG_IRQ_NUM-1;loop >= 0;loop--)	{			
 			if(sta&BIT(loop)){	
-				if(jpg_hw->opened)
+				if(jpg_hw->opened || jpg_hw->decode)
 				{
 					if(loop == DONE_IRQ){				
 						jpg_hw->addr_count = 0;
@@ -147,12 +148,14 @@ void JPG_IRQHandler_action(void *p_jpg)
 							arg2 = 1;
 						}
 						jpg_hw->deal_time = 0;
+						jpg_hw->decode = 0;
 					}
 					else if(loop == JPG_BUF_ERR){
 						_os_printf(KERN_INFO"hw->DMA_STA1:%x\r\n",hw->DMA_STA);
 						jpg_hw->addr_count = 0;
 						arg = hw->DMA_DLEN;
 						jpg_hw->deal_time = 0;
+						jpg_hw->decode = 0;
 						if(hw->DMA_STA & BIT(8)){
 							dec_err = 1;
 						}					
@@ -171,6 +174,7 @@ void JPG_IRQHandler_action(void *p_jpg)
 
 				
 					if(dec_err == 1){
+						jpg_hw->decode = 0;
 						hw->DMA_CON |= BIT(12);	//复位
 						__NOP();__NOP();__NOP();					
 					}	
@@ -236,14 +240,22 @@ int32 hgjpg_open(struct jpg_device *p_jpg){
 	struct hgjpg *jpg_hw = (struct hgjpg*)p_jpg; 
 	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;
 	uint8 jpg_chose;
+
+	//fix psram read data lock bug
+	//burst enable 0
+	//1ms
+	//burst enable 1
 	if(hw == (void *)MJPEG0_BASE){
 		jpg_chose = 0;
 	}
 
 	if(hw == (void *)MJPEG1_BASE){
 		jpg_chose = 1;
+		hw->CSR1 = 0;
+		uint32_t jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
+		(void)jpgr;
 	}
-
+	
 	//SCHED->BW_STA_CYCLE = 60000000;
 	//SCHED->CTRL_CON      |=BIT(1);
 	//open之前先将pending清除(预防之前pengding有残留)
@@ -258,6 +270,65 @@ int32 hgjpg_open(struct jpg_device *p_jpg){
 	return 0;
 }
 
+
+int32_t hgjpg_timer_close(void *arg,uint32_t kick_time)
+{
+	struct hgjpg *jpg_hw = (struct hgjpg*)arg;
+	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;
+	int32_t ret = 1;
+	//代表jpg已经完成
+	if(!(hw->DMA_STA&(0x7<<25)))
+	{
+		ret = 0;
+	}
+
+	//超时也要退出
+	if(os_jiffies() - kick_time > 1000)
+	{
+		ret = 0;
+	}
+
+	//关闭jpg
+	if(!ret)
+	{
+		uint8_t jpg_chose = 0;
+		uint32_t flag;
+		flag = disable_irq();
+		hw->DMA_CON &= ~(7<<5);
+		hw->DMA_CON |= (SOFT_DATA <<5);
+		if(hw == (void *)MJPEG0_BASE){
+			jpg_chose = 0;
+		}
+
+		if(hw == (void *)MJPEG1_BASE){
+			jpg_chose = 1;
+		}
+		enable_irq(flag);
+
+
+		flag = disable_irq();
+		hw->DMA_CON &= ~BIT(0);				//disable jpg
+		hw->DMA_STA = hw->DMA_STA;
+		if(hw == (void *)MJPEG0_BASE){
+			jpg_chose = 0;
+		}
+
+		if(hw == (void *)MJPEG1_BASE){
+			jpg_chose = 1;
+			hw->CSR1 = 0;
+			uint32_t jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
+			(void)jpgr;
+		}
+		jpg_ready[jpg_chose] = 0;
+		enable_irq(flag);
+		jpg_hw->opened	= 0;
+		jpg_hw->decode = 0;
+		jpg_hw->addr_count = 0;
+		jpg_hw->jpg_run = 0;
+	}
+
+	return ret;
+}
 int32 hgjpg_close(struct jpg_device *p_jpg){
 	struct hgjpg *jpg_hw = (struct hgjpg*)p_jpg; 
 	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;
@@ -266,37 +337,43 @@ int32 hgjpg_close(struct jpg_device *p_jpg){
     uint32_t in_disable_irq(void);
 	if(!(__in_interrupt() || in_disable_irq()))
 	{
-		flag = disable_irq();
-		hw->DMA_CON &= ~(7<<5);
-		hw->DMA_CON |= (SOFT_DATA <<5);
-		enable_irq(flag);
-		os_sleep_ms(1);
+		//在线程,jpg的close启动timer去操作
+		driver_timer_add(hgjpg_timer_close,(void*)jpg_hw);
 	}
+	//在中断,则直接去关闭
 	else
 	{
-		while(hw->DMA_STA&(0x7<<25));
-	}
-	//jpg_open(jpg_hw->hw,0);
-	
-	flag = disable_irq();
-	hw->DMA_CON &= ~BIT(0);				//disable jpg
-	hw->DMA_STA = hw->DMA_STA;
-	if(hw == (void *)MJPEG0_BASE){
-		jpg_chose = 0;
+		hw->DMA_CON &= ~(7<<5);
+		hw->DMA_CON |= (SOFT_DATA <<5);
+		if(hw == (void *)MJPEG0_BASE){
+			jpg_chose = 0;
+		}
+		
+		if(hw == (void *)MJPEG1_BASE){
+			jpg_chose = 1;
+		}
+
+		flag = disable_irq();
+		hw->DMA_CON &= ~BIT(0);				//disable jpg
+		hw->DMA_STA = hw->DMA_STA;
+		if(hw == (void *)MJPEG0_BASE){
+			jpg_chose = 0;
+		}
+
+		if(hw == (void *)MJPEG1_BASE){
+			jpg_chose = 1;
+			hw->CSR1 = 0;
+			uint32_t jpgr = *(volatile uint32_t*)0x40005200;     //fix jpg reg error bug,imp	
+			(void)jpgr;
+		}
+		jpg_ready[jpg_chose] = 0;
+		enable_irq(flag);
+		jpg_hw->opened	= 0;
+		jpg_hw->decode = 0;
+		jpg_hw->addr_count = 0;
+		jpg_hw->jpg_run = 0;
 	}
 
-	if(hw == (void *)MJPEG1_BASE){
-		jpg_chose = 1;
-	}
-	jpg_ready[jpg_chose] = 0;
-	enable_irq(flag);
-	jpg_hw->opened	= 0;
-	jpg_hw->decode = 0;
-	jpg_hw->addr_count = 0;
-	
-	//hw->CSR0 = 0;	
-	jpg_hw->jpg_run = 0;
-	//os_printf("close hw:%X\n",hw);
 	return 0;
 }
 
@@ -306,43 +383,56 @@ int32 hgjpg_suspend(struct dev_obj *obj){
 	struct hgjpg_hw *hw_cfg;
 	jpg_hw->cfg_backup = (uint32 *)os_malloc(sizeof(struct hgjpg_hw));
 	//memcpy((uint8 *)p_jpg->cfg_backup,(uint8 *)jpg_hw->hw,sizeof(struct hgjpg_hw));
-	SYSCTRL->CLK_CON3 &= ~BIT(14);					//close jpg clk
 	hw_cfg = (struct hgjpg_hw*)jpg_hw->cfg_backup;
 	hw     = (struct hgjpg_hw*)jpg_hw->hw;
-	//hw_cfg->CSR0 	= hw->CSR0;
+	hw_cfg->CSR0 	= hw->CSR0;
 	hw_cfg->CSR1 	= hw->CSR1;
 	hw_cfg->CSR2 	= hw->CSR2;
 	hw_cfg->CSR3 	= hw->CSR3;
-	hw_cfg->DMA_CON = hw->DMA_CON;
+	hw_cfg->DMA_CON1= hw->DMA_CON1;
 	hw_cfg->DMA_STA = hw->DMA_STA;
+	hw_cfg->DMA_DHT_ADR = hw->DMA_DHT_ADR;
+	hw_cfg->DMA_DADR= hw->DMA_DADR; 
+	hw_cfg->DMA_DTO = hw->DMA_DTO;
+	hw_cfg->DMA_SF_YADR = hw->DMA_SF_YADR;
+	hw_cfg->DMA_SF_UADR = hw->DMA_SF_UADR;
+	hw_cfg->DMA_SF_VADR = hw->DMA_SF_VADR;
 	hw_cfg->DMA_TADR0 = hw->DMA_TADR0;
 	hw_cfg->DMA_TADR1 = hw->DMA_TADR1;
 	hw_cfg->DMA_DLEN  = hw->DMA_DLEN;
-	
+	hw_cfg->DMA_CON = hw->DMA_CON;	
 	irq_disable(jpg_hw->irq_num);
 	return 0;
 }
 
+
 int32 hgjpg_resume(struct dev_obj *obj){
+	uint32 jpgr = 0;
 	struct hgjpg *jpg_hw = (struct hgjpg*)obj;
 	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;	
 	struct hgjpg_hw *hw_cfg;
 	struct hgjpg_table_hw *thw  = (struct hgjpg_table_hw *)jpg_hw->thw;
 	struct hgjpg_huff_hw *hufhw  = (struct hgjpg_huff_hw *)jpg_hw->huf_hw;
-	SYSCTRL->CLK_CON3 |= BIT(14);					//open jpg clk	
 	//memcpy((uint8 *)jpg_hw->hw,(uint8 *)p_jpg->cfg_backup,sizeof(struct hgjpg_hw));	
 	hw_cfg = (struct hgjpg_hw*)jpg_hw->cfg_backup;
 	jpg_table_init(hw,thw,hufhw,0x01);
-	//hw->CSR0 	= hw_cfg->CSR0;
+	hw->CSR0 	= hw_cfg->CSR0;
 	hw->CSR1 	= hw_cfg->CSR1;
 	hw->CSR2 	= hw_cfg->CSR2;
 	hw->CSR3 	= hw_cfg->CSR3;
+	hw->DMA_CON1= hw_cfg->DMA_CON1;
 	hw->DMA_STA = hw_cfg->DMA_STA;
+	hw->DMA_DHT_ADR = hw_cfg->DMA_DHT_ADR;
+	hw->DMA_DADR= hw_cfg->DMA_DADR; 
+	hw->DMA_DTO = hw_cfg->DMA_DTO;
+	hw->DMA_SF_YADR = hw_cfg->DMA_SF_YADR;
+	hw->DMA_SF_UADR = hw_cfg->DMA_SF_UADR;
+	hw->DMA_SF_VADR = hw_cfg->DMA_SF_VADR;
 	hw->DMA_TADR0 = hw_cfg->DMA_TADR0;
 	hw->DMA_TADR1 = hw_cfg->DMA_TADR1;
 	hw->DMA_DLEN  = hw_cfg->DMA_DLEN;
 	hw->DMA_CON = hw_cfg->DMA_CON;
-	
+	jpgr = *(volatile uint32_t*)0x40005200;
 	irq_enable(jpg_hw->irq_num);
 	os_free(jpg_hw->cfg_backup);
 	return 0;
@@ -354,6 +444,8 @@ int32 hgjpg_init(struct jpg_device *p_jpg,uint32 table_index,uint32 qt){
 	struct hgjpg_hw *hw  = (struct hgjpg_hw *)jpg_hw->hw;
 	struct hgjpg_table_hw *thw  = (struct hgjpg_table_hw *)jpg_hw->thw;
 	struct hgjpg_huff_hw *hufhw  = (struct hgjpg_huff_hw *)jpg_hw->huf_hw;
+	hw->DMA_CON |= BIT(12);	//复位
+	__NOP();__NOP();__NOP();
 	SYSCTRL->CLK_CON3 |= BIT(14);   
 	SYSCTRL->SYS_CON0 |= BIT(2);	//
 	jpg_table_init(hw,thw,hufhw,table_index);

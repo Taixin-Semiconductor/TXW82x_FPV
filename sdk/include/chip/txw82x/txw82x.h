@@ -470,7 +470,7 @@ typedef struct {
     volatile uint8 cpu1_ready;
     volatile uint8 soft_int_pending;
     uint8_t  print_level;
-    uint8_t  disable_print:1, dcache_maint_en:1, rev:6;
+    uint8_t  disable_print:1, dcache_maint_en:1, afh_en:1, rev:5;
     uint8_t  vif_maxcnt;
     uint8_t  bss_maxcnt;
     uint16_t dbg_flags;
@@ -490,6 +490,9 @@ typedef struct {
     uint32_t skbpool_size;
     uint32_t skbpool_flag;
     uint32_t heap_flag;
+    uint32_t afh_chan_mask;
+    uint32_t psram_rsv_addr_core0;
+    
 } txw82x_CoreSetting;
 #define CoreSetting   ((txw82x_CoreSetting *) CORESETTING_BASE)
 

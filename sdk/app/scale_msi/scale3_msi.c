@@ -19,6 +19,7 @@ struct scale3_yuv_arg_s
 {
     struct yuv_arg_s yuv_arg;
 	uint16_t ow,oh;
+	uint16_t ox,oy;
 	uint8_t tx_type;    //0~3  :video     4:error fb   
 };
 
@@ -46,47 +47,56 @@ extern uint8 *yuvbuf1;
 struct  scale_msg_t scale3_msg[3] = {
 	//ISP_VIDEO_0
 	{
-		.iw = 640,
-		.ih = 480,
 		.ow = 320,
 		.oh = 180,
 		.x  = 0,
 		.y  = 0,
+		.video_only = 0,
 	},
 	//ISP_VIDEO_1
 	{
-		.iw = 640,
-		.ih = 360,
 		.ow = 320,
 		.oh = 180,
-		.x	= 360,
+		.x	= 320,
 		.y	= 0,
+		.video_only = 0,
 	},
 	//ISP_VIDEO_2
 	{
-		.iw = 640,
-		.ih = 360,
 		.ow = 320,
 		.oh = 180,
 		.x	= 0,
-		.y	= 200,
+		.y	= 180,
+		.video_only = 0,
 	},
 };
 
 
 
 
-static int32_t scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param1)
-{
-    struct scale3_msi_s *scale3 = (struct scale3_msi_s *)irq_data;
-    struct framebuff *fb = NULL;
-    uint8_t *p_buf;
+static int32_t scale3_vpp_done_func(uint32 irq_data){
+	struct scale3_msi_s *scale3 = (struct scale3_msi_s *)irq_data;
+	struct framebuff *fb = NULL;
+	uint8_t *p_buf;
+	uint16_t xm,ym;
+	uint16_t videow,videoh;
 	uint8_t sennum = 0;
-    struct scale3_yuv_arg_s *arg;
+	struct scale3_yuv_arg_s *arg;
 	uint8_t errfb;
+
+	if (SCALE3_YUVBUF_0_1 == 0) 
+	{
+		extern uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
+		get_vpp_w_h(&videow, &videoh);
+	}
+	else if (SCALE3_YUVBUF_0_1 == 1)
+	{
+		extern uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
+		get_vpp1_w_h(&videow, &videoh);
+	}	
 //	static uint32_t  scaler_cnt;
-    //判断序号,有可能双镜头
-//    scale3->seq++;
+	//判断序号,有可能双镜头
+//	  scale3->seq++;
 	if(scale3->txpool_type == 1){
 		fb = fbpool_get(&scale3->tx_pool0, 0, scale3->msi);
 	}else{
@@ -116,7 +126,6 @@ static int32_t scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param
 		fb = fbpool_get(&scale3->tx_poolerr, 0, scale3->msi);
 		errfb = 1;
 	}
-
 	if(video_msg.video_num == 1){
 		sennum = 0;
 	}else if(video_msg.video_num == 2){
@@ -129,30 +138,39 @@ static int32_t scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param
 		if((video_msg.video_type_cur == ISP_VIDEO_1)||(video_msg.video_type_cur == ISP_VIDEO_2)){
 			sennum = 0;
 		}else if(video_msg.video_type_last == ISP_VIDEO_1){
-			sennum = 2;	
+			sennum = 2; 
 		}else if(video_msg.video_type_last == ISP_VIDEO_2){
 			sennum = 1;
 		}
 	}
 
 	
-  	arg = (struct scale3_yuv_arg_s*)fb->priv;
+	arg = (struct scale3_yuv_arg_s*)fb->priv;
 	if(errfb){
 		scale3->ow = 128;//ow;
 		scale3->oh = 96;//oh;
+		xm = 0;
+		ym = 0;		
 	}else{
 		if(fb->len != (scale3_msg[sennum].ow * scale3_msg[sennum].oh * 3)/2 ){
 			scale3->ow = arg->ow;
 			scale3->oh = arg->oh;
+
+			xm = arg->ox;
+			ym = arg->oy;		
 		}else{
 			scale3->ow = scale3_msg[sennum].ow;//ow;
 			scale3->oh = scale3_msg[sennum].oh;//oh;
+			xm = scale3_msg[sennum].x;
+			ym = scale3_msg[sennum].y;
 		}
 	}
-	scale3->iw = scale3_msg[sennum].iw;//iw;
-	scale3->ih = scale3_msg[sennum].ih;//ih;					
-	arg->yuv_arg.x = scale3_msg[sennum].x;
-	arg->yuv_arg.y = scale3_msg[sennum].y;
+	scale3->iw = videow;//scale3_msg[sennum].iw;//iw;
+	scale3->ih = videoh;//scale3_msg[sennum].ih;//ih;					
+	arg->yuv_arg.x = xm;//scale3_msg[sennum].x;
+	arg->yuv_arg.y = ym;//scale3_msg[sennum].y;
+	arg->yuv_arg.video_only = scale3_msg[sennum].video_only;
+	arg->yuv_arg.y_size = scale3->ow*scale3->oh;
 	arg->yuv_arg.out_w = scale3->ow;
 	arg->yuv_arg.out_h = scale3->oh;
 	
@@ -162,32 +180,50 @@ static int32_t scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param
 	scale_set_in_yaddr(scale3->scale_dev, (uint32)scale3->scaler3buf);
 	scale_set_in_uaddr(scale3->scale_dev, (uint32)scale3->scaler3buf + scale3->iw * SCALE3_YUVBUF_Y_OFF_LINE);
 	scale_set_in_vaddr(scale3->scale_dev, (uint32)scale3->scaler3buf + scale3->iw * SCALE3_YUVBUF_Y_OFF_LINE + scale3->iw * SCALE3_YUVBUF_Y_OFF_LINE/4);
-	_os_printf("S");
+
 //	_os_printf("M(%x  %x)",fb,fb->data);
 	fb->len  = scale3->ow * scale3->oh * 3 / 2;
-    // 配置新的空间地址
-    p_buf = (uint8_t *)fb->data;
-    scale_set_out_yaddr(scale3->scale_dev, (uint32)p_buf);
-    scale_set_out_uaddr(scale3->scale_dev, (uint32)p_buf + scale3->ow * scale3->oh);
-    scale_set_out_vaddr(scale3->scale_dev, (uint32)p_buf + scale3->ow * scale3->oh + scale3->ow * scale3->oh / 4);
-
+	// 配置新的空间地址
+	p_buf = (uint8_t *)fb->data;
+	scale_set_out_yaddr(scale3->scale_dev, (uint32)p_buf);
+	scale_set_out_uaddr(scale3->scale_dev, (uint32)p_buf + scale3->ow * scale3->oh);
+	scale_set_out_vaddr(scale3->scale_dev, (uint32)p_buf + scale3->ow * scale3->oh + scale3->ow * scale3->oh / 4);
+	
 	if(errfb){
 		msi_delete_fb(NULL, fb);
 		return 0;
 	}
-	
+
+	arg = (struct scale3_yuv_arg_s *)scale3->now_fb->priv;
 	scale3->now_fb->stype = FSTYPE_YUV_P0+video_msg.video_type_cur;
-    // 发送now_data,发送失败也要返回
-    if (os_msgq_put(&scale3->msgq, (uint32_t)scale3->now_fb, 0))
-    {
-        // 正常不能中断del,但是这个模块是内部,只要del没有一些等待信号量操作,问题不大
-        msi_delete_fb(NULL, scale3->now_fb);
-        scale3->now_fb = NULL;
-        //return 0;
-    }
-    
-    scale3->now_fb = fb;
-    // os_printf("%s:%d\n",__FUNCTION__,__LINE__);
+	
+	// 发送now_data,发送失败也要返回
+
+	if(arg->tx_type == video_msg.video_type_cur){
+		if (os_msgq_put(&scale3->msgq, (uint32_t)scale3->now_fb, 0))
+		{
+			// 正常不能中断del,但是这个模块是内部,只要del没有一些等待信号量操作,问题不大
+			msi_delete_fb(NULL, scale3->now_fb);
+			scale3->now_fb = NULL;
+			//return 0;
+		}
+	}else{
+		msi_delete_fb(NULL, scale3->now_fb);
+	}
+
+	
+	scale3->now_fb = fb;
+	// os_printf("%s:%d\n",__FUNCTION__,__LINE__);
+	return 0;
+
+
+}
+
+static int32_t scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32 param1)
+{	
+	//*(volatile uint32_t*)0x400e0124 |= (1<<14);
+	//*(volatile uint32_t*)0x400e0124 &= ~(1<<14);
+
     return 0;
 }
 
@@ -220,6 +256,7 @@ static int32 scale3_stream_work(struct os_work *work)
 	if(arg->tx_type == 4){
 		fbpool_put(&scale3->tx_poolerr, fb);
 	}else{
+		//_os_printf("<S %08x>",fb->data);
 		ret = msi_output_fb(scale3->msi, fb);
 	}
 	
@@ -230,9 +267,13 @@ scale3_stream_work_end:
     return 0;
 }
 
+
+
+
 static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
 {
     int32_t ret = RET_OK;
+	uint32 ie;	
     struct scale3_msi_s *scale3 = (struct scale3_msi_s *)msi->priv;
 	struct scale3_yuv_arg_s *arg;
     switch (cmd_id)
@@ -249,17 +290,17 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 			for(int init_txpool_num = 0; init_txpool_num < temp_video_num ; init_txpool_num++) {
             while (1)
             {
-					fb = fbpool_get(&scale3->tx_pool0 + init_txpool_num, 0, NULL);
+				fb = fbpool_get(&scale3->tx_pool0 + init_txpool_num, 0, NULL);
                 if (!fb)
                 {
                     break;
                 }
-					if(fb->data)
-					{
-						//os_printf("D(%x  %x)\n",fb,fb->data);
-						STREAM_FREE(fb->data);
-						fb->data = NULL;
-					}
+				if(fb->data)
+				{
+					//os_printf("D(%x  %x)\n",fb,fb->data);
+					STREAM_FREE(fb->data);
+					fb->data = NULL;
+				}
                 // 预分配空间释放
                 if (fb->priv)
                 {
@@ -318,6 +359,8 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
                 fb = NULL;
             }
 
+			vppdone_func_unregister(SCALER3_DONE);
+
 			if (scale3->msgq.hdl) {
 				os_msgq_del(&scale3->msgq);
 			}
@@ -353,13 +396,18 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 			
 			if (fb->data && (type < 4))
 			{
+				ie = disable_irq();
 				if(fb->len != (scale3_msg[type].ow * scale3_msg[type].oh * 3) / 2){
 					STREAM_FREE(fb->data);																		  //释放之前的空间
-					fb->data = (uint8_t *)STREAM_MALLOC((scale3_msg[type].ow * scale3_msg[type].oh * 3) / 2);   //申请到新的大空间
+					fb->data = (uint8_t *)STREAM_MALLOC((scale3_msg[type].ow * scale3_msg[type].oh * 3) / 2);     //申请到新的大空间
+					sys_dcache_invalid_range((void *)fb->data, (scale3_msg[type].ow * scale3_msg[type].oh * 3) / 2);
 					fb->len = (scale3_msg[type].ow * scale3_msg[type].oh * 3) / 2;
 					arg->ow = scale3_msg[type].ow;
 					arg->oh = scale3_msg[type].oh;
+					arg->ox = scale3_msg[type].x;
+					arg->oy = scale3_msg[type].y;					
 				}
+				enable_irq(ie);
 			}
 			//这里要更改一下，看put到哪里去
 			if(type == 0){
@@ -389,6 +437,7 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
                     //注意line buf的数量
 					uint8_t video_type = 0;
 					uint8_t *p_buf;
+					uint16_t videow,videoh;
 					struct fbpool * tx_pool;
 					struct framebuff *fb;
 
@@ -412,6 +461,16 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 						}
 					} 
 
+					if (SCALE3_YUVBUF_0_1 == 0) 
+					{
+						extern uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
+						get_vpp_w_h(&videow, &videoh);
+					}
+					else if (SCALE3_YUVBUF_0_1 == 1)
+					{
+						extern uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
+						get_vpp1_w_h(&videow, &videoh);
+					}
 
                     scale_set_start_addr(scale3->scale_dev, 0, 0);
                     // 暂时固定,如果遇到需要动态修改的,可以通过参数之类来切换
@@ -422,8 +481,8 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 				
 			        scale3->ow = scale3_msg[video_type].ow;//ow;
 			        scale3->oh = scale3_msg[video_type].oh;//oh;
-			        scale3->iw = scale3_msg[video_type].iw;//iw;
-			        scale3->ih = scale3_msg[video_type].ih;//ih;	
+			        scale3->iw = videow;//scale3_msg[video_type].iw;//iw;
+			        scale3->ih = videoh;//scale3_msg[video_type].ih;//ih;	
 			        
 					
                     // 暂时用同样的iw ih ow oh
@@ -451,7 +510,7 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
 					arg = (struct scale3_yuv_arg_s*)fb->priv; 
 					arg->yuv_arg.x = scale3_msg[video_type].x;
 					arg->yuv_arg.y = scale3_msg[video_type].y;
-					os_printf("arg w:%d  arg h:%d\r\n",arg->yuv_arg.out_w,arg->yuv_arg.out_h);
+					//os_printf("arg w:%d  arg h:%d\r\n",arg->yuv_arg.out_w,arg->yuv_arg.out_h);
 
                     p_buf = fb->data;
                     scale3->now_fb = fb;
@@ -466,6 +525,8 @@ static int32_t scale3_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
                     struct vpp_device *vpp_dev;
                     vpp_dev = (struct vpp_device *)dev_get(HG_VPP_DEVID);
                     vpp_open(vpp_dev);
+
+					vppdone_func_register(SCALER3_DONE,scale3_vpp_done_func,(uint32)scale3);
                 }
                 break;
             }
@@ -520,16 +581,16 @@ struct msi *scale3_msi(const char *name)
 		for(int init_txpool_num = 0; init_txpool_num < temp_video_num ; init_txpool_num++) {
 			int fbpool_init_size = 0;
 
-			if (SCALE3_YUVBUF_0_1 == 0) 
-			{
-				extern uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
-				get_vpp_w_h(&scale_msg[init_txpool_num]->iw, &scale_msg[init_txpool_num]->ih);
-			}
-			else if (SCALE3_YUVBUF_0_1 == 1)
-			{
-				extern uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
-				get_vpp1_w_h(&scale_msg[init_txpool_num]->iw, &scale_msg[init_txpool_num]->ih);
-			}
+			//if (SCALE3_YUVBUF_0_1 == 0) 
+			//{
+			//	extern uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h);
+				//get_vpp_w_h(&scale_msg[init_txpool_num]->iw, &scale_msg[init_txpool_num]->ih);
+			//}
+			//else if (SCALE3_YUVBUF_0_1 == 1)
+			//{
+			//	extern uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h);
+				//get_vpp1_w_h(&scale_msg[init_txpool_num]->iw, &scale_msg[init_txpool_num]->ih);
+			//}
 
 			switch (init_txpool_num)
 			{
@@ -648,13 +709,14 @@ static int32_t const_scale3_stream_done(uint32 irq_flag, uint32 irq_data, uint32
     return 0;
 }
 
-void scale3_output_size_local_change(uint8_t id,uint16 x,uint16 y,uint16 w,uint16 h){
+void scale3_output_size_local_change(uint8_t id,uint8_t show_only,uint16 x,uint16 y,uint16 w,uint16 h){
 	uint32 ie;
 	ie = disable_irq();
 	scale3_msg[id].x = x;
 	scale3_msg[id].y = y;
 	scale3_msg[id].ow = w;
 	scale3_msg[id].oh = h;
+	scale3_msg[id].video_only = show_only;
 	enable_irq(ie);
 }
 

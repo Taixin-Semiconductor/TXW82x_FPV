@@ -28,12 +28,9 @@ include Makefile.inc
 
 CMAKE_DIST = CMakeLists.txt curl_config.h.cmake
 
-CHECKSRC_DIST = .checksrc \
-  curlx/.checksrc vauth/.checksrc vquic/.checksrc vssh/.checksrc vtls/.checksrc
-
 EXTRA_DIST = config-mac.h config-os400.h config-plan9.h config-riscos.h \
   config-win32.h curl_config.h.in $(LIB_RCFILES) libcurl.def            \
-  $(CMAKE_DIST) Makefile.soname optiontable.pl $(CHECKSRC_DIST)
+  $(CMAKE_DIST) Makefile.soname optiontable.pl
 
 lib_LTLIBRARIES = libcurl.la
 
@@ -66,7 +63,6 @@ AM_CPPFLAGS = -I$(top_srcdir)/include   \
 # Prevent LIBS from being used for all link targets
 LIBS = $(BLANK_AT_MAKETIME)
 
-AM_CPPFLAGS += -DBUILDING_LIBCURL
 AM_LDFLAGS =
 AM_CFLAGS =
 if DEBUGBUILD
@@ -75,6 +71,7 @@ endif
 if CURLDEBUG
 AM_CPPFLAGS += -DCURLDEBUG
 endif
+AM_CPPFLAGS += -DBUILDING_LIBCURL
 
 if DOING_NATIVE_WINDOWS
 CSOURCES += dllmain.c
@@ -162,7 +159,7 @@ CHECKSOURCES = checksrc
 endif
 endif
 
-all-local: $(CHECKSOURCES) $(UNITPROTOS)
+all-local: $(CHECKSOURCES)
 
 UNIT_V = $(UNITV_$(V))
 UNITV_0 = @echo "  UNITPR  " $@;
@@ -174,7 +171,7 @@ $(UNITPROTOS): $(CSOURCES)
 	$(UNIT_V)(cd $(srcdir) && @PERL@ ../scripts/extract-unit-protos $(CSOURCES) > $(top_builddir)/lib/$(UNITPROTOS))
 
 # disable the tests that are mostly causing false positives
-TIDYFLAGS := -checks=-clang-analyzer-security.insecureAPI.bzero,-clang-analyzer-security.insecureAPI.strcpy,-clang-analyzer-optin.performance.Padding,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling -quiet
+TIDYFLAGS := -checks=-clang-analyzer-security.insecureAPI.bzero,-clang-analyzer-security.insecureAPI.strcpy,-clang-analyzer-optin.performance.Padding,-clang-analyzer-security.ArrayBound,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling -quiet
 if CURL_WERROR
 TIDYFLAGS += --warnings-as-errors=*
 endif

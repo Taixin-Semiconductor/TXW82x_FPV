@@ -4,6 +4,7 @@
 #include "basic_include.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "audio_code_ctrl.h"
 
 #ifdef PSRAM_HEAP
 #define AAC_CODE_MALLOC    av_psram_malloc
@@ -20,22 +21,7 @@
 #define AAC_DEBUG(fmt, args...)     		//os_printf(fmt, ##args)
 #define AAC_INFO      					    os_printf
 
-struct msi *aac_encode_init(uint8_t *filename, uint32_t samplerate, uint8_t direct_to_record);
-int32_t aac_encode_deinit(uint8_t stop_record);
-void aac_encode_continue(void);
-void aac_encode_pause(void);
-void aac_encode_clear(void);
-int32_t aac_encode_add_output(const char *msi_name);
-int32_t aac_encode_del_output(const char *msi_name);  
-uint8_t get_aac_encode_status(void);
-
-struct msi *aac_decode_init(uint8_t *filename, uint8_t direct_to_dac);
-int32_t aac_decode_deinit(void);
-void aac_decode_continue(void);
-void aac_decode_pause(void);
-void aac_decode_clear(void);
-int32_t aac_decode_add_output(const char *msi_name);
-int32_t aac_decode_del_output(const char *msi_name);
-uint8_t get_aac_decode_status(void);
+struct msi *aac_encode_init(char *filename, uint32_t samplerate, uint8_t direct_to_record, AUENC_INIT *auenc_init);
+struct msi *aac_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *audec_init);
 
 #endif

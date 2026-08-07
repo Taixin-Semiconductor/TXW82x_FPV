@@ -109,7 +109,7 @@ typedef struct {
 
     void     *arg;
     uint32_t  runtime;
-    int32_t   errno;
+    int32_t   task_errno;
 } ktask_t;
 
 typedef void (*task_entry_t)(void *arg);

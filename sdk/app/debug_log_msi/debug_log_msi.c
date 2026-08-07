@@ -17,7 +17,6 @@
 
 #define DBG_LOG_FAIL_TIMES (3)
 
-
 static int32_t debug_log_action(struct msi *msi, uint32_t cmd_id, uint32_t param1, uint32_t param2)
 {
     int32_t           ret   = RET_OK;
@@ -52,6 +51,7 @@ static int32_t debug_log_action(struct msi *msi, uint32_t cmd_id, uint32_t param
                 DEBUG_LOG_STREAM_FREE(fb->data);
                 fb->data = NULL;
             }
+            fb->rev = 0;
             fbpool_put(&log_s->tx_pool, fb);
             // 不需要内核去释放fb
             ret = RET_OK + 1;
@@ -212,22 +212,65 @@ again:
     return buf;
 }
 
-
+uint8_t *get_debug_buf_interrupt(struct dbg_log_s *log_s, uint32_t *write_len, uint32_t len)
+{
+    uint8_t *buf;
+    uint32_t remain_size;
+    //uint32_t flags;
+    if (log_s->fb)
+    {
+        buf         = log_s->fb->data + log_s->offset;
+        remain_size = DEBUG_LOG_CACHE_SIZE - log_s->offset;
+        if (remain_size >= len)
+        {
+            *write_len = len;
+        }
+        else
+        {
+            *write_len     = remain_size;
+            log_s->fb->rev = 1; // 标记有数据漏了,log那里可以记录一下
+        }
+        if (!remain_size)
+        {
+            *write_len = 0;
+            buf        = NULL;
+        }
+        log_s->offset += (*write_len);
+    }
+    else
+    {
+        *write_len = 0;
+        buf        = NULL;
+    }
+    return buf;
+}
 
 void hgprntf_debug_log_msi(void *priv, char *str, int32 len)
 {
-    uint32_t in_disable_irq(void);
+    uint32_t          in_disable_irq(void);
+    uint8_t          *buf;
+    struct dbg_log_s *log_s = (struct dbg_log_s *) priv;
     if (__in_interrupt() || in_disable_irq())
     {
+        uint32_t cp_len;
+        if (len == 0)
+        {
+            len = os_strlen(str);
+        }
+        buf = get_debug_buf_interrupt(log_s, &cp_len, len);
+        if (buf)
+        {
+            os_memcpy(buf, str, cp_len);
+            len -= cp_len;
+            str += cp_len;
+        }
         return;
     }
-    uint8_t          *buf;
-    struct dbg_log_s *log_s = (struct dbg_log_s *)priv;
+
     if (len == 0)
     {
         len = os_strlen(str);
     }
-
     do
     {
         uint32_t cp_len;

@@ -3,6 +3,7 @@
 
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "audio_media_ctrl/audio_code_ctrl.h"
 
 #ifdef PSRAM_HEAP
 #define AUTPC_MALLOC av_psram_malloc
@@ -14,6 +15,9 @@
 #define AUTPC_FREE   av_free
 #endif
 
-struct msi *autpc_msi_init(uint32_t samplerate, uint32_t speed, uint32_t pitch, uint32_t max_inputSamples);
+struct msi *autpc_msi_init(uint32_t samplerate, uint32_t speed, uint32_t pitch, uint32_t max_inputSamples, AUDIO_TRACK *audio_track);
+int32_t autpc_msi_add_output(struct msi *msi, const char *msi_name);
+int32_t autpc_msi_del_output(struct msi *msi, const char *msi_name);
+int32_t autpc_msi_deinit(struct msi *msi);
 
 #endif

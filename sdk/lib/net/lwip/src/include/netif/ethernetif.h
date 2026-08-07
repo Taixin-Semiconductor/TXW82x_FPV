@@ -98,4 +98,10 @@ uint32 lwip_netif_ipaddr4(struct netif* netif);
 uint8 *lwip_netif_ipaddr6(struct netif* netif);
 err_t lwip_netif_linkoutput(struct netif* netif, struct pbuf *buf);
 
+
+err_t lwip_netif_set_dhcp_renew(struct netdev *ndev);
+err_t lwip_netif_set_dhcp_renew2(const char *name);
+int32 lwip_netif_dhcp_leasetime(struct netdev *ndev, uint32 *t0, uint32 *t1, uint32 *t2);
+int32 lwip_netif_dhcp_leasetime2(const char *name, uint32 *t0, uint32 *t1, uint32 *t2);
+
 #endif /* LWIP_ETHERNETIF_H */

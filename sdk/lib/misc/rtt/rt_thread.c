@@ -52,7 +52,7 @@ rt_err_t rt_thread_init(struct rt_thread *thread, const char *name, void (*entry
 
     os_task_init((const uint8 *)name, thread, entry, (uint32)parameter);
     os_task_set_priority(thread, priority);
-    os_task_set_stack(thread, stack_start, stack_size);
+    os_task_set_stack(thread, stack, stacksize);
     return RT_EOK;
 }
 

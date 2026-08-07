@@ -97,16 +97,16 @@ enum CPU1_RPC_FUNCID {
     RPC_FUNC_ID(ieee80211_conf_set_isolate),
     RPC_FUNC_ID(ieee80211_conf_set_ft),
     RPC_FUNC_ID(ieee80211_pair_enable),
-
-    //BT
     RPC_FUNC_ID(hci_controller_recv),
-
-    //audio
     RPC_FUNC_ID(audio_coder_run),
-
-    //lvgl
     RPC_FUNC_ID(lvgl_frame_rotate_rpc_init),
     RPC_FUNC_ID(lvgl_frame_rotate_rpc),
+    RPC_FUNC_ID(ieee80211_conf_set_pair_ngo),
+    RPC_FUNC_ID(ieee80211_conf_set_mutl_pair),
+    RPC_FUNC_ID(ieee80211_conf_set_linkcost_param),
+    RPC_FUNC_ID(ieee80211_conf_set_pair_channel),
+    RPC_FUNC_ID(ieee80211_conf_get_tx_mcs),
+    RPC_FUNC_ID(ieee80211_conf_set_tx_mcs),
 
     /////////////////////////////////
     CPU1_RPC_FUNCID_NUM,

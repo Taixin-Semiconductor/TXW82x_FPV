@@ -92,6 +92,15 @@ typedef struct
 
 typedef struct
 {
+    uint8_t version;
+    uint8_t flags[3];
+    uint8_t pre_defined[4];
+    uint8_t handler_type[4];
+    uint8_t reserved[12];
+} mp4_hdlr;
+
+typedef struct
+{
     uint8_t  version;
     uint8_t  flags[3];
     uint32_t creation_time;
@@ -132,6 +141,9 @@ typedef struct
     uint16_t pps_len;
     uint8_t *sps;
     uint16_t sps_len;
+
+    uint32_t *key_frame_bitmap;
+    uint32_t  key_frame_bitmap_count;
 
 } main_box;
 
@@ -185,7 +197,7 @@ typedef struct
 
 typedef struct
 {
-    uint32_t type; // video或者sound
+    uint32_t type; // video或者sound,0是无效,1是视频,2是音频
     uint32_t init;
     mp4_trak trak;
     main_box box;
@@ -200,7 +212,7 @@ typedef struct
 struct mp4_demux_msi_s
 {
     struct msi     *msi;
-    char        *filename; // 只是保存指针,不会被用到
+    char           *filename;
     F_FILE         *fp;
     trak            trak_t[2]; // trak0:视频，trak1:音频
     uint8_t         trak_index;
@@ -209,6 +221,8 @@ struct mp4_demux_msi_s
     uint8_t        *sps;
     uint16_t        pps_len;
     uint16_t        sps_len;
+    uint16_t        w;
+    uint16_t        h;
     uint32_t        play_vframe_num; // 视频播放第几帧
     uint32_t        jmp_vframe_num;  // 视频播放第几帧
     uint32_t        play_aframe_num; // 音频播放第几帧
@@ -238,6 +252,40 @@ uint32_t general_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, 
     return ret;
 }
 
+uint32_t trak_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
+{
+    int32_t  r_len = max_size - 8;
+    uint32_t ret;
+    // os_printf("[%s] offset:%X\tlen:%d\n", box_name, osal_ftell(fp), r_len);
+    ret          = box_read(mp4_demux, box_name, r_len);
+    // 如果是视频,则生成关键帧的key_bitmap
+    trak *trak_t = &mp4_demux->trak_t[mp4_demux->trak_index];
+    if (!ret && trak_t->type == 1)
+    {
+        uint32_t  bitmap;
+        uint32_t  bitmap_index;
+        uint32_t  bitmap_offset;
+        main_box *box = &trak_t->box;
+        if (box->key_frame_bitmap)
+        {
+            for (int i = 0; i < box->stss_count; i++)
+            {
+                // MP4的索引从1开始
+                bitmap = BIG4_ENDIAN(box->stss[i].sample_number) - 1;
+                // 如果超过了,就不要去处理了
+                if (box->key_frame_bitmap_count * 32 > bitmap)
+                {
+                    bitmap_index  = bitmap / 0x20;
+                    bitmap_offset = bitmap % 0x20;
+                    box->key_frame_bitmap[bitmap_index] |= (1 << bitmap_offset);
+                    // 记录关键帧的偏移,用bitmap
+                }
+            }
+        }
+    }
+    return ret;
+}
+
 uint32_t not_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
 {
     os_printf("%s:%d\tname:%s\n", __FUNCTION__, __LINE__, box_name);
@@ -250,6 +298,26 @@ uint32_t mdat_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int
     F_FILE *fp    = mp4_demux->fp;
     int32_t r_len = max_size - 8;
     os_printf("offset:%X\tlen:%d\n", osal_ftell(fp), r_len);
+    return 0;
+}
+
+uint32_t hdlr_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int32_t max_size)
+{
+    F_FILE  *fp = mp4_demux->fp;
+    mp4_hdlr hdlr;
+    uint32_t ret;
+    trak    *trak_t = &mp4_demux->trak_t[mp4_demux->trak_index];
+    ret             = osal_fread(&hdlr, 1, sizeof(mp4_hdlr), fp);
+    if (os_memcmp(hdlr.handler_type, "vide", 4) == 0)
+    {
+        trak_t->type = 1;
+        os_printf("video\n");
+    }
+    else if (os_memcmp(hdlr.handler_type, "soun", 4) == 0)
+    {
+        trak_t->type = 2;
+        os_printf("audio\n");
+    }
     return 0;
 }
 
@@ -384,7 +452,11 @@ static uint32_t avc1_sample_parse(struct mp4_demux_msi_s *mp4_demux, const char 
     MP4_ABORT(ret == 0);
     ret = box_read(mp4_demux, box_name, max_size - sizeof(AVC1Box));
     MP4_ABORT(ret > 0);
+    os_printf("box width:%X\theight:%X\n", BIG2_ENDIAN(avc1_box.width), BIG2_ENDIAN(avc1_box.height));
+    mp4_demux->w = BIG2_ENDIAN(avc1_box.width);
+    mp4_demux->h = BIG2_ENDIAN(avc1_box.height);
 abort_end:
+    mp4_demux->h = BIG2_ENDIAN(avc1_box.height);
     os_printf("%s:%d\tret:%d\n", __FUNCTION__, __LINE__, ret);
     return ret;
 }
@@ -536,6 +608,12 @@ static uint32_t stco_sample_parse(struct mp4_demux_msi_s *mp4_demux, const char 
         box->stco = (mp4_stco *) STREAM_MALLOC(chunk_offset_box_entry_count * sizeof(mp4_stco));
         ret       = osal_fread(box->stco, chunk_offset_box_entry_count, sizeof(mp4_stco), fp);
         MP4_ABORT(ret == 0);
+
+        // 这里申请key_frame的空间,用于记录关键帧
+        uint32_t key_frame_count    = (chunk_offset_box_entry_count + 0x1f) & (~0x1f);
+        key_frame_count             = key_frame_count / 0x20;
+        box->key_frame_bitmap       = (uint32_t *) STREAM_ZALLOC(key_frame_count * sizeof(uint32_t));
+        box->key_frame_bitmap_count = key_frame_count;
     }
 abort_end:
     return ret;
@@ -619,10 +697,23 @@ uint32_t mp4a_parse(struct mp4_demux_msi_s *mp4_demux, const char *box_name, int
 }
 
 const MP4_parse_register MP4_func[] = {
-        {"moov", general_parse}, {"trak", general_parse}, {"mdia", general_parse}, {"minf", general_parse},
-        {"stbl", general_parse}, {"stts", stts_parse},    {"stsc", stsc_parse},    {"stsz", stsz_parse},
-        {"stco", stco_parse},    {"stss", stss_parse},    {"mdat", mdat_parse},    {"stsd", stsd_parse},
-        {"avc1", avc1_parse},    {"avcC", avcc_parse},    {"mp4a", mp4a_parse},    {(const char *) NULL, not_parse},
+        {"moov", general_parse},
+        {"trak", trak_parse},
+        {"mdia", general_parse},
+        {"minf", general_parse},
+        {"stbl", general_parse},
+        {"stts", stts_parse},
+        {"stsc", stsc_parse},
+        {"stsz", stsz_parse},
+        {"stco", stco_parse},
+        {"stss", stss_parse},
+        {"mdat", mdat_parse},
+        {"stsd", stsd_parse},
+        {"avc1", avc1_parse},
+        {"avcC", avcc_parse},
+        {"mp4a", mp4a_parse},
+        {"hdlr", hdlr_parse},
+        {(const char *) NULL, not_parse},
 };
 
 MP4_parse_func get_func(const char *name)
@@ -802,10 +893,12 @@ void mp4_demux_thread(void *d)
 
     // 这里开始进行视频的播放,需要填充时间戳,然后解码给到播放器或者其他地方
     // 这里会不停发送数据,这里只是管自己是否有多余的节点,播放速度以及快进快退由其他地方发命令
-    uint32_t last_play_time = os_jiffies();
+
     // 主要是为了不要随意删除当前msi,只有触发命令才可以退出
     msi_get(msi);
-    os_event_wait(&mp4_demux->evt, MP4_DEMUX_START | MP4_DEMUX_STOP, &rflags, OS_EVENT_WMODE_CLEAR | OS_EVENT_WMODE_OR, -1);
+    os_event_wait(&mp4_demux->evt, MP4_DEMUX_START | MP4_DEMUX_STOP, &rflags, OS_EVENT_WMODE_OR, -1);
+
+    uint32_t last_play_time = os_jiffies();
 
     if (rflags & MP4_DEMUX_STOP)
     {
@@ -842,8 +935,8 @@ void mp4_demux_thread(void *d)
         else
         {
             vframe_offset = get_frame_offset(&mp4_demux->trak_t[0], mp4_demux->play_vframe_num, &vframe_size);
-            os_printf("vframe_offset:%d\tvframe_size:%d\n", vframe_offset, vframe_size);
-            os_printf("mp4_demux->play_vframe_num:%d\n", mp4_demux->play_vframe_num);
+            // os_printf("vframe_offset:%d\tvframe_size:%d\n", vframe_offset, vframe_size);
+            //  os_printf("mp4_demux->play_vframe_num:%d\n", mp4_demux->play_vframe_num);
             if (!vframe_offset || vframe_size == 0)
             {
                 flag |= BIT(0);
@@ -871,7 +964,17 @@ void mp4_demux_thread(void *d)
                 // 配置播放的时间
                 last_play_time             = os_jiffies() - video_timestamp;
                 mp4_demux->play_aframe_num = video_timestamp / (1024 * 1000 / mp4_demux->audio_samplerate);
+                flag = 0;
                 goto mp4_demux_thread_JMP;
+            }
+            rflags = 0;
+            // 如果是暂停,则重复等待
+            os_event_wait(&mp4_demux->evt, MP4_DEMUX_START, &rflags, OS_EVENT_WMODE_OR, 0);
+            if (!(rflags & MP4_DEMUX_START))
+            {
+                os_sleep_ms(1);
+                last_play_time = os_jiffies() - video_timestamp;
+                goto mp4_demux_thread_again;
             }
 
             fb = fbpool_get(&mp4_demux->tx_pool, 0, mp4_demux->msi);
@@ -885,14 +988,14 @@ void mp4_demux_thread(void *d)
                 extern uint8_t is_key_frame(trak * trak_t, uint32_t frame_num);
                 // os_printf("is key:%d\n", is_key_frame(NULL, mp4_demux->play_vframe_num));
                 fb->time = get_frame_num_pts(&mp4_demux->trak_t[0], mp4_demux->play_vframe_num);
-                fb->data = (uint8_t *) STREAM_MALLOC(vframe_size);
+                fb->data = (uint8_t *) STREAM_MALLOC(vframe_size - 4);
                 if (!fb->data)
                 {
                     msi_delete_fb(NULL, fb);
                     os_sleep_ms(1);
                     continue;
                 }
-                fb->len   = vframe_size;
+                fb->len   = vframe_size - 4;
                 fb->mtype = F_H264;
                 fb->stype = FSTYPE_H264_FILE;
                 osal_fseek(mp4_demux->fp, vframe_offset + 4);
@@ -914,6 +1017,8 @@ void mp4_demux_thread(void *d)
                         priv->type             = 1;
                         priv->count            = count;
                         priv->start_len        = 0;
+                        priv->w                = mp4_demux->w;
+                        priv->h                = mp4_demux->h;
                     }
                     else
                     {
@@ -922,8 +1027,10 @@ void mp4_demux_thread(void *d)
                         fb->priv               = (void *) priv;
                         priv->count            = count;
                         priv->start_len        = 0;
+                        priv->w                = mp4_demux->w;
+                        priv->h                = mp4_demux->h;
                     }
-                    // os_printf("play_vframe_num:%d\tkey:%d\tfb:%X\tpriv:%X\tcount:%d\n",mp4_demux->play_vframe_num,is_key_frame(NULL, mp4_demux->play_vframe_num),fb,fb->priv,count);
+                    // os_printf("play_vframe_num:%d\tkey:%d\tfb:%X\tpriv:%X\tcount:%d\n",mp4_demux->play_vframe_num,is_key_frame(&mp4_demux->trak_t[0], mp4_demux->play_vframe_num),fb,fb->priv,count);
                     count++;
                     msi_output_fb(mp4_demux->msi, fb);
                     _os_printf("M");
@@ -948,6 +1055,11 @@ void mp4_demux_thread(void *d)
             flag |= BIT(1);
             continue;
         }
+
+        if(flag & BIT(1))
+        {
+            continue;
+        }
         if (get_frame_num_pts(&mp4_demux->trak_t[1], mp4_demux->play_aframe_num) > os_jiffies() - last_play_time)
         {
             os_sleep_ms(1);
@@ -962,6 +1074,7 @@ void mp4_demux_thread(void *d)
                 {
                     break;
                 }
+                continue;
             }
             if (aframe_size)
             {
@@ -986,6 +1099,7 @@ void mp4_demux_thread(void *d)
                 if (err)
                 {
                     aac_dsi_to_adts(mp4_demux->aac_dsi, fb->data, aframe_size);
+                    
                     msi_output_fb(mp4_demux->msi, fb);
                     fb = NULL;
                 }
@@ -1051,6 +1165,11 @@ mp4_demux_thread_exit:
         {
             STREAM_FREE(box->pps);
         }
+
+        if (box->key_frame_bitmap)
+        {
+            STREAM_FREE(box->key_frame_bitmap);
+        }
     }
     os_event_set(&mp4_demux->evt, MP4_DEMUX_EXIT, NULL);
     os_printf("mp4_demux_thread exit\tret:%d\n", ret);
@@ -1086,13 +1205,11 @@ static int32_t mp4_demux_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
                 STREAM_LIBC_FREE(mp4_demux->pps);
                 mp4_demux->pps = NULL;
             }
-
-            if (mp4_demux->filename)
-            {
-                STREAM_FREE(mp4_demux->filename);
-                mp4_demux->filename = NULL;
-            }
             STREAM_LIBC_FREE(mp4_demux);
+            if(msi->name)
+            {
+                msi->name = NULL;
+            }
         }
         break;
 
@@ -1160,6 +1277,12 @@ static int32_t mp4_demux_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
                     os_event_set(&mp4_demux->evt, MP4_DEMUX_START, NULL);
                     break;
                 }
+                case MSI_VIDEO_DEMUX_PAUSE:
+                {
+                    os_event_wait(&mp4_demux->evt, MP4_DEMUX_START, NULL, OS_EVENT_WMODE_CLEAR | OS_EVENT_WMODE_OR, 0);
+                    break;
+                }
+                break;
                 default:
                     break;
             }
@@ -1173,6 +1296,60 @@ static int32_t mp4_demux_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
     return ret;
 }
 
+uint8_t *mp4_demux_get_sps(struct msi *msi, uint16_t *sps_len)
+{
+    struct mp4_demux_msi_s *mp4_demux = (struct mp4_demux_msi_s *) msi->priv;
+    main_box               *box       = &mp4_demux->trak_t[0].box;
+    if (box->sps)
+    {
+        if (sps_len)
+        {
+            *sps_len = box->sps_len;
+        }
+        return box->sps;
+    }
+    return NULL;
+}
+
+uint8_t *mp4_demux_get_pps(struct msi *msi, uint16_t *pps_len)
+{
+    struct mp4_demux_msi_s *mp4_demux = (struct mp4_demux_msi_s *) msi->priv;
+    main_box               *box       = &mp4_demux->trak_t[0].box;
+    if (box->pps)
+    {
+        if (pps_len)
+        {
+            *pps_len = box->pps_len;
+        }
+        return box->pps;
+    }
+    return NULL;
+}
+
+uint8_t is_key_frame(trak *trak_t, uint32_t frame_num)
+{
+    main_box *box = &trak_t->box;
+    // 没有stss,默认所有都是关键帧,暂时仅仅支持视频
+    if (!box->stss || trak_t->type != 1)
+    {
+        return 1;
+    }
+    uint32_t bitmap = frame_num;
+    uint32_t bitmap_index;
+    uint32_t bitmap_offset;
+    if (box->key_frame_bitmap)
+    {
+        if (box->key_frame_bitmap_count * 32 > bitmap)
+        {
+            bitmap_index  = bitmap / 0x20;
+            bitmap_offset = bitmap % 0x20;
+            return box->key_frame_bitmap[bitmap_index] & (1 << bitmap_offset) ? 1 : 0;
+        }
+    }
+
+    return 0;
+}
+
 struct msi *mp4_demux_msi_init(const char *msi_name, const char *filename)
 {
     uint8_t                 isnew     = 0;
@@ -1180,30 +1357,34 @@ struct msi *mp4_demux_msi_init(const char *msi_name, const char *filename)
     struct mp4_demux_msi_s *mp4_demux = NULL;
     if (isnew)
     {
-        mp4_demux = (struct mp4_demux_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct mp4_demux_msi_s));
+        mp4_demux = (struct mp4_demux_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct mp4_demux_msi_s) + strlen(filename) + 1+strlen(msi_name)+1);
         if (!mp4_demux)
         {
             goto mp4_demux_msi_init_err;
         }
-        char *name     = STREAM_MALLOC(strlen(filename) + 1);
-        mp4_demux->msi = msi;
-        memcpy(name, filename, strlen(filename) + 1);
-        mp4_demux->filename = name;
-        msi->priv           = (void *) mp4_demux;
+        mp4_demux->filename = (char *) (mp4_demux + 1);
+        mp4_demux->msi      = msi;
+        memcpy(mp4_demux->filename, filename, strlen(filename) + 1);
+        msi->priv     = (void *) mp4_demux;
         // 先open文件
-        mp4_demux->fp       = osal_fopen(name, "rb");
+        mp4_demux->fp = osal_fopen(mp4_demux->filename, "rb");
         if (!mp4_demux->fp)
         {
-            os_printf("file open fail:%s\n", name);
+            os_printf("file open fail:%s\n", mp4_demux->filename);
             goto mp4_demux_msi_init_err;
         }
+        char *new_msi_name = mp4_demux->filename+strlen(filename) + 1;
+        memcpy(new_msi_name, msi_name, strlen(msi_name) + 1);
+        msi->name = new_msi_name;
         msi->action = mp4_demux_msi_action;
+        new_msi_name = NULL;
         os_event_init(&mp4_demux->evt);
         fbpool_init(&mp4_demux->tx_pool, MAX_MP4_DEMUX_TX);
 
         uint32_t filesize = osal_fsize(mp4_demux->fp);
         uint32_t mp4_ret  = box_read(mp4_demux, "start", filesize);
         os_printf("mp4_ret:%d\n", mp4_ret);
+
         uint16_t sps_len, pps_len;
         uint8_t *sps = mp4_demux_get_sps(msi, &sps_len);
         uint8_t *pps = mp4_demux_get_pps(msi, &pps_len);
@@ -1253,127 +1434,4 @@ mp4_demux_msi_init_err:
     }
 mp4_demux_msi_init_end:
     return msi;
-}
-
-uint8_t *mp4_demux_get_sps(struct msi *msi, uint16_t *sps_len)
-{
-    struct mp4_demux_msi_s *mp4_demux = (struct mp4_demux_msi_s *) msi->priv;
-    main_box               *box       = &mp4_demux->trak_t[0].box;
-    if (box->sps)
-    {
-        if (sps_len)
-        {
-            *sps_len = box->sps_len;
-        }
-        return box->sps;
-    }
-    return NULL;
-}
-
-uint8_t *mp4_demux_get_pps(struct msi *msi, uint16_t *pps_len)
-{
-    struct mp4_demux_msi_s *mp4_demux = (struct mp4_demux_msi_s *) msi->priv;
-    main_box               *box       = &mp4_demux->trak_t[0].box;
-    if (box->pps)
-    {
-        if (pps_len)
-        {
-            *pps_len = box->pps_len;
-        }
-        return box->pps;
-    }
-    return NULL;
-}
-
-uint8_t is_key_frame(trak *trak_t, uint32_t frame_num)
-{
-    main_box *box = &trak_t->box;
-    uint32_t  last_key_frame, next_key_frame;
-    // 没有stss,默认所有都是关键帧
-    if (!box->stss)
-    {
-        return 1;
-    }
-    frame_num = frame_num + 1; // MP4内部是从1开始,数组搜索是从0开始,所以需要+1
-    // 尝试快速索引一下关键帧的位置
-    if (box->key_frame_offset < box->stco_count)
-    {
-        if (box->key_frame_offset < box->stco_count - 1)
-        {
-            last_key_frame = BIG4_ENDIAN(box->stss[box->key_frame_offset].sample_number);
-            next_key_frame = BIG4_ENDIAN(box->stss[box->key_frame_offset + 1].sample_number);
-
-            // 判断是否在范围
-            if (last_key_frame <= frame_num && next_key_frame > frame_num)
-            {
-                return frame_num == last_key_frame;
-            }
-            // 不在范围,往后面去搜索
-            else if (frame_num > next_key_frame)
-            {
-                last_key_frame = BIG4_ENDIAN(box->stss[box->key_frame_offset].sample_number);
-                for (int i = box->key_frame_offset; i < box->stss_count; i++, box->key_frame_offset++)
-                {
-                    next_key_frame = BIG4_ENDIAN(box->stss[i].sample_number);
-                    // 找到了,退出,应该返回last_find_main_frame
-                    if (next_key_frame > frame_num)
-                    {
-
-                        return frame_num == last_key_frame;
-                    }
-                    last_key_frame = next_key_frame;
-                }
-                return 0;
-            }
-            // 重头搜索
-            else
-            {
-                last_key_frame        = BIG4_ENDIAN(box->stss[0].sample_number);
-                box->key_frame_offset = 0;
-                for (int i = 0; i < box->stss_count; i++, box->key_frame_offset++)
-                {
-                    next_key_frame = BIG4_ENDIAN(box->stss[i].sample_number);
-                    // 找到了,退出,应该返回last_find_main_frame
-                    if (next_key_frame > frame_num)
-                    {
-                        return frame_num == last_key_frame;
-                    }
-                    last_key_frame = next_key_frame;
-                }
-                return 0;
-            }
-        }
-        // box->key_frame_offset 特殊,搜索已经到最后了
-        else
-        {
-            last_key_frame = BIG4_ENDIAN(box->stss[box->key_frame_offset].sample_number);
-            if (last_key_frame <= frame_num)
-            {
-                return frame_num == last_key_frame;
-            }
-
-            // 小,要重头开始搜索
-            else
-            {
-                last_key_frame        = BIG4_ENDIAN(box->stss[0].sample_number);
-                box->key_frame_offset = 0;
-                for (int i = 0; i < box->stss_count; i++, box->key_frame_offset++)
-                {
-                    next_key_frame = BIG4_ENDIAN(box->stss[i].sample_number);
-                    // 找到了,退出,应该返回last_find_main_frame
-                    if (next_key_frame > frame_num)
-                    {
-                        return frame_num == last_key_frame;
-                    }
-                    last_key_frame = next_key_frame;
-                }
-            }
-        }
-    }
-    // 异常?暂时不支持大于,如果有必要,可以采用重头开始搜索,但这里不处理
-    else
-    {
-    }
-
-    return 0;
 }

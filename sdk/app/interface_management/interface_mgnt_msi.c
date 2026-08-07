@@ -140,7 +140,13 @@ void lvgl_init_msi(uint16_t w,uint16_t h,uint8_t rotate)
 	lv_style_set_radius(&g_style, 0); 
 
 	// lv_demo_benchmark(1);
+
+	#ifdef SYS_APP_WALKIE_TALKIE
+	void walkie_talkie_demo(void);
+	walkie_talkie_demo();
+	#else
 	main_ui(NULL);
+	#endif
 
 	os_task_create("gui_thread", lvgl_run_msi, NULL, OS_TASK_PRIORITY_ABOVE_NORMAL, 0, NULL, 4096);
 

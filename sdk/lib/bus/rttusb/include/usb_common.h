@@ -24,6 +24,21 @@ extern "C" {
 #define RT_DEBUG_USB                    0x00
 #define USB_DYNAMIC                     0x00
 
+/* 
+针对 USB DMA RX , 需做的内存预留大小为 4 字节, 防止 DMA 内存越界引起的内存错误问题
+
+USB1.1 SIE:
+(1) rx len % 4 == 1 实际 dma sram 会少 1 byte , 即 rx len - 1 (USB1.1驱动已修复)
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+USB2.0 SIE: 
+(1) rx len % 4 == 1 实际 dma sram 会多 2 byte , 即 rx len + 2
+(2) rx len % 4 == 2 实际 dma sram 会多 1 byte , 即 rx len + 1
+(3) rx len % 4 == 0 || rx len % 4 == 3 实际 dma sram 长度与 rx len相同 , 即 rx len
+
+*/
+#define USB_RX_BUFF_RESERVE_SIZE        (4)     //接收缓存预留的大小（防止越界）
 
 #define USB_CLASS_DEVICE                0x00
 #ifndef _UAPI__LINUX_USB_CH9_H
@@ -512,6 +527,7 @@ typedef struct urequest* ureq_t;
 #define SIZEOF_CBW                      0x1f
 #define SIZEOF_INQUIRY_CMD              0x24
 #define SIZEOF_MODE_SENSE_6             0x4
+#define SIZEOF_MODE_SENSE_10            0x4
 #define SIZEOF_READ_CAPACITIES          0xc
 #define SIZEOF_READ_CAPACITY            0x8
 #define SIZEOF_REQUEST_SENSE            0x12
@@ -531,6 +547,7 @@ typedef struct urequest* ureq_t;
 #define SCSI_READ_10                    0x28
 #define SCSI_WRITE_10                   0x2a
 #define SCSI_VERIFY_10                  0x2f
+#define SCSI_MODE_SENSE_10              0x5a
 
 #define CBW_SIGNATURE                   0x43425355
 #define CSW_SIGNATURE                   0x53425355

@@ -263,6 +263,6 @@ void iic_thread_init(){
 
 	INIT_LIST_HEAD((struct list_head *)&iic_queue_head);
 	iicwq_sema_init();
-	os_task_create("iic_thread", iic_run_thread, NULL, OS_TASK_PRIORITY_HIGH, 0, NULL, 1024);
+	os_task_create("iic_thread", iic_run_thread, NULL, OS_TASK_PRIORITY_HIGH-1, 0, NULL, 1024);
 }
 

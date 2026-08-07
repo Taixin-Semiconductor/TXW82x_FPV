@@ -48,7 +48,7 @@ struct gen420_msi_s
     uint32_t          magic;
     uint8_t           hardware_ready;
     uint16_t         *filter_type;
-    uint8_t          force_type;
+    uint8_t           force_type;
     uint16_t          last_w, last_h;
     uint8_t           src_from;
     uint8_t           which_jpg;
@@ -87,7 +87,7 @@ static int32_t gen420_free(struct gen420_msg_s *msg)
 {
     struct gen420_msi_s *gen420 = (struct gen420_msi_s *) msg->fn_data;
     unregister_gen420_queue(gen420->queue_value);
-    // msi_do_cmd(gen420->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 0);
+    msi_do_cmd(gen420->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 0);
     //  移除
     msi_delete_fb(NULL, gen420->fb);
     gen420->fb = NULL;
@@ -129,7 +129,8 @@ static int32_t gen420_run(void *fn_data, struct framebuff *fb, uint16_t w, uint1
 
 static int32 gen420_jpg_work(struct os_work *work)
 {
-    struct gen420_msi_s *gen420 = (struct gen420_msi_s *) work;
+    uint32_t             delay_time = 0;
+    struct gen420_msi_s *gen420     = (struct gen420_msi_s *) work;
     uint8_t              last_lock_value;
     int32_t              ret;
 
@@ -148,7 +149,7 @@ static int32 gen420_jpg_work(struct os_work *work)
                 {
                     msi_delete_fb(NULL, gen420->fb);
                     gen420->fb = NULL;
-                    if(gen420->stop)
+                    if (gen420->stop)
                     {
                         return 0;
                     }
@@ -197,8 +198,8 @@ static int32 gen420_jpg_work(struct os_work *work)
                 {
                     jpg_mutex_unlock_check(gen420->which_jpg, gen420->lock_value);
                     os_printf("gen420->register_jpg_msi init err\r\n");
-                    os_run_work_delay(work, 1);
-                    return 0;
+                    delay_time = 1;
+                    goto gen420_jpg_work_end;
                 }
                 struct yuv_arg_s *yuv_msg;
                 yuv_msg = (struct yuv_arg_s *) gen420->fb->priv;
@@ -223,8 +224,8 @@ static int32 gen420_jpg_work(struct os_work *work)
             }
             else
             {
-                os_run_work_delay(work, 1);
-                return 0;
+                delay_time = 1;
+                goto gen420_jpg_work_end;
             }
         }
         // 没有找到等到新的yuv数据,那么就等100ms去检查是否需要关闭mjpeg
@@ -233,7 +234,7 @@ static int32 gen420_jpg_work(struct os_work *work)
             if (!gen420->wait_close_jpg)
             {
                 gen420->wait_close_jpg = 1;
-                os_run_work_delay(work, 100);
+                delay_time             = 100;
             }
             else
             {
@@ -244,7 +245,6 @@ static int32 gen420_jpg_work(struct os_work *work)
                     {
                         if (gen420->register_jpg_msi)
                         {
-                            _os_printf(KERN_INFO "##################\n");
                             gen420->stop = 1;
                             msi_do_cmd(gen420->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 0);
                         }
@@ -256,7 +256,13 @@ static int32 gen420_jpg_work(struct os_work *work)
     }
     else
     {
-        os_run_work_delay(work, 1);
+        delay_time = 1;
+    }
+
+gen420_jpg_work_end:
+    if (delay_time)
+    {
+        os_run_work_delay(work, delay_time);
     }
     return 0;
 }
@@ -365,12 +371,12 @@ static int32_t gen420_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t para
                         ret = RET_OK;
                     }
                 }
-
-                if (ret == RET_OK)
-                {
-                    os_run_work(&gen420->work);
-                }
             }
+        }
+        break;
+        case MSI_CMD_TRANS_FB_END:
+        {
+            os_run_work(&gen420->work);
         }
         break;
 

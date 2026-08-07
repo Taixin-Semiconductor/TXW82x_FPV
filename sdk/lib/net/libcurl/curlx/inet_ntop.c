@@ -16,9 +16,6 @@
  *
  * SPDX-License-Identifier: ISC
  */
-/*
- * Original code by Paul Vixie. "curlified" by Gisle Vanem.
- */
 
 #include "../curl_setup.h"
 
@@ -54,7 +51,7 @@
  *
  * Returns `dst' (as a const)
  * Note:
- *  - uses no statics
+ *  - uses no static variables
  *  - takes an unsigned char* not an in_addr as input
  */
 static char *inet_ntop4(const unsigned char *src, char *dst, size_t size)

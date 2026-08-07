@@ -25,7 +25,6 @@
 
 #if defined(USE_MBEDTLS) || defined(USE_RUSTLS)
 #include "cipher_suite.h"
-#include "../curl_printf.h"
 #include <string.h>
 
 /*
@@ -70,7 +69,7 @@ static const char *cs_txt =
   "ECDH" "\0"
   "ECDHE" "\0"
   "ECDSA" "\0"
-  "EDE" "\0"
+  "EDE" "\0" /* spellchecker:disable-line */
   "GCM" "\0"
   "MD5" "\0"
   "NULL" "\0"
@@ -80,7 +79,7 @@ static const char *cs_txt =
   "SHA" "\0"
   "SHA256" "\0"
   "SHA384" "\0"
-#if defined(USE_MBEDTLS)
+#ifdef USE_MBEDTLS
   "ARIA" "\0"
   "ARIA128" "\0"
   "ARIA256" "\0"
@@ -111,7 +110,7 @@ enum {
   CS_TXT_IDX_ECDH,
   CS_TXT_IDX_ECDHE,
   CS_TXT_IDX_ECDSA,
-  CS_TXT_IDX_EDE,
+  CS_TXT_IDX_EDE, /* spellchecker:disable-line */
   CS_TXT_IDX_GCM,
   CS_TXT_IDX_MD5,
   CS_TXT_IDX_NULL,
@@ -121,7 +120,7 @@ enum {
   CS_TXT_IDX_SHA,
   CS_TXT_IDX_SHA256,
   CS_TXT_IDX_SHA384,
-#if defined(USE_MBEDTLS)
+#ifdef USE_MBEDTLS
   CS_TXT_IDX_ARIA,
   CS_TXT_IDX_ARIA128,
   CS_TXT_IDX_ARIA256,
@@ -180,7 +179,7 @@ static const struct cs_entry cs_list [] = {
   CS_ENTRY(0xCCA8, ECDHE,RSA,CHACHA20,POLY1305,,,,),
   CS_ENTRY(0xCCA9, TLS,ECDHE,ECDSA,WITH,CHACHA20,POLY1305,SHA256,),
   CS_ENTRY(0xCCA9, ECDHE,ECDSA,CHACHA20,POLY1305,,,,),
-#if defined(USE_MBEDTLS)
+#ifdef USE_MBEDTLS
   CS_ENTRY(0x002F, TLS,RSA,WITH,AES,128,CBC,SHA,),
   CS_ENTRY(0x002F, AES128,SHA,,,,,,),
   CS_ENTRY(0x0035, TLS,RSA,WITH,AES,256,CBC,SHA,),
@@ -234,7 +233,7 @@ static const struct cs_entry cs_list [] = {
   CS_ENTRY(0xC032, TLS,ECDH,RSA,WITH,AES,256,GCM,SHA384),
   CS_ENTRY(0xC032, ECDH,RSA,AES256,GCM,SHA384,,,),
 #endif
-#if defined(USE_MBEDTLS)
+#ifdef USE_MBEDTLS
   CS_ENTRY(0x0001, TLS,RSA,WITH,NULL,MD5,,,),
   CS_ENTRY(0x0001, NULL,MD5,,,,,,),
   CS_ENTRY(0x0002, TLS,RSA,WITH,NULL,SHA,,,),
@@ -322,7 +321,7 @@ static const struct cs_entry cs_list [] = {
   CS_ENTRY(0xCCAB, TLS,PSK,WITH,CHACHA20,POLY1305,SHA256,,),
   CS_ENTRY(0xCCAB, PSK,CHACHA20,POLY1305,,,,,),
 #endif
-#if defined(USE_MBEDTLS)
+#ifdef USE_MBEDTLS
   CS_ENTRY(0xC09C, TLS,RSA,WITH,AES,128,CCM,,),
   CS_ENTRY(0xC09C, AES128,CCM,,,,,,),
   CS_ENTRY(0xC09D, TLS,RSA,WITH,AES,256,CCM,,),
@@ -340,7 +339,7 @@ static const struct cs_entry cs_list [] = {
   CS_ENTRY(0xC0AF, TLS,ECDHE,ECDSA,WITH,AES,256,CCM,8),
   CS_ENTRY(0xC0AF, ECDHE,ECDSA,AES256,CCM8,,,,),
 #endif
-#if defined(USE_MBEDTLS)
+#ifdef USE_MBEDTLS
   /* entries marked ns are "non-standard", they are not in OpenSSL */
   CS_ENTRY(0x0041, TLS,RSA,WITH,CAMELLIA,128,CBC,SHA,),
   CS_ENTRY(0x0041, CAMELLIA128,SHA,,,,,,),
@@ -630,9 +629,9 @@ static int cs_zip_to_str(const uint8_t zip[6],
 
     /* append the part string to the buffer */
     if(i > 0)
-      r = msnprintf(&buf[len], buf_size - len, "%c%s", separator, entry);
+      r = curl_msnprintf(&buf[len], buf_size - len, "%c%s", separator, entry);
     else
-      r = msnprintf(&buf[len], buf_size - len, "%s", entry);
+      r = curl_msnprintf(&buf[len], buf_size - len, "%s", entry);
 
     if(r < 0)
       return -1;
@@ -703,7 +702,7 @@ int Curl_cipher_suite_get_str(uint16_t id, char *buf, size_t buf_size,
     r = cs_zip_to_str(cs_list[j].zip, buf, buf_size);
 
   if(r < 0)
-    msnprintf(buf, buf_size, "TLS_UNKNOWN_0x%04x", id);
+    curl_msnprintf(buf, buf_size, "TLS_UNKNOWN_0x%04x", id);
 
   return r;
 }

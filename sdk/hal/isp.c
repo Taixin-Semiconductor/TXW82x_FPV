@@ -28,7 +28,7 @@ int32 isp_ioctl(struct isp_device *isp, uint32 cmd, uint32 param1, uint32 param2
     return RET_ERR;
 }
 
-int32 isp_calculate(struct isp_device *isp, struct isp_ae_func_cfg *p_cfg)
+int32 isp_calculate(struct isp_device *isp, struct isp_exposure_opt **p_cfg)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->calculate) {
         return ((const struct isp_hal_ops *)isp->dev.ops)->calculate(isp, p_cfg);
@@ -167,11 +167,11 @@ int32 isp_reverse_enable(struct isp_device *isp, uint32 enable, enum sensor_type
     return RET_ERR;
 }
 
-int32 isp_luma_ca_init(struct isp_device *isp, uint32 *addr, uint32 num, enum sensor_type type)
+int32 isp_luma_ca_init(struct isp_device *isp, uint32 *addr, uint32 strength_value, enum sensor_type type)
 {
-    uint32 param[2] = {(uint32)addr, num};
+    uint32 param[2] = {(uint32)addr, strength_value};
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
-        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_LUMA_CA_ADDR, type, (uint32)param);
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_LUMA_CA_PARAM, type, (uint32)param);
     }
     return RET_ERR;
 }
@@ -337,6 +337,22 @@ int32 isp_awb_gain_constraint(struct isp_device *isp, uint32 addr, enum sensor_t
     return RET_ERR;
 }
 
+int32 isp_get_awb_ycbcr(struct isp_device *isp, uint32 *arr_ycbcr, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AWB_YCBCR, type, (uint32)arr_ycbcr);
+    }
+    return RET_ERR;
+}
+
+int32 isp_get_awb_rb_gain(struct isp_device *isp, uint32 *arr_gain, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AWB_GAIN, type, (uint32)arr_gain);
+    }
+    return RET_ERR;
+}
+
 int32 isp_get_current_bv(struct isp_device *isp, uint32 *bv, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
@@ -345,6 +361,37 @@ int32 isp_get_current_bv(struct isp_device *isp, uint32 *bv, enum sensor_type ty
     return RET_ERR;
 }
 
+int32 isp_get_ae_exp_line(struct isp_device *isp, uint32 *line, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AE_EXPOSURE_LINE, type, (uint32)line);
+    }
+    return RET_ERR;
+}
+
+int32 isp_get_ae_exp_gain(struct isp_device *isp, uint32 *gain, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AE_EXPOSURE_GAIN, type, (uint32)gain);
+    }
+    return RET_ERR;
+}
+
+int32 isp_get_ae_target(struct isp_device *isp, uint32 *target, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AE_TARGET, type, (uint32)target);
+    }
+    return RET_ERR;
+}
+
+int32 isp_get_ae_luma_avg(struct isp_device *isp, uint32 *luma_avg, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GET_AE_LUMA_AVG, type, (uint32)luma_avg);
+    }
+    return RET_ERR;
+}
 
 int32 isp_ae_manul_config(struct isp_device *isp, uint32 target, uint32 analog_gain, uint32 expo_line, enum sensor_type type)
 {
@@ -751,10 +798,10 @@ int32 isp_ce_offset_config(struct isp_device *isp, uint32 addr, enum sensor_type
     return RET_ERR;
 }
 
-int32 isp_ce_bv_stauration(struct isp_device *isp, uint32 addr, enum sensor_type type)
+int32 isp_ce_adj_by_bv_param(struct isp_device *isp, uint32 addr, enum sensor_type type)
 {
     if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
-        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_CE_SATURATION_BV_PARAM, type, addr);
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_CE_ADJ_BY_BV_PARAM, type, addr);
     }
     return RET_ERR;
 }
@@ -899,3 +946,37 @@ int32 isp_yuv_range(struct isp_device *isp, enum isp_yuv_range range_type)
     }
     return RET_ERR;
 }
+
+int32 isp_ce_adj_by_bv_enable(struct isp_device *isp, uint32 enable, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_CE_ADJ_BY_BV, type, enable);
+    }
+    return RET_ERR;
+}
+
+int32 isp_gamma_by_bv_enable(struct isp_device *isp, uint32 enable, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GAMMA_BY_BV_ENABLE, type, enable);
+    }
+    return RET_ERR;
+}
+
+int32 isp_gamma_by_bv_param(struct isp_device *isp, uint32 data, enum sensor_type type)
+{
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_GAMMA_BY_BV_PARAM, type, data);
+    }
+    return RET_ERR;
+}
+
+int32 isp_sensor_fps_opt(struct isp_device *isp, float fps, enum sensor_type type)
+{
+    uint32 fps_val = (uint32)fps * 256;
+    if (isp && ((const struct isp_hal_ops *)isp->dev.ops)->ioctl) {
+        return ((const struct isp_hal_ops *)isp->dev.ops)->ioctl(isp, ISP_IOCTL_CMD_FPS_OPT, type, fps_val);
+    }
+    return RET_ERR;
+}
+

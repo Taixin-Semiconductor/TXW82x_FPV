@@ -27,7 +27,6 @@
 #define VPP_PSRAM_FREE   av_psram_free
 #define VPP_PSRAM_ZALLOC av_psram_zalloc
 
-
 /***************************************
 shrink:
 
@@ -51,98 +50,125 @@ struct vpp_cfg_s
 {
     uint8_t  vpp_buf0_line_num;
     uint8_t  vpp_buf1_line_num;
-    uint8_t  vpp_buf0_mode : 1, vpp_buf1_mode : 1, scale1_from_vpp : 1, scale3_from_vpp : 1, shrink : 3,rev:1;
+    uint8_t  vpp_buf0_mode : 1, vpp_buf1_mode : 1, scale1_from_vpp : 1, scale3_from_vpp : 1, shrink : 3, rev : 1;
+    uint8_t  double_psram_for_buf1;
     uint16_t vpp_w, vpp_h;
-    uint16_t vpp_scale_w,vpp_scale_h;
+    uint16_t vpp_scale_w, vpp_scale_h;
 };
 
 // 默认值
 struct vpp_cfg_s vpp_msg = {
-        .vpp_buf0_line_num = VPP_BUF0_LINEBUF_NUM,
-        .vpp_buf1_line_num = VPP_BUF1_LINEBUF_NUM,
-        .vpp_buf0_mode     = VPP_BUF0_MODE,
-        .vpp_buf1_mode     = VPP_BUF1_MODE,
-        .scale1_from_vpp   = SCALE1_FROM_VPPBF,
-        .scale3_from_vpp   = SCALE3_FROM_VPPBF,
-        .vpp_w             = 1280,
-        .vpp_h             = 720,
-        .vpp_scale_w       = 0,
-        .vpp_scale_h       = 0,
-        .shrink            = SHRINK_1_2,
+        .vpp_buf0_line_num     = VPP_BUF0_LINEBUF_NUM,
+        .vpp_buf1_line_num     = VPP_BUF1_LINEBUF_NUM,
+        .vpp_buf0_mode         = VPP_BUF0_MODE,
+        .vpp_buf1_mode         = VPP_BUF1_MODE,
+        .scale1_from_vpp       = SCALE1_FROM_VPPBF,
+        .scale3_from_vpp       = SCALE3_FROM_VPPBF,
+        .vpp_w                 = 1280,
+        .vpp_h                 = 720,
+        .vpp_scale_w           = 0,
+        .vpp_scale_h           = 0,
+        .shrink                = SHRINK_1_2,
+        .double_psram_for_buf1 = 0,
 };
 
-enum
-{
-    VPP_RUNNING  = BIT(0),
-    VPP_STOP     = BIT(1), // 硬件是否已经停止
-    APP_VPP_STOP = BIT(2), // 应用控制是否停止
-};
-
-struct os_event *vpp_evt;
 // uint8 motion_detect_buf[9*1024/*((IMAGE_W+31)/32)  * ((IMAGE_H+31)/32) + 3 + 4*((IMAGE_W+31)/32)*/]__attribute__ ((aligned(4)));//加3是为了防止blk数不是word对齐
-uint8           *motion_detect_buf;
-uint8 *yuvbuf1;
-uint8_t *vpp_data1_psram_buf = NULL;
+uint8            *motion_detect_buf;
+uint8            *yuvbuf1;
+uint8_t          *vpp_data1_psram_buf = NULL;
+uint8_t          *vpp_data2_psram_buf = NULL;
+volatile uint8_t *psram_ptr;
+volatile uint8_t *psram_user_ptr;
 
 uint8             *yuvbuf;
 uint8             *vpp_encode_ipf;
 struct video_cfg_t video_msg;
+func_done_fn       vpp_deal_dev_func_table[VPP_FUNC_DONE_NUM];
+volatile uint32    vpp_deal_dev_func_arg_table[VPP_FUNC_DONE_NUM];
 
-//设置buf1输出的size(需要整除,否则不会修改或者异常)
+int32 vppdone_func_register(uint8_t id, func_done_fn func, uint32 arg)
+{
+    struct vpp_device *vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
+    int32_t            closed  = vpp_is_closed(vpp_dev);
+    if (closed)
+    {
+        os_printf(KERN_DEBUG "vpp is closed, func:%p, arg:%X\tclosed:%d\n", func, arg, closed);
+        func(arg);
+    }
+    else
+    {
+        uint32_t flags                  = disable_irq();
+        vpp_deal_dev_func_table[id]     = func;
+        vpp_deal_dev_func_arg_table[id] = arg;
+        enable_irq(flags);
+    }
+
+    return 0;
+}
+
+int32 vppdone_func_unregister(uint8_t id)
+{
+    uint32_t flags                  = disable_irq();
+    vpp_deal_dev_func_table[id]     = NULL;
+    vpp_deal_dev_func_arg_table[id] = 0;
+    enable_irq(flags);
+    return 0;
+}
+
+// 设置buf1输出的size(需要整除,否则不会修改或者异常)
 uint8_t set_vpp_bu1_shrink(uint16_t w, uint16_t shrink_w)
 {
     uint8_t ret = 1;
-    if(!w)
+    if (!w)
     {
         return ret;
     }
-    if(w*2/3 == shrink_w)
+    if (w * 2 / 3 == shrink_w)
     {
         vpp_msg.shrink = SHRINK_2_3;
         return 0;
     }
 
-    uint8_t shrink_calc = w/shrink_w;
-    uint8_t shrink = vpp_msg.shrink;
-    //是倍数关系,检查是否有符合
-    if(shrink_w * shrink_calc == w)
+    uint8_t shrink_calc = w / shrink_w;
+    uint8_t shrink      = vpp_msg.shrink;
+    // 是倍数关系,检查是否有符合
+    if (shrink_w * shrink_calc == w)
     {
         ret = 0;
-        switch(shrink_calc)
+        switch (shrink_calc)
         {
             case 1:
                 shrink = SHRINK_1_1;
-            break;
+                break;
             case 2:
                 shrink = SHRINK_1_2;
-            break;
+                break;
             case 3:
                 shrink = SHRINK_1_3;
-            break;
+                break;
             case 4:
                 shrink = SHRINK_1_4;
-            break;
+                break;
             case 6:
                 shrink = SHRINK_1_6;
-            break;
+                break;
             default:
                 shrink = vpp_msg.shrink;
-                ret = 1;
-            break;
+                ret    = 1;
+                break;
         }
     }
     vpp_msg.shrink = shrink;
-    if(ret)
+    if (ret)
     {
-        os_printf(KERN_ERR"%s err,w:%d\tshrink_w:%d\tshrink:%d\n",__FUNCTION__,w,shrink_w,shrink);
+        os_printf(KERN_ERR "%s err,w:%d\tshrink_w:%d\tshrink:%d\n", __FUNCTION__, w, shrink_w, shrink);
     }
     else
     {
-        os_printf(KERN_INFO"%s success,w:%d\tshrink_w:%d\tshrink:%d\n",__FUNCTION__,w,shrink_w,shrink);
+        os_printf(KERN_INFO "%s success,w:%d\tshrink_w:%d\tshrink:%d\n", __FUNCTION__, w, shrink_w, shrink);
     }
     return ret;
 }
-
 
 uint8_t get_vpp_scale_w_h(uint16_t *w, uint16_t *h)
 {
@@ -156,9 +182,9 @@ uint8_t get_vpp_scale_w_h(uint16_t *w, uint16_t *h)
     {
         *h = vpp_msg.vpp_scale_h;
     }
-    if(!vpp_msg.vpp_scale_w || !vpp_msg.vpp_scale_h)
+    if (!vpp_msg.vpp_scale_w || !vpp_msg.vpp_scale_h)
     {
-        ret = 1; 
+        ret = 1;
     }
     return ret;
 }
@@ -175,14 +201,12 @@ uint8_t get_vpp_w_h(uint16_t *w, uint16_t *h)
     {
         *h = vpp_msg.vpp_h;
     }
-    if(!vpp_msg.vpp_w || !vpp_msg.vpp_h)
+    if (!vpp_msg.vpp_w || !vpp_msg.vpp_h)
     {
-        ret = 1; 
+        ret = 1;
     }
     return ret;
 }
-
-
 
 uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h)
 {
@@ -253,8 +277,7 @@ uint8_t get_vpp1_w_h(uint16_t *w, uint16_t *h)
             os_printf("%s:%d err,shrink:%d\n", __FUNCTION__, __LINE__, vpp_msg.shrink);
             break;
     }
-    os_printf(KERN_INFO"%s:%d\tw:%d\th:%d\n", __FUNCTION__, __LINE__, *w,*h);
-    if(VPP_BUF1_EN == 0)
+    if (VPP_BUF1_EN == 0)
     {
         ret = 1;
     }
@@ -269,12 +292,12 @@ uint32_t yuv_buf_line(uint8_t which)
     uint8_t malloc_line;
     if (which == 0)
     {
-        mode    = vpp_msg.vpp_buf0_mode;
+        mode     = vpp_msg.vpp_buf0_mode;
         line_num = vpp_msg.vpp_buf0_line_num;
     }
     else
     {
-        mode    = vpp_msg.vpp_buf1_mode;
+        mode     = vpp_msg.vpp_buf1_mode;
         line_num = vpp_msg.vpp_buf1_line_num;
     }
 
@@ -637,6 +660,8 @@ void vpp_video_recfg(uint32 dev, uint32_t w, uint32_t h, uint8_t input_from)
     struct vpp_device *p_vpp = (struct vpp_device *) dev;
 
     vpp_set_video_size(p_vpp, w, h);
+    vpp_msg.vpp_w = w;
+    vpp_msg.vpp_h = h;
 #if VPP_BUF1_EN
     uint32_t buf1w = 0, buf1h = 0;
     uint8_t  shrink = vpp_msg.shrink; // 0: 1/2
@@ -683,7 +708,6 @@ void vpp_video_recfg(uint32 dev, uint32_t w, uint32_t h, uint8_t input_from)
             break;
     }
 
-
     // buf1的配置
     {
         uint32_t malloc_line;
@@ -726,7 +750,7 @@ void vpp_video_recfg(uint32 dev, uint32_t w, uint32_t h, uint8_t input_from)
     }
 
 #if DET_EN
-    vpp_set_motion_calbuf(p_vpp, (uint32_t)motion_detect_buf);
+    vpp_set_motion_calbuf(p_vpp, (uint32_t) motion_detect_buf);
     vpp_set_motion_range(p_vpp, 0, 0, w, h);                                       // 检测图像范围,blk大小为32*32个像素点
     vpp_set_motion_blk_threshold(p_vpp, 20);                                       // 检测对应的blk移动的阀值
     vpp_set_motion_frame_threshold(p_vpp, ((w + 31) / 32) * ((h + 31) / 32) / 20); // 检测多少个blk超过阀值，再触发移动检测中断
@@ -748,25 +772,14 @@ void vpp_hsie_isr(uint32 irq, uint32 dev, uint32 param)
 void vpp_vsie_isr(uint32 irq, uint32 dev, uint32 param)
 {
     // uint8_t itk;
-    struct vpp_device *p_vpp = (struct vpp_device *) dev;
-
-	struct tm *time_info;
-    struct timeval ptimeval;
-	gettimeofday(&ptimeval, NULL);
-	time_t time_val = (time_t)ptimeval.tv_sec;
-    
-	time_info = gmtime(&time_val);
-	
-
-	uint32_t year	=	time_info->tm_year + 1900;
-	uint32_t mon 	=	time_info->tm_mon + 1;
-	uint32_t day 	=	time_info->tm_mday;
-	uint32_t hour 	= 	time_info->tm_hour;
-	uint32_t min 	= 	time_info->tm_min;
-	uint32_t sec 	= 	time_info->tm_sec;
-
-    set_time_watermark(p_vpp, year, mon, day, hour, min, sec);
+    //struct vpp_device *p_vpp = (struct vpp_device *) dev;
     //_os_printf("V");
+
+    if (vpp_deal_dev_func_table[VPP_IFP_EN_CTRL])
+    {
+        vpp_deal_dev_func_table[VPP_IFP_EN_CTRL](vpp_deal_dev_func_arg_table[VPP_IFP_EN_CTRL]);
+    }
+
     if (video_msg.video_num == 1)
     {
         video_msg.video_type_vpp = ISP_VIDEO_0;
@@ -871,12 +884,37 @@ uint8_t vpp_video_type_map(uint8_t stype)
     }
 }
 
+void vpp_set_time(struct vpp_device *p_vpp, uint32_t time_val)
+{
+    struct tm *time_info;
+    time_info     = gmtime((const time_t*)&time_val);
+    uint32_t year = time_info->tm_year + 1900;
+    uint32_t mon  = time_info->tm_mon + 1;
+    uint32_t day  = time_info->tm_mday;
+    uint32_t hour = time_info->tm_hour;
+    uint32_t min  = time_info->tm_min;
+    uint32_t sec  = time_info->tm_sec;
+    set_time_watermark(p_vpp, year, mon, day, hour, min, sec);
+}
+
 void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
 {
-    _os_printf(KERN_DEBUG"F");
-    if (scale3_kick_func)
+    uint8_t  itk = 0;
+    int32_t  ret = 0;
+    uint16_t w, h;
+    uint16_t buf1w = 0, buf1h = 0;
+    uint8_t *ptr_cache;
+    _os_printf(KERN_DEBUG "F");
+    static time_t      last_time_val = 0;
+    struct vpp_device *p_vpp         = (struct vpp_device *) dev;
+
+    struct timeval ptimeval;
+    gettimeofday(&ptimeval, NULL);
+    time_t time_val = (time_t) ptimeval.tv_sec;
+    if (last_time_val != time_val)
     {
-        scale3_kick_func();
+        vpp_set_time(p_vpp, time_val);
+        last_time_val = time_val;
     }
 
     if (video_msg.video_num > 1)
@@ -913,18 +951,82 @@ void vpp_frame_done(uint32 irq, uint32 dev, uint32 param)
         }
     }
 
-    // 判断是否需要关闭vpp,如果需要关闭vpp则去自动关闭
-    if (vpp_evt)
+    for (itk = 0; itk < VPP_FUNC_DONE_NUM; itk++)
     {
-        int      evt_ret = 0;
-        uint32_t flags   = 0;
-        evt_ret          = os_event_get(vpp_evt, &flags);
-        // 识别到需要应用关闭,那么就要去关闭vpp_dev
-        if (!evt_ret && (flags & APP_VPP_STOP))
+        if (vpp_deal_dev_func_table[itk])
         {
-            os_event_set(vpp_evt, VPP_STOP, NULL);
-            vpp_close((struct vpp_device *)dev);
+            ret = vpp_deal_dev_func_table[itk](vpp_deal_dev_func_arg_table[itk]);
+            if (ret)
+            {
+                vpp_deal_dev_func_table[itk]     = NULL;
+                vpp_deal_dev_func_arg_table[itk] = 0;
+            }
         }
+    }
+
+    if (scale3_kick_func)
+    {
+        scale3_kick_func();
+    }
+    if (vpp_msg.double_psram_for_buf1)
+    {
+        uint8_t shrink = vpp_msg.shrink; // 0: 1/2
+                                         // 1: 1/3
+                                         // 2: 1/4
+                                         // 3: 1/6
+                                         // 4: 2/3
+                                         // 5: 1/1
+
+        w = vpp_msg.vpp_w;
+        h = vpp_msg.vpp_h;
+        switch (shrink)
+        {
+            case 0:
+                buf1w = w / 2;
+                buf1h = h / 2;
+                break;
+
+            case 1:
+                buf1w = w / 3;
+                buf1h = h / 3;
+                break;
+
+            case 2:
+                buf1w = w / 4;
+                buf1h = h / 4;
+                break;
+
+            case 3:
+                buf1w = w / 6;
+                buf1h = h / 6;
+                break;
+
+            case 4:
+                buf1w = (w * 2) / 3;
+                buf1h = (h * 2) / 3;
+                break;
+
+            case 5:
+                buf1w = w;
+                buf1h = h;
+                break;
+
+            default:
+                _os_printf("buf1 shrink no this cfg\r\n");
+                break;
+        }
+
+        ptr_cache      = (uint8_t*)psram_user_ptr;
+        psram_user_ptr = psram_ptr;
+        psram_ptr      = ptr_cache;
+
+		vpp_set_buf1_shrink(p_vpp, shrink);
+	    vpp_set_psram_ycnt(p_vpp, buf1w, buf1h);
+    	vpp_set_psram_uvcnt(p_vpp, buf1w, buf1h);	
+		
+        vpp_set_buf1_y_addr(p_vpp, (uint32) psram_ptr);
+        vpp_set_buf1_u_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h);
+        vpp_set_buf1_v_addr(p_vpp, (uint32) psram_ptr + buf1w * buf1h + buf1w * buf1h / 4);
     }
 }
 volatile uint8 itp_done = 0;
@@ -944,8 +1046,8 @@ void vpp_lib_error(uint32 irq, uint32 dev, uint32 param)
     //	dvp_vpp_reset();
     os_printf("LIB_ER..\r\n");
 }
-extern volatile uint32 outbuff_isr[2];
-void                   vpp_ipf_error(uint32 irq, uint32 dev, uint32 param)
+
+void vpp_ipf_error(uint32 irq, uint32 dev, uint32 param)
 {
     //	vpp_reset();
     os_printf("IPF ERR..\r\n");
@@ -973,16 +1075,17 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 {
     vpp_msg.vpp_w = w;
     vpp_msg.vpp_h = h;
-    if(!w || !h)
+    if (!w || !h)
     {
-        os_printf(KERN_ERR"vpp_cfg err:w=%d,h=%d\r\n",w,h);
+        os_printf(KERN_ERR "vpp_cfg err:w=%d,h=%d\r\n", w, h);
         return FALSE;
     }
+#if IPF_EN
     uint32_t             len;
+#endif	
     struct vpp_device   *vpp_dev;
-    struct scale_device *scale_dev;
-    vpp_dev   = (struct vpp_device *) dev_get(HG_VPP_DEVID);
-    scale_dev = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
+    vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
+
 #if IPF_EN
     struct osdenc_device *osdenc_dev;
     osdenc_dev = (struct osdenc_device *) dev_get(HG_OSD_ENC_DEVID);
@@ -1098,13 +1201,20 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
     //	vpp_set_buf1_y_addr(vpp_dev,(uint32)psram_all_frame_buf1);
     //	vpp_set_buf1_u_addr(vpp_dev,(uint32)psram_all_frame_buf1+w*h/4);
     //	vpp_set_buf1_v_addr(vpp_dev,(uint32)psram_all_frame_buf1+w*h/4+w*h/16);
-    if(vpp_data1_psram_buf)
+    if (vpp_data1_psram_buf)
     {
         VPP_PSRAM_FREE(vpp_data1_psram_buf);
         vpp_data1_psram_buf = NULL;
     }
-    vpp_data1_psram_buf = (uint8_t*)VPP_PSRAM_MALLOC(p_w*p_h*3/2);
+    vpp_data1_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * p_h * 3 / 2);
     ASSERT(vpp_data1_psram_buf);
+    if (vpp_msg.double_psram_for_buf1)
+    {
+        vpp_data2_psram_buf = (uint8_t *) VPP_PSRAM_MALLOC(p_w * p_h * 3 / 2);
+        ASSERT(vpp_data2_psram_buf);
+        psram_ptr      = vpp_data1_psram_buf;
+        psram_user_ptr = vpp_data2_psram_buf;
+    }
 
     vpp_set_buf1_y_addr(vpp_dev, (uint32) vpp_data1_psram_buf);
     vpp_set_buf1_u_addr(vpp_dev, (uint32) vpp_data1_psram_buf + p_w * p_h);
@@ -1127,7 +1237,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 
         if (yuvbuf == NULL)
         {
-            yuvbuf = (uint8_t*)VPP_MALLOC(w * malloc_line + w * (malloc_line / 2));
+            yuvbuf = (uint8_t *) VPP_MALLOC(w * malloc_line + w * (malloc_line / 2));
             if (yuvbuf == NULL)
             {
                 _os_printf("no room yuvbuf0\r\n");
@@ -1151,9 +1261,13 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
     vpp_set_water0_contrast(vpp_dev, 0);
     vpp_set_watermark0_charsize_and_num(vpp_dev, 16, 32, 19);
     vpp_set_watermark0_mode(vpp_dev, 1);
-    set_time_watermark(vpp_dev, 2222, 22, 22, 22, 22, 22);
-    vpp_set_water0_rc(vpp_dev, 0);
 
+    struct timeval ptimeval;
+    gettimeofday(&ptimeval, NULL);
+    time_t time_val = (time_t) ptimeval.tv_sec;
+    vpp_set_time(vpp_dev, time_val);
+
+    vpp_set_water0_rc(vpp_dev, 0);
     vpp_set_watermark0_auto_rc_sram_adr(vpp_dev, (uint32_t) autorc);
     vpp_set_watermark0_auto_rc_threshold(vpp_dev, 16 * 32 * 128, 16 * 32 * 32);
     vpp_set_watermark_auto_rc_mode(vpp_dev, 0); // double sensor
@@ -1161,7 +1275,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 
 #if IPF_EN
     len            = water2_change_ipf(w, h, photo_lib2, 48, 48, 100, 300, NULL);
-    vpp_encode_ipf = (uint8_t*)VPP_MALLOC(len);
+    vpp_encode_ipf = (uint8_t *) VPP_MALLOC(len);
     water2_change_ipf(w, h, photo_lib2, 48, 48, 100, 300, vpp_encode_ipf);
     vpp_set_ifp_addr(vpp_dev, (uint32_t) vpp_encode_ipf);
 #endif
@@ -1177,7 +1291,7 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 	vpp_set_water1_rc(vpp_dev,0);
 #endif
 
-    vpp_request_irq(vpp_dev, HSIE_ISR, (vpp_irq_hdl) &vpp_hsie_isr, (uint32) vpp_dev);
+    // vpp_request_irq(vpp_dev, HSIE_ISR, (vpp_irq_hdl) &vpp_hsie_isr, (uint32) vpp_dev);
     vpp_request_irq(vpp_dev, VSIE_ISR, (vpp_irq_hdl) &vpp_vsie_isr, (uint32) vpp_dev);
     vpp_request_irq(vpp_dev, FRAME_DONE_ISR, (vpp_irq_hdl) &vpp_frame_done, (uint32) vpp_dev);
     vpp_request_irq(vpp_dev, SCIE_ISR, (vpp_irq_hdl) &vpp_data_done, h);
@@ -1188,10 +1302,10 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
     vpp_request_irq(vpp_dev, ITP_DONE_ISR, (vpp_irq_hdl) &vpp_itp_done, (uint32) vpp_dev);
 
 #if DET_EN
-    motion_detect_buf = (uint8_t*)VPP_MALLOC(((w + 31) / 32) * ((h + 31) / 32) + 4 * ((w + 31) / 32));
-    vpp_set_motion_calbuf(vpp_dev, (uint32_t)motion_detect_buf);
-    vpp_set_motion_range(vpp_dev, 0, 0, w, h);                                       // 检测图像范围,blk大小为32*32个像素点
-    vpp_set_motion_blk_threshold(vpp_dev, 10);                                       // 检测对应的blk移动的阀值
+    motion_detect_buf = (uint8_t *) VPP_MALLOC(((w + 31) / 32) * ((h + 31) / 32) + 4 * ((w + 31) / 32));
+    vpp_set_motion_calbuf(vpp_dev, (uint32_t) motion_detect_buf);
+    vpp_set_motion_range(vpp_dev, 0, 0, w, h);   // 检测图像范围,blk大小为32*32个像素点
+    vpp_set_motion_blk_threshold(vpp_dev, 10);   // 检测对应的blk移动的阀值
     vpp_set_motion_frame_threshold(vpp_dev, 10); // 检测多少个blk超过阀值，再触发移动检测中断
 #endif
     vpp_set_mode(vpp_dev, VPP_INPUT_FORMAT);
@@ -1206,85 +1320,26 @@ bool vpp_cfg(uint32_t w, uint32_t h, uint8_t input_from)
 #if DET_EN
     vpp_set_motion_det_enable(vpp_dev, 1);
 #endif
-
-#if VPP_SCALE_EN
     vpp_msg.vpp_scale_w = VPP_SCALE_WIDTH;
     vpp_msg.vpp_scale_h = VPP_SCALE_HIGH;
-    scale_from_vpp(scale_dev, yuvbuf, w, h, VPP_SCALE_WIDTH, VPP_SCALE_HIGH);
-#endif
 
     vpp_open(vpp_dev);
     return TRUE;
 }
 
-void vpp_evt_init()
+void set_vpp_scale_w_h(uint8_t en, uint16_t w, uint16_t h)
 {
-    vpp_evt = (struct os_event *) os_malloc(sizeof(struct os_event));
-    os_event_init(vpp_evt);
-}
-
-void vpp_test(uint32_t line)
-{
-    uint32_t flags = 0;
-    os_event_wait(vpp_evt, APP_VPP_STOP, &flags, OS_EVENT_WMODE_OR, 0);
-    os_printf("flags[%d]:%X\n", line, flags);
-}
-
-int32_t vpp_evt_wait_open(int enable, int timeout)
-{
-    int32_t  ret = 0;
-    uint32_t flags;
-    if (timeout && timeout < 50)
+    struct scale_device *scale_dev;
+    uint8_t             *vpp_buf = get_vpp_buf(0);
+    if (vpp_buf)
     {
-        timeout = 50;
-    }
-
-    // 如果没有初始化,默认返回成功
-    if (!vpp_evt)
-    {
-        os_printf("%s:%d\n", __FUNCTION__, __LINE__);
-        return 0;
-    }
-    // 等待关闭vpp
-    if (enable == 0)
-    {
-        os_event_set(vpp_evt, APP_VPP_STOP, NULL);
-        ret = os_event_wait(vpp_evt, VPP_STOP, &flags, OS_EVENT_WMODE_OR, timeout);
-        if (!ret && (flags & VPP_STOP))
+        vpp_msg.vpp_scale_w = w;
+        vpp_msg.vpp_scale_h = h;
+        if (en)
         {
+            scale_dev = (struct scale_device *) dev_get(HG_SCALE1_DEVID);
+            scale_from_vpp(scale_dev, (uint32_t)vpp_buf, vpp_msg.vpp_w, vpp_msg.vpp_h, w, h);
         }
-        // 可能是超时了,应该清除APP_VPP_STOP
-        // 有概率出现超时后vpp被关闭?这里没有去处理
-        else
-        {
-            // os_event_wait(vpp_evt, APP_VPP_STOP, &flags, OS_EVENT_WMODE_OR|OS_EVENT_WMODE_CLEAR, 0);
-            ret = -1;
-        }
-    }
-    // 启动vpp
-    else
-    {
-        struct vpp_device *vpp_dev;
-        vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
-        // 清除stop状态
-        os_event_wait(vpp_evt, APP_VPP_STOP | VPP_STOP, &flags, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 0);
-        // 如果没有被停止,则不管
-        if (flags & VPP_STOP)
-        {
-            // 将vpp打开
-            vpp_open(vpp_dev);
-        }
-    }
-
-    return ret;
-}
-
-// 如果遇到异常或者重新初始化vpp,需要调用一下这个接口
-void vpp_evt_reset()
-{
-    if (vpp_evt)
-    {
-        os_event_wait(vpp_evt, 0xff, NULL, OS_EVENT_WMODE_OR | OS_EVENT_WMODE_CLEAR, 0);
     }
 }
 
@@ -1305,10 +1360,18 @@ bool vpp_cfg_release()
     }
 #endif
 
-    if(vpp_data1_psram_buf)
+    if (vpp_data1_psram_buf)
     {
         VPP_PSRAM_FREE(vpp_data1_psram_buf);
         vpp_data1_psram_buf = NULL;
     }
     return TRUE;
+}
+
+int8_t vpp_dev_open()
+{
+    struct vpp_device *vpp_dev;
+    vpp_dev = (struct vpp_device *) dev_get(HG_VPP_DEVID);
+    vpp_open(vpp_dev);
+    return 0;
 }

@@ -8,6 +8,8 @@
 #include "lib/audio/ring_buffer/ring_buffer.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "keyWork.h"
+#include "keyScan.h"
 
 #ifdef PSRAM_HEAP
 #define INTERCOM_MALLOC av_psram_malloc
@@ -19,12 +21,23 @@
 #define INTERCOM_FREE   av_free
 #endif
 
-#define AUDIO_ENCODER			OPUS_ENC
-#define AUDIO_DECODER			OPUS_DEC
+#define ADJUST_BY_LOSS  1
+#define ADJUST_BY_MCS   2
+
 
 enum {
     intercom_live_audio = 1,
     intercom_playback_audio,
+};
+
+enum {
+    high_bitrate_mode,
+    low_bitrate_mode,
+};
+
+enum {
+    mild_loss,
+    serious_loss,
 };
 
 typedef struct {     
@@ -67,6 +80,10 @@ typedef struct {
     uint8_t recv_stream_type;
     uint8_t send_stream_type;
 
+    uint8_t cur_bitrate_mode;
+    uint8_t new_bitrate_mode;
+    uint8_t loss_state;
+
     int local_trans_fd;
     int local_ret_fd;
 
@@ -100,7 +117,6 @@ typedef struct {
     struct list_head device_head;
 
     struct msi *msi;
-    struct msi *autpc_msi;
     struct msi *magic_voice_msi;
     struct msi *encoder_msi;
     struct msi *decoder_msi;
@@ -131,4 +147,5 @@ void intercom_encode_pause(uint8_t state, uint8_t clear);
 void intercom_decode_pause(uint8_t state, uint8_t clear);
 void intercom_reset_play(void);
 void intercom_set_stream_type(uint8_t recv_type, uint8_t send_type);
+uint32_t intercom_ctrl_key(struct key_callback_list_s *callback_list,uint32_t keyvalue,uint32_t extern_value);
 #endif

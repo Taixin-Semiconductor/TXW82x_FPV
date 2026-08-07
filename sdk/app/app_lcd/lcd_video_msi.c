@@ -51,6 +51,15 @@ static int lcd_video_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, u
                 case MSI_VIDEO_ENABLE:
                 {
                     msi->enable = arg;
+                    os_printf("---%s MSI_VIDEO_ENABLE :%d----\n",msi->name, msi->enable);
+                }
+                break;
+
+                case MSI_VIDEO_GET_ENABLE:
+                {
+                    uint32_t *val = (uint32_t *)param2;
+                    // os_printf("---%s get enable:%d-----\n",msi->name, msi->enable);
+                    *val = msi->enable;
                 }
                 break;
             }

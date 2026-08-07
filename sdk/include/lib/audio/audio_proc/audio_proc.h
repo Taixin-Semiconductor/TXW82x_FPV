@@ -1,7 +1,8 @@
 #ifndef _AUDIO_PROCESS_CTRL_H_
 #define _AUDIO_PROCESS_CTRL_H_
 
-#include "basic_include.h"  
+#include "typesdef.h"
+#include "osal/string.h"
 
 #define AUPROC_STACK_SIZE     5120
 

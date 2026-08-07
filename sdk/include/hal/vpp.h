@@ -441,7 +441,9 @@ enum vpp_ioctl_cmd {
 	 *@ Describe:
 	 *
 	 */
-	VPP_IOCTL_CMD_SET_WATERMARK0_AUTO_RC_MODE,			
+	VPP_IOCTL_CMD_SET_WATERMARK0_AUTO_RC_MODE,		
+	
+	VPP_IOCTL_CMD_IS_CLOSED,
 };
 
 struct vpp_device {
@@ -451,12 +453,17 @@ struct vpp_device {
 struct vpp_hal_ops {
 	struct devobj_ops ops;
     int32(*open)(struct vpp_device *vpp_dev);
+	int32(*suspend)(struct vpp_device *vpp_dev);
+	int32(*resume)(struct vpp_device *vpp_dev);		
     int32(*close)(struct vpp_device *vpp_dev);
     int32(*ioctl)(struct vpp_device *vpp_dev, enum vpp_ioctl_cmd ioctl_cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct vpp_device *vpp_dev, uint32 irq_flag, vpp_irq_hdl irq_hdl, uint32 irq_data);
     int32(*release_irq)(struct vpp_device *vpp_dev, uint32 irq_flag);	
 };
 
+
+int32 vpp_suspend(struct vpp_device *p_vpp);
+int32 vpp_resume(struct vpp_device *p_vpp);
 int32 vpp_request_irq(struct vpp_device *p_vpp, uint32 irq_flags, vpp_irq_hdl irq_hdl, uint32 irq_data);
 int32 vpp_release_irq(struct vpp_device *p_vpp, uint32 irq_flags);
 int32 vpp_open(struct vpp_device *p_vpp);

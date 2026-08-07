@@ -24,9 +24,10 @@ struct audio_dac_test_ui_s
     lv_group_t  *last_group;
     lv_obj_t    *base_ui;
 
-    lv_group_t    *now_group;
+    lv_group_t  *now_group;
     lv_obj_t    *now_label;      
     lv_obj_t    *now_ui;
+    struct msi  *audio_play_msi;
 };
 
 static void exit_audio_dac_test_ui(lv_event_t * e)
@@ -40,7 +41,10 @@ static void exit_audio_dac_test_ui(lv_event_t * e)
     ui_s->now_label = NULL;
 
     #if AUDIO_EN
-    audio_file_play_stop();
+    if(ui_s->audio_play_msi) {
+        audio_file_play_stop(ui_s->audio_play_msi);
+        ui_s->audio_play_msi = NULL;
+    }
     #endif
 
     lv_obj_del(ui_s->now_ui);
@@ -70,9 +74,19 @@ static void enter_audio_dac_test_ui(lv_event_t * e)
     ui_s->now_group = group;
 
     #if AUDIO_EN
-    audio_file_play_stop();
-    msi_cmd("R_AUDAC", MSI_CMD_AUDAC, MSI_AUDAC_SET_VOLUME, 30);
-    audio_file_play_init("0:count.wav", 1);
+    if(ui_s->audio_play_msi) {
+        audio_file_play_stop(ui_s->audio_play_msi);
+        ui_s->audio_play_msi = NULL;
+    }
+    msi_cmd("R_AUDAC", MSI_CMD_AUDAC, MSI_AUDAC_SET_MEDIA_VOLUME, 30);
+    AUDEC_INIT audec_init;
+    audec_init.track_type = MEDIA_TRACK;
+    audec_init.priority = play_interruptible;
+    audec_init.direct_to_dac = 1;
+    audec_init.use_tpc = 0;
+	audec_init.destroy_self = 0;
+    audec_init.src_msi = NULL;
+    ui_s->audio_play_msi = audio_file_play_init("0:count.wav", 1, &audec_init);
     #endif
 
     lv_obj_add_event_cb(ui, exit_audio_dac_test_ui, LV_EVENT_PRESSED, ui_s);

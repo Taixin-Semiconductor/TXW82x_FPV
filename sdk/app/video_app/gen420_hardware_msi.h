@@ -34,7 +34,6 @@ struct gen420_msg_s
 	
 };
 
-int32_t g_gen420_kick_msg(struct gen420_msg_s *msg,int32_t ms);
 struct msi *gen420_hardware_msi_init();
 int wake_up_gen420_queue(uint8_t devid,uint8_t *data_rom);
 int unregister_gen420_queue(uint32_t devid);

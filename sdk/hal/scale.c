@@ -5,6 +5,21 @@
 #include "devid.h"
 #include "hal/scale.h"
 
+int32 scale_suspend(struct scale_device *p_scale)
+{
+    if (p_scale && ((const struct scale_hal_ops *)p_scale->dev.ops)->suspend) {
+		return ((const struct scale_hal_ops *)p_scale->dev.ops)->suspend(p_scale);
+    }
+    return RET_ERR;
+}
+
+int32 scale_resume(struct scale_device *p_scale)
+{
+    if (p_scale && ((const struct scale_hal_ops *)p_scale->dev.ops)->resume) {
+        return ((const struct scale_hal_ops *)p_scale->dev.ops)->resume(p_scale);
+    }
+    return RET_ERR;
+}
 
 int32 scale_open(struct scale_device *p_scale)
 {

@@ -28,11 +28,12 @@ extern struct isp_tunnning_dev *isp_tunning;
 struct winusb_device
 {
     struct rt_device parent;
+    udevice_t device;
     void (*cmd_handler)(rt_uint8_t *buffer,rt_size_t size);
     void (*rx_handler)(rt_uint8_t *buffer,rt_size_t size);
     void (*tx_handler)(rt_uint8_t *buffer,rt_size_t size);
-    rt_uint8_t cmd_buff[256];
-    rt_uint8_t dat_buff[1024];
+    rt_uint8_t cmd_buff[256 + USB_RX_BUFF_RESERVE_SIZE]  rt_align(4);
+    rt_uint8_t dat_buff[1024 + USB_RX_BUFF_RESERVE_SIZE] rt_align(4);
     uep_t ep_out;
     uep_t ep_in;
     void *user_data;
@@ -371,16 +372,15 @@ static rt_err_t _winusb_descriptor_config(winusb_desc_t winusb, rt_uint8_t cintf
 rt_ssize_t win_usb_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size)
 {
 	/* read & write by class, actually, all class use the same udcd */
-    udcd_t udcd = (udcd_t)dev_get(HG_USB_DEV_CONTROLLER_DEVID);
-
-    udevice_t  device = rt_usbd_find_device(udcd);
+    winusb_device_t winusb_device = (winusb_device_t)dev;
+    udevice_t  device = winusb_device->device;
 
     //if(device->state != USB_STATE_CONFIGURED)
     if(device == NULL)
     {
         return 0;
     }
-    winusb_device_t winusb_device = (winusb_device_t)dev;
+
     winusb_device->ep_out->buffer = buffer;
     winusb_device->ep_out->request.buffer = buffer;
     winusb_device->ep_out->request.size = size;
@@ -390,14 +390,14 @@ rt_ssize_t win_usb_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t s
 }
 rt_ssize_t win_usb_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size)
 {
-    udcd_t udcd = (udcd_t)dev_get(HG_USB_DEV_CONTROLLER_DEVID);
+    winusb_device_t winusb_device = (winusb_device_t)dev;
+    udevice_t  device = winusb_device->device;
 
-    udevice_t  device = rt_usbd_find_device(udcd);
     if (device->state != USB_STATE_CONFIGURED)
     {
         return 0;
     }
-    winusb_device_t winusb_device = (winusb_device_t)dev;
+
     winusb_device->ep_in->buffer = (void *)buffer;
     winusb_device->ep_in->request.buffer = winusb_device->ep_in->buffer;
     winusb_device->ep_in->request.size = size;
@@ -476,6 +476,7 @@ ufunction_t rt_usbd_function_winusb_create(udevice_t device)
     rt_memset((void *)winusb_device, 0, sizeof(struct winusb_device));
     func->user_data = (void*)winusb_device;
     winusb_device->user_data = (void *)func;
+    winusb_device->device = device;
     /* create an interface object */
     winusb_intf = rt_usbd_interface_new(device, _interface_handler);
 

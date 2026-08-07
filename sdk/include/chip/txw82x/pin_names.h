@@ -420,6 +420,31 @@ extern "C" {
 #define PIN_SPI1_IO3 255
 #endif
 
+/* SPI2 */
+#ifndef PIN_SPI2_CS
+#define PIN_SPI2_CS  255
+#endif
+
+#ifndef PIN_SPI2_CLK
+#define PIN_SPI2_CLK 255
+#endif
+
+#ifndef PIN_SPI2_IO0
+#define PIN_SPI2_IO0 255
+#endif
+
+#ifndef PIN_SPI2_IO1
+#define PIN_SPI2_IO1 255
+#endif
+
+#ifndef PIN_SPI2_IO2
+#define PIN_SPI2_IO2 255
+#endif
+
+#ifndef PIN_SPI2_IO3
+#define PIN_SPI2_IO3 255
+#endif
+
 /* SPI5 */
 #ifndef PIN_SPI5_CLK
 #define PIN_SPI5_CLK 255
@@ -632,17 +657,17 @@ extern "C" {
 /*---------------------------------------*/
 /*---------LCD PIN DEFINITION------------*/
 /*---------------------------------------*/
-#ifndef DOTCLK_RWR
-#define DOTCLK_RWR 255
+#ifndef LCD_DOTCLK_RWR
+#define LCD_DOTCLK_RWR 255
 #endif
-#ifndef DE_ERD
-#define DE_ERD 255
+#ifndef LCD_DE_ERD
+#define LCD_DE_ERD 255
 #endif
-#ifndef VS_CS
-#define VS_CS  255
+#ifndef LCD_VS_CS
+#define LCD_VS_CS  255
 #endif
-#ifndef HS_DC
-#define HS_DC  255
+#ifndef LCD_HS_DC
+#define LCD_HS_DC  255
 #endif
 #ifndef LCD_TE
 #define LCD_TE 255
@@ -895,11 +920,23 @@ extern "C" {
 
 /* LMAC */
 #ifndef PIN_LMAC_FEM_RF_TX_EN
-#define PIN_LMAC_FEM_RF_TX_EN  PC_0
+#define PIN_LMAC_FEM_RF_TX_EN  255
 #endif
 
 #ifndef PIN_LMAC_FEM_RF_RX_EN
-#define PIN_LMAC_FEM_RF_RX_EN  PC_1
+#define PIN_LMAC_FEM_RF_RX_EN  255
+#endif
+
+#ifndef BAT_ADC_IO
+#define BAT_ADC_IO 255
+#endif
+
+#ifndef LCD_BACKLIGHT_IO
+#define LCD_BACKLIGHT_IO 255
+#endif
+
+#ifndef MUTE_PORT_IO
+#define MUTE_PORT_IO 255
 #endif
 
 enum pin_name {

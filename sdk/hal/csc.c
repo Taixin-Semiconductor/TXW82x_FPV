@@ -13,6 +13,23 @@ int32 csc_init(struct csc_device *p_csc)
     return RET_ERR;
 }
 
+int32 csc_suspend(struct csc_device *p_csc)
+{
+    if (p_csc && ((const struct csc_hal_ops *)p_csc->dev.ops)->suspend) {
+		return ((const struct csc_hal_ops *)p_csc->dev.ops)->suspend(p_csc);
+    }
+    return RET_ERR;
+}
+
+int32 csc_resume(struct csc_device *p_csc)
+{
+    if (p_csc && ((const struct csc_hal_ops *)p_csc->dev.ops)->resume) {
+        return ((const struct csc_hal_ops *)p_csc->dev.ops)->resume(p_csc);
+    }
+    return RET_ERR;
+}
+
+
 int32 csc_request_irq(struct csc_device *p_csc, uint32 irq_flags, csc_irq_hdl irq_hdl, uint32 irq_data)
 {
     if (p_csc && ((const struct csc_hal_ops *)p_csc->dev.ops)->request_irq) {

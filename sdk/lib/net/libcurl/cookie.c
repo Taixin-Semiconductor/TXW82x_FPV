@@ -80,17 +80,16 @@ Example set of cookies:
 #include "slist.h"
 #include "share.h"
 #include "strcase.h"
+#include "curl_fopen.h"
 #include "curl_get_line.h"
 #include "curl_memrchr.h"
 #include "parsedate.h"
 #include "rename.h"
-#include "fopen.h"
 #include "strdup.h"
 #include "llist.h"
 #include "curlx/strparse.h"
 
-/* The last 3 #include files should be in this order */
-#include "curl_printf.h"
+/* The last 2 #include files should be in this order */
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -107,7 +106,7 @@ static void strstore(char **str, const char *newstr, size_t len);
 */
 static void cap_expires(time_t now, struct Cookie *co)
 {
-  if((TIME_T_MAX - COOKIES_MAXAGE - 30) > now) {
+  if(co->expires && (TIME_T_MAX - COOKIES_MAXAGE - 30) > now) {
     timediff_t cap = now + COOKIES_MAXAGE;
     if(co->expires > cap) {
       cap += 30;
@@ -167,13 +166,13 @@ static bool pathmatch(const char *cookie_path, const char *uri_path)
 
   /* cookie_path must not have last '/' separator. ex: /sample */
   cookie_path_len = strlen(cookie_path);
-  if(1 == cookie_path_len) {
+  if(cookie_path_len == 1) {
     /* cookie_path must be '/' */
     return TRUE;
   }
 
   /* #-fragments are already cut off! */
-  if(0 == strlen(uri_path) || uri_path[0] != '/')
+  if(strlen(uri_path) == 0 || uri_path[0] != '/')
     uri_path = "/";
 
   /*
@@ -296,9 +295,9 @@ static char *sanitize_cookie_path(const char *cookie_path)
     /* Let cookie-path be the default-path. */
     return strdup("/");
 
-  /* remove trailing slash */
+  /* remove trailing slash when path is non-empty */
   /* convert /hoge/ to /hoge */
-  if(len && cookie_path[len - 1] == '/')
+  if(len > 1 && cookie_path[len - 1] == '/')
     len--;
 
   return Curl_memdup0(cookie_path, len);
@@ -388,17 +387,17 @@ static void remove_expired(struct CookieInfo *ci)
     for(n = Curl_llist_head(&ci->cookielist[i]); n; n = e) {
       co = Curl_node_elem(n);
       e = Curl_node_next(n);
-      if(co->expires && co->expires < now) {
-        Curl_node_remove(n);
-        freecookie(co);
-        ci->numcookies--;
-      }
-      else {
-        /*
-         * If this cookie has an expiration timestamp earlier than what we
-         * have seen so far then record it for the next round of expirations.
-         */
-        if(co->expires && co->expires < ci->next_expiration)
+      if(co->expires) {
+        if(co->expires < now) {
+          Curl_node_remove(n);
+          freecookie(co);
+          ci->numcookies--;
+        }
+        else if(co->expires < ci->next_expiration)
+          /*
+           * If this cookie has an expiration timestamp earlier than what we
+           * have seen so far then record it for the next round of expirations.
+           */
           ci->next_expiration = co->expires;
       }
     }
@@ -666,7 +665,6 @@ parse_cookie_header(struct Curl_easy *data,
         if(*maxage == '\"')
           maxage++;
         rc = curlx_str_number(&maxage, &co->expires, CURL_OFF_T_MAX);
-
         switch(rc) {
         case STRE_OVERFLOW:
           /* overflow, used max value */
@@ -678,8 +676,7 @@ parse_cookie_header(struct Curl_easy *data,
           break;
         case STRE_OK:
           if(!co->expires)
-            /* already expired */
-            co->expires = 1;
+            co->expires = 1; /* expire now */
           else if(CURL_OFF_T_MAX - now < co->expires)
             /* would overflow */
             co->expires = CURL_OFF_T_MAX;
@@ -698,18 +695,15 @@ parse_cookie_header(struct Curl_easy *data,
            * will be treated as a session cookie
            */
           char dbuf[MAX_DATE_LENGTH + 1];
+          time_t date = 0;
           memcpy(dbuf, curlx_str(&val), curlx_strlen(&val));
           dbuf[curlx_strlen(&val)] = 0;
-          co->expires = Curl_getdate_capped(dbuf);
-
-          /*
-           * Session cookies have expires set to 0 so if we get that back
-           * from the date parser let's add a second to make it a
-           * non-session cookie
-           */
-          if(co->expires == 0)
-            co->expires = 1;
-          else if(co->expires < 0)
+          if(!Curl_getdate_capped(dbuf, &date)) {
+            if(!date)
+              date++;
+            co->expires = (curl_off_t)date;
+          }
+          else
             co->expires = 0;
           cap_expires(now, co);
         }
@@ -756,7 +750,6 @@ parse_cookie_header(struct Curl_easy *data,
   if(!co->name)
     return CERR_BAD;
 
-  data->req.setcookies++;
   return CERR_OK;
 }
 
@@ -872,7 +865,7 @@ parse_netscape(struct Cookie *co,
       break;
     }
   }
-  if(6 == fields) {
+  if(fields == 6) {
     /* we got a cookie with blank contents, fix it */
     co->value = strdup("");
     if(!co->value)
@@ -881,7 +874,7 @@ parse_netscape(struct Cookie *co,
       fields++;
   }
 
-  if(7 != fields)
+  if(fields != 7)
     /* we did not find the sufficient number of fields */
     return CERR_FIELDS;
 
@@ -965,7 +958,7 @@ replace_existing(struct Curl_easy *data,
          clist->spath && co->spath && /* both have paths */
          clist->secure && !co->secure && !secure) {
         size_t cllen;
-        const char *sep;
+        const char *sep = NULL;
 
         /*
          * A non-secure cookie may not overlay an existing secure cookie.
@@ -974,8 +967,9 @@ replace_existing(struct Curl_easy *data,
          * "/loginhelper" is ok.
          */
 
-        sep = strchr(clist->spath + 1, '/');
-
+        DEBUGASSERT(clist->spath[0]);
+        if(clist->spath[0])
+          sep = strchr(clist->spath + 1, '/');
         if(sep)
           cllen = sep - clist->spath;
         else
@@ -1102,7 +1096,7 @@ Curl_cookie_add(struct Curl_easy *data,
 
   if(!ci->running &&    /* read from a file */
      ci->newsession &&  /* clean session cookies */
-     !co->expires)      /* this is a session cookie since it does not expire */
+     !co->expires)      /* this is a session cookie */
     goto fail;
 
   co->livecookie = ci->running;
@@ -1144,6 +1138,9 @@ Curl_cookie_add(struct Curl_easy *data,
    */
   if(co->expires && (co->expires < ci->next_expiration))
     ci->next_expiration = co->expires;
+
+  if(httpheader)
+    data->req.setcookies++;
 
   return co;
 fail:
@@ -1199,7 +1196,7 @@ struct CookieInfo *Curl_cookie_init(struct Curl_easy *data,
       if(!strcmp(file, "-"))
         fp = stdin;
       else {
-        fp = fopen(file, "rb");
+        fp = curlx_fopen(file, "rb");
         if(!fp)
           infof(data, "WARNING: failed to open cookie file \"%s\"", file);
         else
@@ -1210,19 +1207,27 @@ struct CookieInfo *Curl_cookie_init(struct Curl_easy *data,
     ci->running = FALSE; /* this is not running, this is init */
     if(fp) {
       struct dynbuf buf;
+      bool eof = FALSE;
+      CURLcode result;
       curlx_dyn_init(&buf, MAX_COOKIE_LINE);
-      while(Curl_get_line(&buf, fp)) {
-        const char *lineptr = curlx_dyn_ptr(&buf);
-        bool headerline = FALSE;
-        if(checkprefix("Set-Cookie:", lineptr)) {
-          /* This is a cookie line, get it! */
-          lineptr += 11;
-          headerline = TRUE;
-          curlx_str_passblanks(&lineptr);
-        }
+      do {
+        result = Curl_get_line(&buf, fp, &eof);
+        if(!result) {
+          const char *lineptr = curlx_dyn_ptr(&buf);
+          bool headerline = FALSE;
+          if(checkprefix("Set-Cookie:", lineptr)) {
+            /* This is a cookie line, get it! */
+            lineptr += 11;
+            headerline = TRUE;
+            curlx_str_passblanks(&lineptr);
+          }
 
-        Curl_cookie_add(data, ci, headerline, TRUE, lineptr, NULL, NULL, TRUE);
-      }
+          (void)Curl_cookie_add(data, ci, headerline, TRUE, lineptr, NULL,
+                                NULL, TRUE);
+          /* File reading cookie failures are not propagated back to the
+             caller because there is no way to do that */
+        }
+      } while(!result && !eof);
       curlx_dyn_free(&buf); /* free the line buffer */
 
       /*
@@ -1232,7 +1237,7 @@ struct CookieInfo *Curl_cookie_init(struct Curl_easy *data,
       remove_expired(ci);
 
       if(handle)
-        fclose(handle);
+        curlx_fclose(handle);
     }
     data->state.cookie_engine = TRUE;
   }
@@ -1293,6 +1298,14 @@ static int cookie_sort_ct(const void *p1, const void *p2)
   return (c2->creationtime > c1->creationtime) ? 1 : -1;
 }
 
+bool Curl_secure_context(struct connectdata *conn, const char *host)
+{
+  return conn->handler->protocol&(CURLPROTO_HTTPS|CURLPROTO_WSS) ||
+    curl_strequal("localhost", host) ||
+    !strcmp(host, "127.0.0.1") ||
+    !strcmp(host, "::1");
+}
+
 /*
  * Curl_cookie_getlist
  *
@@ -1305,15 +1318,17 @@ static int cookie_sort_ct(const void *p1, const void *p2)
  * Returns 0 when there is a list returned. Otherwise non-zero.
  */
 int Curl_cookie_getlist(struct Curl_easy *data,
-                        struct CookieInfo *ci,
-                        const char *host, const char *path,
-                        bool secure,
+                        struct connectdata *conn,
+                        const char *host,
                         struct Curl_llist *list)
 {
   size_t matches = 0;
-  bool is_ip;
+  const bool is_ip = Curl_host_is_ipnum(host);
   const size_t myhash = cookiehash(host);
   struct Curl_llist_node *n;
+  const bool secure = Curl_secure_context(conn, host);
+  struct CookieInfo *ci = data->cookies;
+  const char *path = data->state.up.path;
 
   Curl_llist_init(list, NULL);
 
@@ -1322,9 +1337,6 @@ int Curl_cookie_getlist(struct Curl_easy *data,
 
   /* at first, remove expired cookies */
   remove_expired(ci);
-
-  /* check if host is an IP(v4|v6) address */
-  is_ip = Curl_host_is_ipnum(host);
 
   for(n = Curl_llist_head(&ci->cookielist[myhash]);
       n; n = Curl_node_next(n)) {
@@ -1476,7 +1488,7 @@ void Curl_cookie_cleanup(struct CookieInfo *ci)
  */
 static char *get_netscape_format(const struct Cookie *co)
 {
-  return aprintf(
+  return curl_maprintf(
     "%s"     /* httponly preamble */
     "%s%s\t" /* domain */
     "%s\t"   /* tailmatch */
@@ -1572,7 +1584,7 @@ static CURLcode cookie_output(struct Curl_easy *data,
         error = CURLE_OUT_OF_MEMORY;
         goto error;
       }
-      fprintf(out, "%s\n", format_ptr);
+      curl_mfprintf(out, "%s\n", format_ptr);
       free(format_ptr);
     }
 
@@ -1580,10 +1592,9 @@ static CURLcode cookie_output(struct Curl_easy *data,
   }
 
   if(!use_stdout) {
-    fclose(out);
+    curlx_fclose(out);
     out = NULL;
     if(tempstore && Curl_rename(tempstore, filename)) {
-      unlink(tempstore);
       error = CURLE_WRITE_ERROR;
       goto error;
     }
@@ -1599,8 +1610,11 @@ static CURLcode cookie_output(struct Curl_easy *data,
 
 error:
   if(out && !use_stdout)
-    fclose(out);
-  free(tempstore);
+    curlx_fclose(out);
+  if(tempstore) {
+    unlink(tempstore);
+    free(tempstore);
+  }
   return error;
 }
 
@@ -1613,6 +1627,9 @@ static struct curl_slist *cookie_list(struct Curl_easy *data)
 
   if(!data->cookies || (data->cookies->numcookies == 0))
     return NULL;
+
+  /* at first, remove expired cookies */
+  remove_expired(data->cookies);
 
   for(i = 0; i < COOKIE_HASH_SIZE; i++) {
     for(n = Curl_llist_head(&data->cookies->cookielist[i]); n;
@@ -1652,17 +1669,17 @@ void Curl_flush_cookies(struct Curl_easy *data, bool cleanup)
 {
   CURLcode res;
 
-  if(data->set.str[STRING_COOKIEJAR]) {
-    Curl_share_lock(data, CURL_LOCK_DATA_COOKIE, CURL_LOCK_ACCESS_SINGLE);
-
+  Curl_share_lock(data, CURL_LOCK_DATA_COOKIE, CURL_LOCK_ACCESS_SINGLE);
+  /* only save the cookie file if a transfer was started (data->state.url is
+     set), as otherwise the cookies were not completely initialized and there
+     might be cookie files that weren't loaded so saving the file is the wrong
+     thing. */
+  if(data->set.str[STRING_COOKIEJAR] && data->state.url) {
     /* if we have a destination file for all the cookies to get dumped to */
     res = cookie_output(data, data->cookies, data->set.str[STRING_COOKIEJAR]);
     if(res)
       infof(data, "WARNING: failed to save cookies in %s: %s",
             data->set.str[STRING_COOKIEJAR], curl_easy_strerror(res));
-  }
-  else {
-    Curl_share_lock(data, CURL_LOCK_DATA_COOKIE, CURL_LOCK_ACCESS_SINGLE);
   }
 
   if(cleanup && (!data->share || (data->cookies != data->share->cookies))) {

@@ -34,20 +34,20 @@ static rt_err_t rt_usbh_wireless_enable(void *arg)
             os_printf("rndis alloc fail\r\n");
             return -ENOMEM;
         }
-        rndis->msg_buffer = (rt_uint8_t *)os_malloc(128);
+        rndis->msg_buffer = (rt_uint8_t *)os_malloc(128 + USB_RX_BUFF_RESERVE_SIZE); 
         if (rndis->msg_buffer == NULL) {
             os_printf("rndis msg buffer alloc fail\r\n");
             os_free(rndis);
             return -ENOMEM;
         }
-        rndis->data_buffer = (rt_uint8_t *)os_malloc(2048);
+        rndis->data_buffer = (rt_uint8_t *)os_malloc(2048 + USB_RX_BUFF_RESERVE_SIZE);
         if (rndis->data_buffer == NULL) {
             os_printf("rndis data buffer alloc fail\r\n");
             os_free(rndis->msg_buffer);
             os_free(rndis);
             return -ENOMEM;
         }
-        rndis->ts_buffer = (rt_uint8_t *)os_zalloc(2048);
+        rndis->ts_buffer = (rt_uint8_t *)os_zalloc(2048 + USB_RX_BUFF_RESERVE_SIZE); 
         if(rndis->ts_buffer == NULL) {
             os_printf("rndis ts_buf alloc fail\r\n");
             os_free(rndis->msg_buffer);

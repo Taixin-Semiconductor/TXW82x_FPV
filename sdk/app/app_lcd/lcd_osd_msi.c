@@ -44,6 +44,23 @@ static int lcd_osd_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1, uin
         {
         }
         break;
+
+        case MSI_CMD_LCD_OSD:
+        {
+            uint32_t cmd_self = (uint32_t)param1;
+            uint32_t arg = param2;
+            switch (cmd_self)
+            {
+                case MSI_OSD_ENABLE:
+                {
+                    msi->enable = arg;
+                    os_printf("---MSI_OSD_ENABLE :%d----\n",msi->enable);
+                }
+                break;
+            }
+        }
+        break;
+
         default:
             break;
     }

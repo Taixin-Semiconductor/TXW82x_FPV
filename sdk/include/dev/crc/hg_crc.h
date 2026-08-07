@@ -15,9 +15,6 @@ struct hg_crc {
     uint32                  irq_num;
     uint32                  flags;
     uint16                  cookie;
-#ifdef CONFIG_SLEEP
-    uint32                 *regs;
-#endif
 };
 
 int32 hg_crc_attach(uint32 dev_id, struct hg_crc *crc_c);

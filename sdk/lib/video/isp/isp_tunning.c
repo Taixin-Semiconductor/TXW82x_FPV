@@ -296,7 +296,7 @@ void isp_tunning_thread(void *dev)
                 break;
 
             case ISP_IOCTL_CMD_AWB_WP_EXPECT:
-                isp_awb_wp_expect_val(p_dev->p_isp, p_dev->p_data[0], p_dev->p_data[1], p_dev->cmd_channel);
+                isp_awb_wp_expect_val(p_dev->p_isp, p_dev->p_data[1], p_dev->p_data[0], p_dev->cmd_channel);
                 break;
                        
 			case ISP_IOCTL_CMD_AWB_WP_RANGE_CONSTRAINT:
@@ -527,8 +527,8 @@ void isp_tunning_thread(void *dev)
                 isp_ce_offset_config(p_dev->p_isp, (uint32)p_dev->p_data, p_dev->cmd_channel);
                 break;
 
-            case ISP_IOCTL_CMD_CE_SATURATION_BV_PARAM:
-                isp_ce_bv_stauration(p_dev->p_isp, (uint32)p_dev->p_data, p_dev->cmd_channel);
+            case ISP_IOCTL_CMD_CE_ADJ_BY_BV_PARAM:
+                isp_ce_adj_by_bv_param(p_dev->p_isp, (uint32)p_dev->p_data, p_dev->cmd_channel);
                 break;
 
             case ISP_IOCTL_CMD_SHARP_PARAM:
@@ -601,6 +601,22 @@ void isp_tunning_thread(void *dev)
 
             case ISP_IOCTL_CMD_WDR_TUNNING:
                 isp_wdr_tunning(p_dev->p_isp, (uint32)p_dev->p_data, p_dev->cmd_channel);
+                break;
+                            
+            case ISP_IOCTL_CMD_GAMMA_BY_BV_PARAM:
+                isp_gamma_by_bv_param(p_dev->p_isp, (uint32)p_dev->p_data, p_dev->cmd_channel);
+                break;
+            
+            case ISP_IOCTL_CMD_GAMMA_BY_BV_ENABLE:
+                isp_gamma_by_bv_enable(p_dev->p_isp, p_dev->p_data[0], p_dev->cmd_channel);
+                break;
+
+
+            case ISP_IOCTL_CMD_FPS_OPT:
+                {
+                    float value = *(float *)p_dev->p_data;
+                    isp_sensor_fps_opt(p_dev->p_isp, value, p_dev->cmd_channel);
+                }
                 break;
 
             default:

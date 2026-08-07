@@ -1,6 +1,7 @@
 #include "basic_include.h"
 
 #include "hal/i2c.h"
+#include "hal/i2s.h"
 #include "hal/timer_device.h"
 #include "hal/pwm.h"
 #include "hal/capture.h"
@@ -18,6 +19,7 @@
 #include "dev/dma/hg_m2m_dma.h"
 #include "dev/crc/hg_crc.h"
 #include "dev/timer/hgtimer_v4.h"
+#include "dev/timer/hgtimer_v7.h"
 #include "dev/vpp/hgvpp.h"
 #include "dev/prc/hgprc.h"
 #include "dev/csi/hgdvp.h"
@@ -37,6 +39,7 @@
 #include "dev/dual/hgdual_org.h"
 #include "dev/mipi_csi/hgmipi_csi.h"
 #include "dev/i2c/hgi2c_v1.h"
+#include "dev/i2s/hgi2s_v0.h"
 #include "dev/osd_enc/hgosd_enc.h"
 #include "lib/sdhost/sdhost.h"
 #include "dev/isp/hgisp_v0.h"
@@ -299,6 +302,12 @@ struct hgtimer_v4 timer3 = {
     .irq_num = TIM3_IRQn,
 };
 
+
+struct hgtimer_v7 simple_timer5 = {
+    .hw      = SIMPLE_TIMER5_BASE,
+    .irq_num = STMR5_IRQn,
+};
+
 struct hgspi_v3 spi0 = {
     .hw      = SPI0_BASE,
     .irq_num = SPI0_IRQn,
@@ -400,6 +409,16 @@ struct hg_audio_v0 aufade = {
     .dev_type = AUDIO_TYPE_AUFADE,
 };
 
+struct hgi2s_v0 i2s0 = {
+    .hw      = IIS0_BASE,
+    .irq_num = IIS0_IRQn,
+};
+
+struct hgi2s_v0 i2s1 = {
+    .hw      = IIS1_BASE,
+    .irq_num = IIS1_IRQn,
+};
+
 struct hgsha_v1 sha = {
 	.hw = (void *)SHA_BASE,
 	.irq_num = SHA_IRQn,
@@ -435,6 +454,11 @@ void device_init(void)
     hgtimer_v4_attach(HG_TIMER1_DEVID, &timer1);
     hgtimer_v4_attach(HG_TIMER2_DEVID, &timer2);
     hgtimer_v4_attach(HG_TIMER3_DEVID, &timer3);
+    hgtimer_v7_attach(HG_SIMTMR5_DEVID, &simple_timer5);
+    
+
+    hgi2s_v0_attach(HG_IIS0_DEVID, &i2s0);
+    hgi2s_v0_attach(HG_IIS1_DEVID, &i2s1);
 
 #ifndef SINGLE_CORE
     sysctrl_cpu1_softrst_en();

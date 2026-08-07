@@ -37,6 +37,7 @@ static void self_creat(struct rtsp_source *source, void *priv)
     uint8_t          *path = (uint8_t *) priv;
     const char       *match_path = (const char *) priv;
     uint8_t default_value = 0;
+    AUENC_INIT auenc_init;
     os_printf("path:%s\n", path);
 
     while((*match_path) && (*match_path != '?'))
@@ -84,14 +85,12 @@ static void self_creat(struct rtsp_source *source, void *priv)
         {
 #if AUDIO_EN == 1
             r->a_msi = rtsp_audio_msi_init(R_RTP_AUDIO);
-            if (audio_encode_init(AAC_ENC, AUADC_SAMPLERATE) != NULL)
+            auenc_init.destroy_self = 0;
+            auenc_init.src_msi = get_auadc_msi(AUSYS_AUAD);
+            r->audio_msi = audio_encode_init(AAC_ENC, audio_adc_get_samplerate(AUSYS_AUAD), &auenc_init);
+            if (r->audio_msi)
             {
-                auadc_msi_add_output(audio_code_msi_name(AAC_ENC));
-                r->audio_coder_ret = 1;
-            }
-            if (r->audio_coder_ret)
-            {
-                audio_code_add_output(AAC_ENC, R_RTP_AUDIO);
+                audio_code_add_output(r->audio_msi, R_RTP_AUDIO);
             }
 #endif
             r->video_msi = msi_find(AUTO_H264, 1);
@@ -123,7 +122,7 @@ static void self_creat(struct rtsp_source *source, void *priv)
             {
                 msi_add_output(r->video_msi, NULL, R_RTP_JPEG_H264); // 将video_msi的数据输出到R_RTP_JPEG_H264的msi,即v_msi
                 msi_do_cmd(r->video_msi, MSI_CMD_VIDEO_DEMUX_CTRL, MSI_VIDEO_DEMUX_START, 0);
-                OS_TASK_INIT("live_rtsp", &source->handle, self_thread, r, OS_TASK_PRIORITY_NORMAL, NULL, 1024);
+                OS_TASK_INIT("live_rtsp", &source->handle, self_thread, r, OS_TASK_PRIORITY_NORMAL + 1, NULL, 1024);
             }
         }
         // 这里没有增加容错
@@ -156,13 +155,10 @@ static void self_destory(struct rtsp_source *source)
         }
         rtsp_msi_deinit((void *) r->v_msi);
 #if AUDIO_EN == 1
-        if (r->audio_coder_ret)
+        if (r->audio_msi)
         {
-            audio_code_del_output(AAC_ENC, R_RTP_AUDIO);
-            if (audio_encode_deinit(AAC_ENC) == RET_OK)
-            {
-                auadc_msi_del_output(audio_code_msi_name(AAC_ENC));
-            }
+            audio_code_del_output(r->audio_msi, R_RTP_AUDIO);
+            audio_encode_deinit(r->audio_msi);
         }
         rtsp_audio_msi_deinit((void *) r->a_msi);
 #endif

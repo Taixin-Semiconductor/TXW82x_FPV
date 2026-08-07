@@ -41,6 +41,7 @@ struct os_semaphore seek_sema;
 
 uint32_t get_curmp3_size(uint32_t s);
 void curmp3_info_init(uint8_t *mp3_filename);
+void clear_curmp3_info(void);
 void find_first_frame(void *fp);
 
 #endif

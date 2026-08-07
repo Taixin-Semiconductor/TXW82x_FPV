@@ -214,11 +214,6 @@ void get_single_dvp(uint16_t *w,uint16_t *h);
 
 ////////////////////////////////////////////////////////JPEG//////////////////////////////////////////////////////////////////
 #define JPEG_LEN                        2*1024
-
-#ifndef VPP_SCALE_EN
-#define VPP_SCALE_EN                    0
-#endif
-
 #ifndef VPP_SCALE_WIDTH
 #define VPP_SCALE_WIDTH				1920//1920//1280	
 #endif
@@ -229,8 +224,9 @@ void get_single_dvp(uint16_t *w,uint16_t *h);
 #endif
 
 
-
+#ifndef IPF_EN
 #define IPF_EN					0
+#endif
 #define DET_EN					1
 
 #ifndef VPP_BUF1_EN
@@ -596,4 +592,21 @@ extern const _Sensor_Ident_ gc20C3_init;
 extern SENSOR_OP_SECTION const _Sensor_Adpt_ gc20C3_cmd;
 #endif
 
+#if DEV_SENSOR_IMX912
+extern const _Sensor_Ident_ imx219_init;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ imx219_cmd;
 #endif
+
+#if DEV_SENSOR_CV2008
+extern const _Sensor_Ident_ cv2008_init;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ cv2008_cmd;
+#endif
+
+#if DEV_SENSOR_CV2005
+extern const _Sensor_Ident_ cv2005_init;
+extern SENSOR_OP_SECTION const _Sensor_Adpt_ cv2005_cmd;
+#endif
+
+#endif
+
+

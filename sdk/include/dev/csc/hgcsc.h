@@ -19,7 +19,8 @@ struct hgcsc {
     uint32              irq_data;
     uint32              irq_num;
 	int32               addr_count;
-    uint32              opened:1, use_dma:1;
+    uint32              opened:1, use_dma:1, dsleep:1;
+	uint32 *cfg_backup;
 };
 int32 hgcsc_attach(uint32 dev_id, struct hgcsc *csc);
 #endif

@@ -341,7 +341,7 @@ const _Sensor_LSC          sc1346_lsc_init = {
     .p_lsc_tbl = (uint32 *)sc1346_lsc_tbl,
 };
 
-void SC1346_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void SC1346_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint8  i;
     uint8  analog_gain        = p_cfg->analog_gain>>8;

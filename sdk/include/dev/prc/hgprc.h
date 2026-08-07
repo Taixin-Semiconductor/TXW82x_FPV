@@ -18,7 +18,8 @@ struct hgprc {
     prc_irq_hdl         irq_hdl;
     uint32              irq_data;
     uint32              irq_num;
-    uint32              opened:1, use_dma:1;
+    uint32              opened:1, use_dma:1, dsleep:1;
+	uint32 *cfg_backup;
 };
 
 

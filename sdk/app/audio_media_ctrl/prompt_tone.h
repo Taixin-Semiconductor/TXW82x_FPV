@@ -2,6 +2,8 @@
 #define _PROMPT_TONE_H_
 
 #include "basic_include.h"
+#include "lib/heap/av_heap.h"
+#include "lib/heap/av_psram_heap.h"
 #include "lib/multimedia/msi.h"
 #include "lib/multimedia/framebuff.h"
 
@@ -22,6 +24,7 @@ typedef struct {
     uint32_t tone_buf_offset;
     struct fbpool tx_pool;
     struct msi *msi;
+    struct msi *mp3_msi;
 } PROMPT_TONE_STRUCT;
 
 extern const uint8_t connect_mp3[];

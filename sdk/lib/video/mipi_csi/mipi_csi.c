@@ -174,6 +174,19 @@ static const _Sensor_Ident_ *devSensorInitTable[] = {
     &f38p_init,
 #endif
 
+
+#if DEV_SENSOR_IMX912
+	&imx219_init,
+#endif
+
+#if DEV_SENSOR_CV2008
+	&cv2008_init,
+#endif
+
+#if DEV_SENSOR_CV2005
+	&cv2005_init,
+#endif
+
 	NULL,
 };
 
@@ -315,6 +328,19 @@ static const _Sensor_Adpt_ *devSensorOPTable[] = {
 #if DEV_SENSOR_F38P
     &f38p_cmd,
 #endif
+
+#if DEV_SENSOR_IMX912
+	&imx219_cmd,
+#endif
+
+#if DEV_SENSOR_CV2008
+	&cv2008_cmd,
+#endif
+
+#if DEV_SENSOR_CV2005
+	&cv2005_cmd,
+#endif
+
 };
 
 const _Sensor_Ident_ null_init2={0x00,0x00,0x00,0x00,0x00,0x00};
@@ -406,9 +432,9 @@ __weak void mipi_sensor_reset(void){
 	if(pdn != 255){
 		gpio_iomap_output(pdn,GPIO_IOMAP_OUTPUT);
 		gpio_set_val(pdn,0);
-		os_sleep_ms(200);
+		os_sleep_ms(2);
 		gpio_set_val(pdn,1);
-		os_sleep_ms(200);
+		os_sleep_ms(2);
 	}
 
 
@@ -842,7 +868,7 @@ int mipi_csi_sensor_init(_Sensor_Adpt_ *p_sensor_cmd, uint8_t mipi_csi_iic)
 
 			if((p_sensor_cmd->init[i]==0xFE)&&(p_sensor_cmd->init[i+1]==0xFE)){
 				if(p_sensor_cmd->init[i+2]==0x01){
-					os_sleep_ms(100);
+					os_sleep_ms(1);
 				}
 			}
 			else{
@@ -916,7 +942,7 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t init_en, uint8_t csi_d
 		gpio_driver_strength(PE_0,	GPIO_DS_G1);
 		mipi_csi_set_baudrate(mipi_csi_dev,6000000);
 		#endif
-		os_sleep_ms(300);
+		os_sleep_ms(1);
 
 		g_mipi_csi_priv.mipi_csi_init = 1;
 	}

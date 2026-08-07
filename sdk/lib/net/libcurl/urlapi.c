@@ -37,16 +37,17 @@
 #include "curlx/strparse.h"
 #include "curl_memrchr.h"
 
-/* The last 3 #include files should be in this order */
-#include "curl_printf.h"
+/* The last 2 #include files should be in this order */
 #include "curl_memory.h"
 #include "memdebug.h"
 
+#ifdef _WIN32
   /* MS-DOS/Windows style drive prefix, eg c: in c:foo */
 #define STARTS_WITH_DRIVE_PREFIX(str) \
   ((('a' <= str[0] && str[0] <= 'z') || \
     ('A' <= str[0] && str[0] <= 'Z')) && \
    (str[1] == ':'))
+#endif
 
   /* MS-DOS/Windows style drive prefix, optionally with
    * a '|' instead of ':', followed by a slash or NUL */
@@ -459,7 +460,7 @@ UNITTEST CURLUcode Curl_parse_port(struct Curl_URL *u, struct dynbuf *host,
     u->portnum = (unsigned short) port;
     /* generate a new port number string to get rid of leading zeroes etc */
     free(u->port);
-    u->port = aprintf("%" CURL_FORMAT_CURL_OFF_T, port);
+    u->port = curl_maprintf("%" CURL_FORMAT_CURL_OFF_T, port);
     if(!u->port)
       return CURLUE_OUT_OF_MEMORY;
   }
@@ -511,7 +512,7 @@ static CURLUcode ipv6_parse(struct Curl_URL *u, char *hostname,
   {
     char dest[16]; /* fits a binary IPv6 address */
     hostname[hlen] = 0; /* end the address there */
-    if(1 != curlx_inet_pton(AF_INET6, hostname, dest))
+    if(curlx_inet_pton(AF_INET6, hostname, dest) != 1)
       return CURLUE_BAD_IPV6;
     if(curlx_inet_ntop(AF_INET6, dest, hostname, hlen)) {
       hlen = strlen(hostname); /* might be shorter now */
@@ -1428,12 +1429,12 @@ static CURLUcode urlget_url(const CURLU *u, char **part, unsigned int flags)
   bool urlencode = (flags & CURLU_URLENCODE) ? 1 : 0;
   char portbuf[7];
   if(u->scheme && curl_strequal("file", u->scheme)) {
-    url = aprintf("file://%s%s%s%s%s",
-                  u->path,
-                  show_query ? "?": "",
-                  u->query ? u->query : "",
-                  show_fragment ? "#": "",
-                  u->fragment ? u->fragment : "");
+    url = curl_maprintf("file://%s%s%s%s%s",
+                        u->path,
+                        show_query ? "?": "",
+                        u->query ? u->query : "",
+                        show_fragment ? "#": "",
+                        u->fragment ? u->fragment : "");
   }
   else if(!u->host)
     return CURLUE_NO_HOST;
@@ -1452,7 +1453,7 @@ static CURLUcode urlget_url(const CURLU *u, char **part, unsigned int flags)
       /* there is no stored port number, but asked to deliver
          a default one for the scheme */
       if(h) {
-        msnprintf(portbuf, sizeof(portbuf), "%u", h->defport);
+        curl_msnprintf(portbuf, sizeof(portbuf), "%u", h->defport);
         port = portbuf;
       }
     }
@@ -1500,26 +1501,26 @@ static CURLUcode urlget_url(const CURLU *u, char **part, unsigned int flags)
     }
 
     if(!(flags & CURLU_NO_GUESS_SCHEME) || !u->guessed_scheme)
-      msnprintf(schemebuf, sizeof(schemebuf), "%s://", scheme);
+      curl_msnprintf(schemebuf, sizeof(schemebuf), "%s://", scheme);
     else
       schemebuf[0] = 0;
 
-    url = aprintf("%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
-                  schemebuf,
-                  u->user ? u->user : "",
-                  u->password ? ":": "",
-                  u->password ? u->password : "",
-                  options ? ";" : "",
-                  options ? options : "",
-                  (u->user || u->password || options) ? "@": "",
-                  allochost ? allochost : u->host,
-                  port ? ":": "",
-                  port ? port : "",
-                  u->path ? u->path : "/",
-                  show_query ? "?": "",
-                  u->query ? u->query : "",
-                  show_fragment ? "#": "",
-                  u->fragment ? u->fragment : "");
+    url = curl_maprintf("%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+                        schemebuf,
+                        u->user ? u->user : "",
+                        u->password ? ":": "",
+                        u->password ? u->password : "",
+                        options ? ";" : "",
+                        options ? options : "",
+                        (u->user || u->password || options) ? "@": "",
+                        allochost ? allochost : u->host,
+                        port ? ":": "",
+                        port ? port : "",
+                        u->path ? u->path : "/",
+                        show_query ? "?": "",
+                        u->query ? u->query : "",
+                        show_fragment ? "#": "",
+                        u->fragment ? u->fragment : "");
     free(allochost);
   }
   if(!url)
@@ -1578,7 +1579,7 @@ CURLUcode curl_url_get(const CURLU *u, CURLUPart what,
          a default one for the scheme */
       const struct Curl_handler *h = Curl_get_scheme_handler(u->scheme);
       if(h) {
-        msnprintf(portbuf, sizeof(portbuf), "%u", h->defport);
+        curl_msnprintf(portbuf, sizeof(portbuf), "%u", h->defport);
         ptr = portbuf;
       }
     }
@@ -1663,7 +1664,7 @@ static CURLUcode set_url_port(CURLU *u, const char *provided_port)
   if(curlx_str_number(&provided_port, &port, 0xffff) || *provided_port)
     /* weirdly provided number, not good! */
     return CURLUE_BAD_PORT_NUMBER;
-  tmp = aprintf("%" CURL_FORMAT_CURL_OFF_T, port);
+  tmp = curl_maprintf("%" CURL_FORMAT_CURL_OFF_T, port);
   if(!tmp)
     return CURLUE_OUT_OF_MEMORY;
   free(u->port);
@@ -1757,13 +1758,26 @@ static CURLUcode urlset_clear(CURLU *u, CURLUPart what)
   return CURLUE_OK;
 }
 
+static bool allowed_in_path(unsigned char x)
+{
+  switch(x) {
+  case '!': case '$': case '&': case '\'':
+  case '(': case ')': case '{': case '}':
+  case '[': case ']': case '*': case '+':
+  case ',': case ';': case '=': case ':':
+  case '@': case '/':
+    return TRUE;
+  }
+  return FALSE;
+}
+
 CURLUcode curl_url_set(CURLU *u, CURLUPart what,
                        const char *part, unsigned int flags)
 {
   char **storep = NULL;
   bool urlencode = (flags & CURLU_URLENCODE) ? 1 : 0;
   bool plusencode = FALSE;
-  bool urlskipslash = FALSE;
+  bool pathmode = FALSE;
   bool leadingslash = FALSE;
   bool appendquery = FALSE;
   bool equalsencode = FALSE;
@@ -1808,7 +1822,7 @@ CURLUcode curl_url_set(CURLU *u, CURLUPart what,
   case CURLUPART_PORT:
     return set_url_port(u, part);
   case CURLUPART_PATH:
-    urlskipslash = TRUE;
+    pathmode = TRUE;
     leadingslash = TRUE; /* enforce */
     storep = &u->path;
     break;
@@ -1850,7 +1864,7 @@ CURLUcode curl_url_set(CURLU *u, CURLUPart what,
             return CURLUE_OUT_OF_MEMORY;
         }
         else if(ISUNRESERVED(*i) ||
-                ((*i == '/') && urlskipslash) ||
+                (pathmode && allowed_in_path(*i)) ||
                 ((*i == '=') && equalsencode)) {
           if((*i == '=') && equalsencode)
             /* only skip the first equals sign */

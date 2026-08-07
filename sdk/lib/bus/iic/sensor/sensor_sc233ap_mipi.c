@@ -364,7 +364,7 @@ const uint32 sc233ap_lsc_tbl[] = {
 const _Sensor_LSC       sc233ap_lsc_init = {
     .p_lsc_tbl =        sc233ap_lsc_tbl,
 };
-void SC233ap_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void SC233ap_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint8  gain_value[]      = {0, 0x40, 0x48, 0x49, 0x4B, 0x4f, 0x5f};
     uint8  sensor_gain_part1 = 0;

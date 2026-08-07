@@ -57,6 +57,12 @@ const struct hgisp_param_info isp_master_param =
         .cons_cr_min        = 10,
         .cons_cb_min        = 10,
         .cons_uv_min        =  2,
+        .back_cr_max            = 30,
+        .back_cb_max            = 30,
+        .back_uv_max            = 10,
+        .back_cr_min            = 5,
+        .back_cb_min            = 5,
+        .back_uv_min            = 5,
         .awb_wp_max         = 0xc0, 
         .awb_wp_min         = 0x08, 
         .awb_r_max          = 0xc0, 
@@ -65,7 +71,13 @@ const struct hgisp_param_info isp_master_param =
         .awb_precision      = 1,
         .awb_fine_cons_en   = 1,
         .awb_coarse_cons_en = 0,
+        .awb_back_cons_en       = 1,
+        .awb_back_wp_min_ratio  = 0.2,
         .manual_gain        = {256, 256, 256, 256},
+        .awb_crop_pixel_start_h	= 0,
+		.awb_crop_pixel_start_v	= 0,
+        .awb_crop_pixel_end_h 	= 0,
+        .awb_crop_pixel_end_v 	= 0,
     },
 
     .cfg_ae = {
@@ -77,6 +89,14 @@ const struct hgisp_param_info isp_master_param =
                                        2, 3, 5, 3, 2,
                                        2, 3, 3, 3, 2,
                                        2, 2, 2, 2, 2},
+        .ae_crop_start_h           = 0,
+        .ae_crop_start_v           = 0,
+        .ae_crop_size_h            = 0,
+        .ae_crop_size_v            = 0,
+        .hist_crop_start_h         = 1,
+        .hist_crop_start_v         = 1,
+        .hist_crop_end_h           = 0,
+        .hist_crop_end_v           = 0,
         .ae_lock_cnt               = 10,
         .ae_lock_tolerance         = 12,
         .reduce_fps_en             = 0,
@@ -88,80 +108,85 @@ const struct hgisp_param_info isp_master_param =
         .hist_upper_pixel_ratio    = 0.88,
         .hist_lower_pixel_ratio    = 0.00,
 
-        .abl_luma_target_max       = 100,
-        .dark_pos_thr_max          = 50,
-        .abl_diff_ratio            = 0.03,
-        .abl_dark_pos_diff_thr     = 9,     // 0.15 * 61
-        .abl_bright_pos_diff_thr   = 6,     // 0.10 * 61
-        .bright_pixel_high_ratio   = 0.10,
-        .bright_pixel_sub_ratio    = 0.05,
-        .dark_pixel_low_ratio      = 0.55,
-        .dark_pixel_high_ratio     = 0.85,
-        .abl_dark_pos_low_wthr     = 18,    // 0.30 * 61,
-        .abl_dark_pos_add_wthr     = 12,    // 0.20 * 61,
-        .bright_pos_adjust_ratio   = 0.80,
-        .aoe_dark_pos_wthr         = 30,    // 0.50 * 61,
-        .aoe_bright_pos_wthr       = 9,     // 0.15 * 61,
         .abl_bv_gain_sel           = 0,
         .abl_expo_line_low_ratio   = 0.80,
         .abl_expo_line_high_ratio  = 1.00,
         .abl_expo_gain_low_thr     = 256,
         .abl_expo_gain_high_thr    = 324,
-        .abl_hist_thr[0]           = 50,
-        .abl_hist_thr[1]           = 230,
         .aoe_expo_gain_thr[0]      = 384-50,
         .aoe_expo_gain_thr[1]      = 384,
         .abl_bv_thr[0]             = 6645,  // 80lx
         .abl_bv_thr[1]             = 13216, // 160lx
         .aoe_bv_thr[0]             = 3531,  // 40lx
         .aoe_bv_thr[1]             = 6645,  // 80lx
+        .abl_hist_thr[0]           = 50,
+        .abl_hist_thr[1]           = 230,
+        .dark_pixel_low_ratio      = 0.55,
+        .dark_pixel_high_ratio     = 0.85,
+        .bright_pixel_high_ratio   = 0.10,
+        .bright_pixel_sub_ratio    = 0.05,
+        .dark_pos_thr_max          = 50,
+        .bright_pos_adjust_ratio   = 0.80,
+        .abl_dark_pos_low_wthr     = 18,    // 0.30 * 61,
+        .abl_dark_pos_add_wthr     = 12,    // 0.20 * 61,
+        .aoe_dark_pos_wthr         = 30,    // 0.50 * 61,
+        .aoe_bright_pos_wthr       = 9,     // 0.15 * 61,
+        .abl_luma_target_max       = 100,
+        .abl_diff_ratio            = 0.03,
+        .abl_dark_pos_diff_thr     = 9,     // 0.15 * 61
+        .abl_bright_pos_diff_thr   = 6,     // 0.10 * 61
 
         .stg_mode                  = 0,
         .stg_ratio_slope           = 0.3*256,
         .stg_max_offset            = 20,
     },
+    
     .config_wdr = {
+        .dynamic_gamma_en          = 0,
+        .y_gamma_opt               = 0,
         .wdr_en                    = 0,
         .temporal_smooth_alpha     = 0.1,
         .noise_floor               = 128,
         .noise_floor_out           = 128,
         .shadow_boost_target       = 512,
         .highlight_compress_target = 870,
+        .auto_noise_floor_out      = 1,
+        .min_ns_percentile         = 0.01,
+        .max_ns_percentile         = 0.07,
     },
 };
-
-
-#define SENSOR_PARAM_SIZE (64*4*2+153*4*4)
 
 void *isp_sensor_param_load(uint16 *buff)
 {
     struct hgisp_sensor_init *init = NULL;
-    uint8  sensor_index  = 0;
-    uint8  data_offset   = 0;
-    uint32 param_size    = buff[2] << 16 | buff[1];
-    uint32 gamma_size    = 256;
-    uint32 lsc_size      = 153*4*4;
+    uint8  sensor_index      = 0;
+    uint32 data_offset       = 0;
+    uint32 param_size        = buff[2] << 16 | buff[1];
+    uint32 gamma_size        = 256;
+    uint32 lsc_size          = 153*4*4;
+    uint32 info_szie         = sizeof(struct hgisp_sensor_info);
+    uint32 sensor_param_size = (gamma_size << 1) + lsc_size + info_szie;
     init = (struct hgisp_sensor_init *)os_malloc(sizeof(struct hgisp_sensor_init));
     if (init)
     {
         os_memset(init, 0, sizeof(struct hgisp_sensor_init));
         sensor_index = buff[3];
-
-        if (param_size && sensor_index)
+        if (sensor_index && (param_size >= sensor_index * sensor_param_size))
         {
             data_offset = 4;
             for (int i = 0; i < sensor_index; i++)
             {
-                if (buff[data_offset] == ISPCFG_MAGIC)
+                if (buff[data_offset+2] == ISPCFG_MAGIC)
                 {
-                    os_memcpy((void *)&init->sensor_info[i].sensor_param, (void *)&buff[data_offset], sizeof(struct hgisp_param_info));
-                    data_offset += sizeof(struct hgisp_param_info);
+                    os_memcpy((void *)&init->sensor_info[i], (void *)&buff[data_offset], info_szie);
+                    init->sensor_info[i].info_src = ISP_INFO_SRC_TYPE_CODE_PARAM;
+                    data_offset += (info_szie >> 1);
                     init->sensor_info[i].sensor_param.y_gamma   = (uint32 *)&buff[data_offset];
-                    data_offset += gamma_size;
+                    data_offset += (gamma_size >> 1);
                     init->sensor_info[i].sensor_param.rgb_gamma = (uint32 *)&buff[data_offset];
-                    data_offset += gamma_size;
+                    data_offset += (gamma_size >> 1);
                     init->sensor_info[i].sensor_param.lsc_tbl   = (uint32 *)&buff[data_offset];
-                    data_offset += lsc_size;
+                    data_offset += (lsc_size >> 1);
                 } else {
                     os_printf("param_data flash : %04x target : %04x err!\r\n", buff[data_offset], ISPCFG_MAGIC);
                     goto _err;
@@ -170,6 +195,7 @@ void *isp_sensor_param_load(uint16 *buff)
             os_printf("sensor param use flash_param!\r\n");
             goto _end;
         } else {
+            os_printf("param_size : %d calc_size : %d\r\n", param_size, sensor_index * sensor_param_size);
             goto _err;
         }
     } else {
@@ -180,9 +206,12 @@ void *isp_sensor_param_load(uint16 *buff)
 
 _err:
     os_printf("sensor param use default param!\r\n");
+    init->sensor_info[0].info_src = ISP_INFO_SRC_TYPE_CODE_DOC;
+    init->sensor_info[1].info_src = ISP_INFO_SRC_TYPE_CODE_DOC;
+    init->sensor_info[2].info_src = ISP_INFO_SRC_TYPE_CODE_DOC;
     os_memcpy((void *)&init->sensor_info[0].sensor_param, (void *)&isp_master_param, sizeof(struct hgisp_param_info));
-//    os_memcpy((void *)&init->sensor_info[1].sensor_param, (void *)&isp_slave0_param, sizeof(struct hgisp_param_info));
-//    os_memcpy((void *)&init->sensor_info[2].sensor_param, (void *)&isp_slave1_param, sizeof(struct hgisp_param_info));
+    // os_memcpy((void *)&init->sensor_info[1].sensor_param, (void *)&isp_slave0_param, sizeof(struct hgisp_param_info));
+    // os_memcpy((void *)&init->sensor_info[2].sensor_param, (void *)&isp_slave1_param, sizeof(struct hgisp_param_info));
 _end:
     return (void *)init;
 }

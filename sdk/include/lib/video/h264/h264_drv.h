@@ -1,5 +1,6 @@
 #ifndef _H264_MODE_DEFINE_
 #define _H264_MODE_DEFINE_
+#include "dev/h264/hg264.h"
 
 
 struct  h264_cfg_t {
@@ -172,6 +173,7 @@ uint8 get_h264_type(void *d);
 uint8 get_h264_loop_num(void *d);
 void h264_dec_src_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_t devid);
 void h264_dec_room_init(uint8_t devnum,uint16_t drv2_w,uint16_t drv2_h);
+void get_h264_stream_w_h(uint16_t* w,uint16_t* h,uint8_t *h264data);
 struct list_head* get_h264_frame();
 uint32 get_h264_timestamp(void *d);
 int h264_mem_init(uint8_t init,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_w,uint32_t drv2_h);
@@ -185,4 +187,16 @@ void h264wq_queue_init(uint16_t w,uint16_t h);
 
 uint8_t h264msg_queue_done(uint32 list);
 int put_h264msg_to_queue(uint8_t type,uint32_t w,uint32_t h,uint32 data,uint32 len);
+
+void h264_dec_intr_status(struct h264_device *p_h264,struct h264_ctl_t *dec_ctl);
+void h264_clr_intr(struct h264_device *p_h264);
+void sps_setting(struct str_info *str, struct h264_header *head, uint32_t w, uint32_t h);
+void cfg_setting(struct h264_device *p_h264, struct h264_header *head, struct h264_cfg_t *cfg, struct h264_ctl_t *ctl);
+void h264_dec_refbuf_set(struct h264_device *p_h264,uint32_t      buf_base, struct h264_cfg_t *dec_cfg, struct h264_ctl_t *dec_ctl);
+void pps_setting(struct str_info *str, struct h264_header *head, uint8_t *pps, uint8_t len);
+void h264_rom_memcpy(uint8_t *rom_ptr, uint8_t *data, uint32_t len);
+void h264_decode_I_P_setting(struct str_info *str, struct h264_header *head, uint8_t *rom_ptr);
+void h264_dec_a_frame(struct h264_device *p_h264,uint32_t nal_length, struct h264_ctl_t *dec_ctl, struct h264_header *head, struct str_info *str,uint32 dataroom) ;
+void  h264_dec_flag_chk(uint32_t flags); 
+void h264_dec_src_room_set(struct h264_device *p_h264,uint32_t       buf_base, struct h264_cfg_t *dec_cfg,struct h264_ctl_t *dec_ctl);
 #endif

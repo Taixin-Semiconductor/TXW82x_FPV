@@ -41,7 +41,7 @@ struct dev_obj *dev_get(uint16 dev_id)
     if (dev && dev->hotplug) {
         atomic_inc(&dev->ref);
         if (atomic_read(&dev->ref) > 32) {
-            os_printf(KERN_WARNING"Device %d Ref is %d, Maybe device reference exception!!!\r\n", dev_id, atomic_read(&dev->ref));
+            //os_printf(KERN_WARNING"Device %d Ref is %d, Maybe device reference exception!!!(%08x)\r\n", dev_id, atomic_read(&dev->ref),__builtin_return_address(0));
         }
     }
     os_mutex_unlock(&s_dev_mgr.mutex);
@@ -145,6 +145,7 @@ int32 dev_suspend(uint16 type)
     dev = s_dev_mgr.devs;
     while (dev) {
         if (dev->ops && dev->ops->suspend && !dev->suspend) {
+            os_printf("%s: func= %x\r\n", __func__, dev->ops->suspend);
             if (dev_suspend_hook(dev, type)) {
                 loop = 0;
                 dev->suspend = 1;
@@ -176,6 +177,7 @@ int32 dev_resume(uint16 type, uint32 wkreason)
     dev = s_dev_mgr.devs;
     while (dev) {
         if (dev->ops && dev->ops->resume && dev->suspend) {
+            os_printf("%s: func= %x\r\n", __func__, dev->ops->resume);
             if (dev_resume_hook(dev, type, wkreason)) {
                 dev->ops->resume(dev);
                 dev->suspend = 0;

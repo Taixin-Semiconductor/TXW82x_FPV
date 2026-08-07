@@ -126,8 +126,7 @@ static int32 sim_video_work(struct os_work *work)
             {
                 hw_memset((uint8_t*)buf, 0, sim_video->w * sim_video->h);
                 hw_memset((uint8_t*)buf+sim_video->w * sim_video->h,0x80,sim_video->w * sim_video->h / 2);
-                sys_dcache_clean_range(buf, sim_video->w * sim_video->h * 3 / 2);
-                sys_dcache_clean_invalid_range(buf, sim_video->w * sim_video->h * 3 / 2);
+                sys_dcache_invalid_range(buf, sim_video->w * sim_video->h * 3 / 2);
             }
 
 

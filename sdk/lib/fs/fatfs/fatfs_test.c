@@ -20,6 +20,8 @@
 
 #define FAT_INFO_SHOW(...) //printf(__VA_ARGS__)
 
+// #define FAT_TIME
+
 #if FS_EN
 static uint8_t fat_ready = 0;
 
@@ -122,7 +124,11 @@ struct fat_cache_t
 	BYTE fs_fats;
 	DWORD fs_size;
 	DWORD fat_tick;
-	os_timer_t fat_timer;
+	#ifdef FAT_TIME
+ 	os_timer_t fat_timer;
+	#else
+	struct os_work fat_wk;
+	#endif
 	struct os_mutex lock;
 	struct fat_data_t fat1;
 };
@@ -153,13 +159,13 @@ signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat,DWORD fatbase, D
 	fat_cache.fat_info_ready = RET_OK;
 
 	// 计算逻辑地址（扇区号）
-	UINT fat1_logical = fatbase - b_vol;                    // FAT1 logical start
-	UINT fat2_logical = fat1_logical + sz_fat;     // FAT2 logical start
+	//UINT fat1_logical = fatbase - b_vol;                    // FAT1 logical start
+	//UINT fat2_logical = fat1_logical + sz_fat;     // FAT2 logical start
 
 	// 计算物理地址（加上分区偏移）
-	UINT partition_start = b_vol;                  // 分区起始扇区
-	UINT fat1_physical = partition_start + fat1_logical;
-	UINT fat2_physical = partition_start + fat2_logical;
+	//UINT partition_start = b_vol;                  // 分区起始扇区
+	//UINT fat1_physical = partition_start + fat1_logical;
+	//UINT fat2_physical = partition_start + fat2_logical;
 
 	// if (fat_cache.fs_type == FS_EXFAT) // FS_EXFAT文件系统不需要优化
 	// {
@@ -225,9 +231,12 @@ static void fat_cache_sync(struct sdh_device *host)
 	os_mutex_unlock(&fat_cache.lock);
 }
 
+#ifdef FAT_TIME
 static void fat_loop(void *arg)
+#else
+static int32 fat_loop(struct os_work *work)
+#endif
 {
-	
 	if (fat_cache.fat_init != RET_OK || fat_cache.fat_info_ready != RET_OK){
 		goto fat_loop_end;
 	}	
@@ -253,7 +262,6 @@ static void fat_loop(void *arg)
 	if (os_jiffies() - fat_cache.fat_tick > 200 && SD_OFF != sdh->sd_opt)
 	{
 		fat_cache.fat_tick = os_jiffies();
-		
 		if (fat_cache.fat1.max_offset > 0)
 		{
 			FAT_INFO_SHOW(" fat_loop write back max_offset %d\r\n", fat_cache.fat1.max_offset);
@@ -268,7 +276,12 @@ static void fat_loop(void *arg)
 	
 	os_mutex_unlock(&fat_cache.lock);
 fat_loop_end:
+	#ifdef FAT_TIME
 	return;
+	#else
+    os_run_work_delay(work, 50);
+	return 0;
+	#endif
 	
 }
 
@@ -296,8 +309,12 @@ static void del_fat_cache(void)
 	os_mutex_lock(&fat_cache.lock, osWaitForever);
 	FAT_INFO_SHOW("########### del_fat_cache \r\n");
 	
+	#ifdef FAT_TIME
 	os_timer_stop(&fat_cache.fat_timer);
 	os_timer_del(&fat_cache.fat_timer);// 先卸载定时器
+	#else
+	os_work_cancle(&fat_cache.fat_wk,1);
+	#endif
 	
 	// 释放fat缓存
 	if (fat_cache.fat1.data)
@@ -478,12 +495,20 @@ bool fatfs_register()
 		fat_cache.fat1.data = fat_malloc(FAT_CACHE_SIZE * 512);
 		if( fat_cache.fat1.data != NULL &&
 			os_mutex_init(&fat_cache.lock) == RET_OK && 
-			os_timer_init(&fat_cache.fat_timer, fat_loop, OS_TIMER_MODE_PERIODIC, 0) == RET_OK
+			#ifdef FAT_TIME
+			os_timer_init(&fat_cache.fat_timer, fat_loop, OS_FAT_TIMER_MODE_PERIODIC, 0) == RET_OK
+			#else
+			OS_WORK_INIT(&fat_cache.fat_wk, fat_loop, 0) == RET_OK
+			#endif
 			)
 		{
 			fat_cache.fat_init = RET_OK;
 			FAT_INFO_SHOW("fat_init success\r\n");
+			#ifdef FAT_TIME
 			os_timer_start(&fat_cache.fat_timer, 50);
+			#else
+			os_run_work_delay(&fat_cache.fat_wk, 50);
+			#endif
 		}
 		else
 		{

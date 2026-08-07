@@ -13,8 +13,9 @@
 
 #include "hal/sha.h"
 
-
+#if defined(MBEDTLS_SHA256_PROCESS_ALT)
 static struct sha_dev *sha = NULL;
+#endif
 
 #if defined(MBEDTLS_SHA256_C) || defined(MBEDTLS_SHA224_C)
 

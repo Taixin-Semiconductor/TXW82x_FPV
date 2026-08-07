@@ -4,6 +4,7 @@
 #include "basic_include.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "audio_code_ctrl.h"
 
 #ifdef PSRAM_HEAP
 #define MP3_DECODE_MALLOC    av_psram_malloc
@@ -20,13 +21,6 @@
 #define MP3_DEBUG(fmt, args...)         //os_printf(fmt, ##args)
 #define MP3_INFO          				os_printf
 
-struct msi *mp3_decode_init(uint8_t *filename, uint8_t direct_to_dac);
-int32_t mp3_decode_deinit(void);
-void mp3_decode_continue(void);
-void mp3_decode_pause(void);
-void mp3_decode_clear(void);
-int32_t mp3_decode_add_output(const char *msi_name);
-int32_t mp3_decode_del_output(const char *msi_name);
-uint8_t get_mp3_decode_status(void);
+struct msi *mp3_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *audec_init);
 
 #endif

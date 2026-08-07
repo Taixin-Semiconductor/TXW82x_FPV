@@ -37,12 +37,13 @@
 #include "hg_lv_mem.h"
 #include "keyWork.h"
 #include "video_demo/video_demo.h"
+#include "fpv_mem.h"
 
+void  user_workqueue_init(uint16 pri, void *stack, uint16 stack_size);
 extern void dorg_double_sensor(uint32 src0_w,uint32 src0_h,uint32 src1_w,uint32 src1_h,uint32 src0_raw_num,uint32 src1_raw_num,uint8_t dvp_type,uint8_t csi0_type,uint8_t csi1_type);
 extern struct msi *file_msi_init(const char *msi_name);
 extern void scale2_mutex_init();
 extern int32 jpg_mutex_init();
-extern void vpp_evt_init();
 
 extern uint32 psrampool_start;
 extern uint32 psrampool_end;
@@ -50,27 +51,6 @@ extern uint32 psrampool_end;
 extern uint32 srampool_start;
 extern uint32 srampool_end;
 
-// 用户自定义内存池初始化
-static void user_heap_init()
-{
-#if defined(MPOOL_ALLOC) && defined(AV_PSRAM_HEAP) && defined(PSRAM_HEAP)
-    {
-        uint32 flags = SYSHEAP_FLAGS_MEM_ALIGN_32;
-        os_printf("CONFIG_PSRAM_AVHEAP_START:%X\n", CONFIG_PSRAM_AVHEAP_START);
-        os_printf("CONFIG_PSRAM_AVHEAP_SIZE:%X\n", CONFIG_PSRAM_AVHEAP_SIZE);
-        av_psram_heap_init((void *)CONFIG_PSRAM_AVHEAP_START, CONFIG_PSRAM_AVHEAP_SIZE, flags);
-    }
-#endif
-
-#if defined(MPOOL_ALLOC) && defined(AV_HEAP)
-    {
-        uint32 flags = SYSHEAP_FLAGS_MEM_ALIGN_32;
-        os_printf("CONFIG_AVHEAP_START:%X\n", CONFIG_AVHEAP_START);
-        os_printf("CONFIG_AVHEAP_SIZE:%X\n", CONFIG_AVHEAP_SIZE);
-        av_heap_init((void *)CONFIG_AVHEAP_START, CONFIG_AVHEAP_SIZE, flags);
-    }
-#endif
-}
 
 __weak void user_protocol()
 {
@@ -181,10 +161,8 @@ static void hardware_init(uint8_t vcam)
 
 #if VPP_EN
 {
-	extern void vpp_evt_init();
     extern uint8_t set_vpp_bu1_shrink(uint16_t w, uint16_t shrink_w);
 	extern void get_single_mipi(uint32_t csi_dev_id,uint16_t *w,uint16_t *h);
-    vpp_evt_init();
     uint16_t w = 0,h = 0;
     get_single_mipi(HG_MIPI_CSI_DEVID,&w,&h);
     os_printf(KERN_INFO"vpp_cfg w:%d h:%d\n",w,h);

@@ -24,8 +24,8 @@ struct lmac_ops {
     int32(*tx)(struct lmac_ops *ops, struct sk_buff *skb);
     int32(*test_tx)(struct lmac_ops *ops, struct sk_buff *skb);
     int32(*tx_status)(struct lmac_ops *ops, struct sk_buff *skb);
-    int32(*rx)(struct lmac_ops *ops, struct hgic_rx_info *info, uint8 *data, int32 len);
-    int32(*notify)(struct lmac_ops *ops, uint8 evt_id, uint8 *data, int32 len);
+    int32(*rx)(struct lmac_ops *ops, struct hgic_rx_info *info, uint8 *data, uint32 len);
+    int32(*notify)(struct lmac_ops *ops, uint8 evt_id, uint8 *data, uint32 len);
     int32(*set_chan_list)(struct lmac_ops *ops, uint16 *chan_list, uint16 count);
     int32(*set_freq_range)(struct lmac_ops *ops, uint16 freq_start, uint16 freq_end, uint8 chan_bw);
     int32(*set_freq)(struct lmac_ops *ops, uint32 center_freq);

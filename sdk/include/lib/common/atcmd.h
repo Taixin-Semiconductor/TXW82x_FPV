@@ -46,6 +46,7 @@ int32 atcmd_ble_chan_hdl(const char *cmd, char *argv[], uint32 argc);
 int32 atcmd_ble_rx_timeout_hdl(const char *cmd, char *argv[], uint32 argc);
 int32 atcmd_ble_tx_gain_hdl(const char *cmd, char *argv[], uint32 argc);
 int32 atcmd_write_ble_tx_gain_hdl(const char *cmd, char *argv[], uint32 argc);
+int32 atcmd_write_mac_addr2_hdl(const char *cmd, char *argv[], uint32 argc);
 int32 atcmd_io_test_hdl(const char *cmd, char *argv[], uint32 argc);
 int32 atcmd_io_test_res_get_hdl(const char *cmd, char *argv[], uint32 argc);
 

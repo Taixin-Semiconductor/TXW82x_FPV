@@ -42,14 +42,18 @@
 // |..core heap..|..core rxbuff..|..av heap ..|..sys heap..|
 // --------------------------------------------------------------------------
 #ifndef CONFIG_CORE_HEAP_START
-#define CONFIG_CORE_HEAP_START          SRAM_POOL_START
+#define CONFIG_CORE_HEAP_START          cpu1_mem_heap()
 #endif
+
 #ifndef CONFIG_CORE_HEAP_SIZE
 #define CONFIG_CORE_HEAP_SIZE          (40*1024)
 #endif
 
+
+
+
 #ifndef CONFIG_CORE_RXBUF_ADDR
-#define CONFIG_CORE_RXBUF_ADDR         (CONFIG_CORE_HEAP_START+CONFIG_CORE_HEAP_SIZE)
+#define CONFIG_CORE_RXBUF_ADDR         (cpu1_RXBUF_heap())
 #endif
 #ifndef CONFIG_CORE_RXBUF_SIZE
 #define CONFIG_CORE_RXBUF_SIZE         (10*1024)
@@ -57,14 +61,11 @@
 
 
 
-#define SYS_HEAP_START                 (CONFIG_CORE_RXBUF_ADDR+CONFIG_CORE_RXBUF_SIZE)
-#ifndef SYS_HEAP_SIZE
-#define  SYS_HEAP_SIZE                 (SRAM_POOL_SIZE - (SYS_HEAP_START-SRAM_POOL_START) - CONFIG_AVHEAP_SIZE)
-#endif
 
-#define CONFIG_AVHEAP_START            (SYS_HEAP_START+SYS_HEAP_SIZE)//(CONFIG_CORE_RXBUF_ADDR+CONFIG_CORE_RXBUF_SIZE)//
-#ifndef CONFIG_AVHEAP_SIZE
-#define CONFIG_AVHEAP_SIZE             (0)
+
+#define SYS_HEAP_START                 (SRAM_POOL_START)
+#ifndef SYS_HEAP_SIZE
+#define  SYS_HEAP_SIZE                 (SRAM_POOL_SIZE)
 #endif
 
 /////////////////////////////////////////////////////////////////////////////
@@ -78,23 +79,16 @@
 
 
 #ifndef CONFIG_CORE_SKB_POOL_ADDR
-#define CONFIG_CORE_SKB_POOL_ADDR      (PSRAM_POOL_START)//0x28000000//
+#define CONFIG_CORE_SKB_POOL_ADDR      cpu1_skb_buf()//0x28000000//
 #endif
 #ifndef CONFIG_CORE_SKB_POOL_SIZE
-#define CONFIG_CORE_SKB_POOL_SIZE      (200*1024)//0x100000//
+#define CONFIG_CORE_SKB_POOL_SIZE      200*1024//0x100000//
 #endif
 
-#ifndef CONFIG_PSRAM_AVHEAP_START
-#define CONFIG_PSRAM_AVHEAP_START       (CONFIG_CORE_SKB_POOL_ADDR+CONFIG_CORE_SKB_POOL_SIZE)
-#endif
 
-#ifndef CONFIG_PSRAM_AVHEAP_SIZE
-#define CONFIG_PSRAM_AVHEAP_SIZE       (0)
-#endif
-
-#define SYS_PSRAM_HEAP_START           (CONFIG_PSRAM_AVHEAP_START+CONFIG_PSRAM_AVHEAP_SIZE)
+#define SYS_PSRAM_HEAP_START           (PSRAM_POOL_START)
 #ifndef SYS_PSRAM_HEAP_SIZE
-#define SYS_PSRAM_HEAP_SIZE            (PSRAM_POOL_SIZE-(SYS_PSRAM_HEAP_START-PSRAM_POOL_START))
+#define SYS_PSRAM_HEAP_SIZE            (PSRAM_POOL_SIZE)
 #endif
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -269,6 +263,14 @@
 
 #ifndef WIFI_PS_NO_FRM_LOSS_EN
 #define WIFI_PS_NO_FRM_LOSS_EN          0           //tx缓存的休眠帧是否不允许丢弃
+#endif
+
+#ifndef WIFI_TX_AGG_EN
+#define WIFI_TX_AGG_EN                  0           //是否允许发送聚合。如果对时延要求不高的，可以打开
+#endif
+
+#ifndef WIFI_RX_AGG_EN
+#define WIFI_RX_AGG_EN                  0           //是否允许接收聚合。CONFIG_CORE_RXBUF_SIZE小于18KB都不推荐使能
 #endif
 
 #ifndef WIFI_RF_PWR_LEVEL

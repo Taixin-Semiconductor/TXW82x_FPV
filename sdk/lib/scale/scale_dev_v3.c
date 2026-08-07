@@ -119,6 +119,7 @@ void scale_soft_ov_isr(uint32 irq_flag,uint32 irq_data,uint32 param1){
 
 extern uint32_t yuv_buf_line(uint8_t which);
 void scale_from_vpp(struct scale_device *scale_dev,uint32 yuvbuf_addr,uint32 s_w,uint32 s_h,uint32 d_w,uint32 d_h){
+	scale_close(scale_dev);
 	scale_set_in_out_size(scale_dev,s_w,s_h,d_w,d_h);
 	scale_set_step(scale_dev,s_w,s_h,d_w,d_h);
 	scale_set_line_buf_num(scale_dev,yuv_buf_line(0));
@@ -266,6 +267,32 @@ void scale2_from_jpeg_config_for_msi(struct scale_device *scale_dev,uint32_t yin
 
 }
 
+
+void scale2_from_h264_config_for_msi(struct scale_device *scale_dev,uint32_t yinsram,uint32_t uinsram,uint32_t vinsram,uint32_t yuvoutbuf,uint32 in_w,uint32 in_h,uint32 out_w,uint32 out_h,uint8_t larger){	
+	uint32_t ow_n,oh_n;
+	//os_event_wait(&scale2_mutex, BIT(0), NULL,OS_EVENT_WMODE_CLEAR, osWaitForever);
+	scale_close(scale_dev);
+	scale_set_input_stream(scale_dev,H264_DEC);
+	scale_set_output_sram_or_frame(scale_dev,1);
+	scale_set_in_out_size(scale_dev,in_w,in_h,out_w,out_h);
+	ow_n = in_w*10/larger;
+	oh_n = in_h*10/larger;	
+	scale_set_step(scale_dev,ow_n,oh_n,out_w,out_h);
+	in_w = (in_w - ow_n)/2; 
+	in_h = (in_h - oh_n)/2;
+	scale_set_start_addr(scale_dev,in_w,in_h);
+	if((out_w%4) != 0){
+		_os_printf("scale2 output need word aligned");
+	}
+	scale_set_out_yaddr(scale_dev,(uint32)yuvoutbuf);
+	scale_set_out_uaddr(scale_dev,(uint32)yuvoutbuf+out_w*out_h);
+	scale_set_out_vaddr(scale_dev,(uint32)yuvoutbuf+out_w*out_h+out_w*out_h/4);
+	
+	scale_set_srambuf_wlen(scale_dev,SRAMBUF_WLEN);
+	scale_linebuf_yuv_addr(scale_dev,(uint32)yinsram,(uint32)uinsram,(uint32)vinsram);			
+	scale_open(scale_dev); 
+
+}
 
 
 void scale_soft_from_psram_to_enc(struct scale_device *scale_dev,uint8_t * psram_data,uint32_t w,uint32 h,uint32_t ow,uint32_t oh){

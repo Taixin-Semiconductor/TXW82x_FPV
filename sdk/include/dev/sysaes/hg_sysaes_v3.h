@@ -13,9 +13,6 @@ struct hg_sysaes_v3 {
     os_semaphore_t done;
     uint32              irq_num;
     uint32              flags;
-#ifdef CONFIG_SLEEP
-    uint32              *regs;
-#endif    
 };
 
 int32 hg_sysaes_v3_attach(uint32 dev_id, struct hg_sysaes_v3 *sysaes);

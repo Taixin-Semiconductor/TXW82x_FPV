@@ -13,7 +13,7 @@ struct msi *h264_msi_init_with_mode(uint32_t drv1_from, uint16_t drv1_w, uint16_
 struct msi *route_msi(const char *name);
 struct msi *video_thumb_msi_init(const char *msi_name, uint16_t filter);
 void takephoto_with_thumb_init(const char *thumb_msi_name);
-void takephoto_with_thumb_over_dpi_init(const char *thumb_msi_name);
+void takephoto_with_thumb_over_dpi_init(const char *thumb_msi_name,uint8_t jpg_num);
 /*****************************************************************************************
  * demo都是简单的接收流程,如果有过滤type等,需要将接收msi实现更多东西才可以
  *****************************************************************************************/
@@ -428,7 +428,7 @@ static void takephoto_demo(void *d)
     // 正常拍照和缩略图
     takephoto_with_thumb_init(R_THUMB);
     // 大分辨率拍照和缩略图
-    takephoto_with_thumb_over_dpi_init(SR_OVER_DPI_THUMB_JPG);
+    takephoto_with_thumb_over_dpi_init(SR_OVER_DPI_THUMB_JPG,JPGID0);
     static const int dpi[][2] = {
             {1280, 720},  // 720P
             {1920, 1080}, // 8M

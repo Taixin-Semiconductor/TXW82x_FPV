@@ -43,6 +43,9 @@ extern "C" {
 #define LMAC_FEM_KCT8227D_NON_SWITCH            4
 #define LMAC_FEM_KCT8227D_NON_SWITCH_3_3V       LMAC_FEM_KCT8227D_NON_SWITCH
 #define LMAC_FEM_KCT8227D_NON_SWITCH_5V         (LMAC_FEM_KCT8227D_NON_SWITCH | LMAC_FEM_POWER_5V)
+#define LMAC_FEM_KCT8227D_ADD_SWITCH            5
+#define LMAC_FEM_KCT8227D_ADD_SWITCH_3_3V       LMAC_FEM_KCT8227D_ADD_SWITCH
+#define LMAC_FEM_KCT8227D_ADD_SWITCH_5V         (LMAC_FEM_KCT8227D_ADD_SWITCH | LMAC_FEM_POWER_5V)
 
 //FREQ offset tracking mode
 #define LMAC_FREQ_OFFSET_TRACK_ALWAYS_ON        0
@@ -246,6 +249,11 @@ enum LMAC_IOCTL_CMD {
     LMAC_IOCTL_SET_START_ASYNC_ACS,
     LMAC_IOCTL_SET_TEMP_COMPENSATION_TABLE,
     LMAC_IOCTL_SET_PS_NO_FRM_LOSS_EN,
+    LMAC_IOCTL_SET_STA_CAPABILITES,
+    LMAC_IOCTL_SET_UPDATE_FEM_VOLTAGE,
+    LMAC_IOCTL_SET_TX_AGG_TID_BITMAP,
+    LMAC_IOCTL_SET_BEACON_MODULATION,
+    LMAC_IOCTL_SET_AFH_PERIOD,
 
     /*Get CMDs*/
     LMAC_IOCTL_GET_AGGCNT = 0x20000000,
@@ -383,8 +391,8 @@ enum {
 #define lmac_get_bss_bw(ops)                                lmac_ioctl(ops, LMAC_IOCTL_GET_BSS_BW, 0, 0)
 #define lmac_set_tx_bw(ops, tx_bw)                          lmac_ioctl(ops, LMAC_IOCTL_SET_TX_BW, (uint32)(tx_bw), 0)
 #define lmac_get_tx_bw(ops)                                 lmac_ioctl(ops, LMAC_IOCTL_GET_TX_BW, 0, 0)
-#define lmac_set_tx_mcs(ops, tx_mcs)                        lmac_ioctl(ops, LMAC_IOCTL_SET_TX_MCS, (uint32)(tx_mcs), 0)
-#define lmac_get_tx_mcs(ops)                                lmac_ioctl(ops, LMAC_IOCTL_GET_TX_MCS, 0, 0)
+#define lmac_set_tx_mcs(ops, tx_mcs, type)                  lmac_ioctl(ops, LMAC_IOCTL_SET_TX_MCS, (uint32)(tx_mcs), type)
+#define lmac_get_tx_mcs(ops, addr, aid)                     lmac_ioctl(ops, LMAC_IOCTL_GET_TX_MCS, addr, aid)
 #define lmac_set_rts(ops, rts_th)                           lmac_ioctl(ops, LMAC_IOCTL_SET_RTS_TH, (uint32)(rts_th), 0)
 #define lmac_get_rts(ops)                                   lmac_ioctl(ops, LMAC_IOCTL_GET_RTS_TH, 0, 0)
 #define lmac_set_txpower(ops, txpower)                      lmac_ioctl(ops, LMAC_IOCTL_SET_TXPOWER, (uint32)(txpower), 0)
@@ -543,7 +551,10 @@ enum {
 #define lmac_get_per(ops, mac)                              lmac_ioctl(ops, LMAC_IOCTL_GET_STA_PER, (uint32)mac, 0)
 #define lmac_get_tx_delay(ops, mac)                         lmac_ioctl(ops, LMAC_IOCTL_GET_STA_TX_DELAY, (uint32)mac, 0)
 #define lmac_get_tx_datarate(ops, mac)                      lmac_ioctl(ops, LMAC_IOCTL_GET_STA_TX_DATARATE, (uint32)mac, 0)
-
+#define lmac_set_sta_capabilites(ops, cap, len)             lmac_ioctl(ops, LMAC_IOCTL_SET_STA_CAPABILITES, (uint32)cap, len)
+#define lmac_update_fem_voltage(ops, voltage)               lmac_ioctl(ops, LMAC_IOCTL_SET_UPDATE_FEM_VOLTAGE, (uint32)(voltage), 0)
+#define lmac_set_tx_agg_tid_bitmap(ops, bitmap)             lmac_ioctl(ops, LMAC_IOCTL_SET_TX_AGG_TID_BITMAP, (uint32)bitmap, 0)
+#define lmac_set_beacon_modulation(ops, rate)               lmac_ioctl(ops, LMAC_IOCTL_SET_BEACON_MODULATION, (uint32)rate, 0)
 
 int32 lmac_ioctl(void *ops, uint32 cmd, uint32 param1, uint32 param2);
 int32 lmac_start_acs(void *lops, struct lmac_acs_ctl *p_ctl, uint32 sync);
@@ -555,7 +566,9 @@ int32 lmac_bgn_module_80211w_init(void *ops);
 int32 lmac_bgn_module_csa_init(void *ops);
 int32 lmac_bgn_module_multi_mac_init(void *ops);
 int32 lmac_bgn_module_pwr_limit_init(void *ops);
+int32 lmac_bgn_module_rx_reorder_init(void *ops);
 void *dsleep_lmac_bgn_init(void);
+void lmac_afh_init(void *ops);
 
 #ifdef __cplusplus
 }

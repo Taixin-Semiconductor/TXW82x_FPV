@@ -52,12 +52,16 @@ struct osdenc_device {
 struct osdenc_hal_ops {
 	struct devobj_ops ops;
     int32(*open)(struct osdenc_device *osd_dev);
+	int32(*suspend)(struct osdenc_device *osd_dev);
+	int32(*resume)(struct osdenc_device *osd_dev);	
     int32(*close)(struct osdenc_device *osd_dev);
     int32(*ioctl)(struct osdenc_device *osd_dev, enum osdenc_ioctl_cmd ioctl_cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct osdenc_device *osd_dev, uint32 irq_flag, osdenc_irq_hdl irq_hdl, uint32 irq_data);
     int32(*release_irq)(struct osdenc_device *osd_dev, uint32 irq_flag);
 };
 
+int32 osd_enc_suspend(struct osdenc_device *p_osd);
+int32 osd_enc_resume(struct osdenc_device *p_osd);
 int32 osd_enc_open(struct osdenc_device *p_osd);
 int32 osd_enc_close(struct osdenc_device *p_osd);
 int32 osd_enc_tran_config(struct osdenc_device *p_osd,uint32 head,uint32 head_tran,uint32 diap,uint32 diap_tran);

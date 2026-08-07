@@ -13,6 +13,7 @@
 #include "list.h"
 #include "errno.h"
 #include "dev.h"
+#include "devid.h"
 #include "osal/irq.h"
 #include "osal/string.h"
 #include "osal/semaphore.h"
@@ -51,7 +52,83 @@ void hgtimer_v4_clk_gating(void *hw, int en)
 
 }
 
+#ifdef CONFIG_SLEEP
+static int32 hgtimer_v4_suspend(struct dev_obj *obj)
+{
+    struct hgtimer_v4 *dev = (struct hgtimer_v4 *)obj;
+    struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
 
+    if (!(dev->opened)) {
+        return RET_ERR;
+    }
+
+    if (dev->dsleep) {
+        return RET_OK;
+    }
+
+    irq_disable(dev->irq_num);
+
+    dev->bp_regs.tmr_con     = hw->TMR_CON    ;
+    dev->bp_regs.tmr_en      = hw->TMR_EN     ;
+    dev->bp_regs.tmr_ie      = hw->TMR_IE     ;
+    dev->bp_regs.tmr_cap1    = hw->TMR_CAP1   ;
+    dev->bp_regs.tmr_cap2    = hw->TMR_CAP2   ;
+    dev->bp_regs.tmr_cap3    = hw->TMR_CAP3   ;
+    dev->bp_regs.tmr_cap4    = hw->TMR_CAP4   ;
+    if (dev->dev.dev.dev_id == HG_TIMER1_DEVID || dev->dev.dev.dev_id == HG_TIMER2_DEVID) {
+        dev->bp_regs.tmr_dctl    = hw->TMR_DCTL   ;
+        dev->bp_regs.tmr_dadr    = hw->TMR_DADR   ;
+        dev->bp_regs.tmr_dcnt    = hw->TMR_DCNT   ;
+        dev->bp_regs.tmr_dlen    = hw->TMR_DLEN   ;
+        dev->bp_regs.tmr_ir_bcnt = hw->TMR_IR_BCNT;
+    }
+
+    hw->TMR_EN               &= ~LL_TIMER_EN_TMREN;
+    hw->TMR_FLG              = 0xFFFFFFFF;
+    hw->TMR_CLR              = 0xFFFFFFFF;
+    hgtimer_v4_clk_gating(hw, 0);
+    dev->dsleep = 1;
+    return RET_OK;
+}
+
+static int32 hgtimer_v4_resume(struct dev_obj *obj)
+{
+    struct hgtimer_v4 *dev = (struct hgtimer_v4 *)obj;
+    struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
+
+    if (!(dev->opened)) {
+        return RET_ERR;
+    }
+
+    if (!dev->dsleep) {
+        return RET_OK;
+    }
+
+    hgtimer_v4_clk_gating(hw, 1);
+
+    hw->TMR_CAP1    = dev->bp_regs.tmr_cap1   ;
+    hw->TMR_CAP2    = dev->bp_regs.tmr_cap2   ;
+    hw->TMR_CAP3    = dev->bp_regs.tmr_cap3   ;
+    hw->TMR_CAP4    = dev->bp_regs.tmr_cap4   ;
+    /* The following registers only for timer1 & timer2 */
+    if (dev->dev.dev.dev_id == HG_TIMER1_DEVID || dev->dev.dev.dev_id == HG_TIMER2_DEVID) {
+        hw->TMR_DCTL    = dev->bp_regs.tmr_dctl   ;
+        hw->TMR_DADR    = dev->bp_regs.tmr_dadr   ;
+        hw->TMR_DLEN    = dev->bp_regs.tmr_dlen   ;
+        hw->TMR_DCNT    = dev->bp_regs.tmr_dcnt   ;
+        hw->TMR_IR_BCNT = dev->bp_regs.tmr_ir_bcnt;
+    }
+
+    hw->TMR_CON     = dev->bp_regs.tmr_con    ;
+    hw->TMR_EN      = dev->bp_regs.tmr_en     ;
+    hw->TMR_IE      = dev->bp_regs.tmr_ie     ;
+
+    irq_enable(dev->irq_num);
+
+    dev->dsleep = 0;
+    return RET_OK;
+}
+#endif
 /**********************************************************************************/
 /*                           PWM FUNCTION START                                   */
 /**********************************************************************************/
@@ -318,57 +395,12 @@ static int32 hgtimer_v4_pwm_func_ioctl_set_period_duty_immediately(struct hgtime
 static inline int32 hgtimer_v4_pwm_func_suspend(struct hgtimer_v4 *dev, struct hgpwm_v0_config *p_config)
 {
     struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
-
+    (void)hw;
     if ((!dev->pwm_en) || (dev->dsleep)) {
         return RET_OK;
     }
 
-    if (0 > os_mutex_lock(&dev->bp_suspend_lock, 10000)) {
-        return RET_ERR;
-    }
-
-    /*
-     * close irq
-     */
-    irq_disable(dev->irq_num);
-
-    /*
-     * clear pending
-     */
-    hw->TMR_FLG = 0xFFFFFFFF;
-    hw->TMR_CLR = 0xFFFFFFFF;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * save the reglist
-     */
-    dev->bp_regs.tmr_con     = hw->TMR_CON    ;
-    dev->bp_regs.tmr_en      = hw->TMR_EN     ;
-    dev->bp_regs.tmr_cap1    = hw->TMR_CAP1   ;
-    dev->bp_regs.tmr_cap2    = hw->TMR_CAP2   ;
-    dev->bp_regs.tmr_cap3    = hw->TMR_CAP3   ;
-    dev->bp_regs.tmr_cap4    = hw->TMR_CAP4   ;
-    dev->bp_regs.tmr_dadr    = hw->TMR_DADR   ;
-    dev->bp_regs.tmr_dcnt    = hw->TMR_DCNT   ;
-    dev->bp_regs.tmr_dctl    = hw->TMR_DCTL   ;
-    dev->bp_regs.tmr_dlen    = hw->TMR_DLEN   ;
-    dev->bp_regs.tmr_ie      = hw->TMR_IE     ;
-    dev->bp_regs.tmr_ir_bcnt = hw->TMR_IR_BCNT;
-
-
-    /*
-     * save the irq_hdl created by user
-     */
-    dev->bp_irq_hdl_pwm  = dev->_pwm_irq_hdl;
-    dev->bp_irq_data_pwm = dev->irq_data;
-
-
-    hgtimer_v4_clk_gating(hw, 0);
-
-    dev->dsleep = 1;
-
-    os_mutex_unlock(&dev->bp_suspend_lock);
+    hgtimer_v4_suspend((struct dev_obj *)dev);
 
     return RET_OK;
 }
@@ -376,52 +408,12 @@ static inline int32 hgtimer_v4_pwm_func_suspend(struct hgtimer_v4 *dev, struct h
 static inline int32 hgtimer_v4_pwm_func_resume(struct hgtimer_v4 *dev, struct hgpwm_v0_config *p_config)
 {
     struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
-
+    (void)hw;
     if ((!dev->pwm_en) || (dev->dsleep)) {
         return RET_OK;
     }
 
-    if (0 > os_mutex_lock(&dev->bp_resume_lock, 10000)) {
-        return RET_ERR;
-    }
-
-
-    hgtimer_v4_clk_gating(hw, 1);
-
-
-    /*
-     * recovery the reglist from sram
-     */
-    hw->TMR_CAP1    = dev->bp_regs.tmr_cap1   ;
-    hw->TMR_CAP2    = dev->bp_regs.tmr_cap2   ;
-    hw->TMR_CAP3    = dev->bp_regs.tmr_cap3   ;
-    hw->TMR_CAP4    = dev->bp_regs.tmr_cap4   ;
-    hw->TMR_DADR    = dev->bp_regs.tmr_dadr   ;
-    hw->TMR_DCNT    = dev->bp_regs.tmr_dcnt   ;
-    hw->TMR_DCTL    = dev->bp_regs.tmr_dctl   ;
-    hw->TMR_DLEN    = dev->bp_regs.tmr_dlen   ;
-    hw->TMR_IE      = dev->bp_regs.tmr_ie     ;
-    hw->TMR_IR_BCNT = dev->bp_regs.tmr_ir_bcnt;
-    hw->TMR_CON     = dev->bp_regs.tmr_con    ;
-    hw->TMR_EN      = dev->bp_regs.tmr_en     ;
-
-
-    /*
-     * recovery the irq handle and data
-     */
-    dev->_pwm_irq_hdl = dev->bp_irq_hdl_pwm;
-    dev->irq_data     = dev->bp_irq_data_pwm;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * open irq
-     */
-    irq_enable(dev->irq_num);
-
-    dev->dsleep = 0;
-
-    os_mutex_unlock(&dev->bp_resume_lock);
+    hgtimer_v4_resume((struct dev_obj *)dev);
 
     return RET_OK;
 }
@@ -686,110 +678,24 @@ static inline int32 hgtimer_v4_capture_func_release_irq(struct hgtimer_v4 *dev, 
 static inline int32 hgtimer_v4_capture_func_suspend(struct hgtimer_v4 *dev, struct hgcapture_v0_config *p_config)
 {
     struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
-
+    (void)hw;
     if ((!dev->cap_en) || (dev->dsleep)) {
         return RET_OK;
     }
 
-    if (0 > os_mutex_lock(&dev->bp_suspend_lock, 10000)) {
-        return RET_ERR;
-    }
-
-    /*
-     * close irq
-     */
-    irq_disable(dev->irq_num);
-
-    /*
-     * clear pending
-     */
-    hw->TMR_FLG = 0xFFFFFFFF;
-    hw->TMR_CLR = 0xFFFFFFFF;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * save the reglist
-     */
-    dev->bp_regs.tmr_con     = hw->TMR_CON    ;
-    dev->bp_regs.tmr_en      = hw->TMR_EN     ;
-    dev->bp_regs.tmr_cap1    = hw->TMR_CAP1   ;
-    dev->bp_regs.tmr_cap2    = hw->TMR_CAP2   ;
-    dev->bp_regs.tmr_cap3    = hw->TMR_CAP3   ;
-    dev->bp_regs.tmr_cap4    = hw->TMR_CAP4   ;
-    dev->bp_regs.tmr_dadr    = hw->TMR_DADR   ;
-    dev->bp_regs.tmr_dcnt    = hw->TMR_DCNT   ;
-    dev->bp_regs.tmr_dctl    = hw->TMR_DCTL   ;
-    dev->bp_regs.tmr_dlen    = hw->TMR_DLEN   ;
-    dev->bp_regs.tmr_ie      = hw->TMR_IE     ;
-    dev->bp_regs.tmr_ir_bcnt = hw->TMR_IR_BCNT;
-
-
-    /*
-     * save the irq_hdl created by user
-     */
-    dev->bp_irq_hdl_capture  = dev->_capture_irq_hdl;
-    dev->bp_irq_data_capture = dev->irq_data;
-
-
-    hgtimer_v4_clk_gating(hw, 0);
-
-    dev->dsleep = 1;
-
-    os_mutex_unlock(&dev->bp_suspend_lock);
-
+    hgtimer_v4_suspend((struct dev_obj *)dev);
     return RET_OK;
 }
 
 static inline int32 hgtimer_v4_capture_func_resume(struct hgtimer_v4 *dev, struct hgcapture_v0_config *p_config)
 {
     struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
-
+    (void)hw;
     if ((!dev->cap_en) || (dev->dsleep)) {
         return RET_OK;
     }
 
-    if (0 > os_mutex_lock(&dev->bp_resume_lock, 10000)) {
-        return RET_ERR;
-    }
-
-
-    hgtimer_v4_clk_gating(hw, 1);
-
-
-    /*
-     * recovery the reglist from sram
-     */
-    hw->TMR_CAP1    = dev->bp_regs.tmr_cap1   ;
-    hw->TMR_CAP2    = dev->bp_regs.tmr_cap2   ;
-    hw->TMR_CAP3    = dev->bp_regs.tmr_cap3   ;
-    hw->TMR_CAP4    = dev->bp_regs.tmr_cap4   ;
-    hw->TMR_DADR    = dev->bp_regs.tmr_dadr   ;
-    hw->TMR_DCNT    = dev->bp_regs.tmr_dcnt   ;
-    hw->TMR_DCTL    = dev->bp_regs.tmr_dctl   ;
-    hw->TMR_DLEN    = dev->bp_regs.tmr_dlen   ;
-    hw->TMR_IE      = dev->bp_regs.tmr_ie     ;
-    hw->TMR_IR_BCNT = dev->bp_regs.tmr_ir_bcnt;
-    hw->TMR_CON     = dev->bp_regs.tmr_con    ;
-    hw->TMR_EN      = dev->bp_regs.tmr_en     ;
-
-
-    /*
-     * recovery the irq handle and data
-     */
-    dev->_capture_irq_hdl = dev->bp_irq_hdl_capture;
-    dev->irq_data         = dev->bp_irq_data_capture;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * open irq
-     */
-    irq_enable(dev->irq_num);
-
-    dev->dsleep = 0;
-
-    os_mutex_unlock(&dev->bp_resume_lock);
+    hgtimer_v4_resume((struct dev_obj *)dev);
 
     return RET_OK;
 }
@@ -1025,7 +931,7 @@ static int32 hgtimer_v4_counter_func_close(struct timer_device *timer)
 
     irq_disable(dev->irq_num);
 
-    hw->TMR_EN       &= ~ LL_TIMER_EN_TMREN;
+    hw->TMR_EN        &= ~ LL_TIMER_EN_TMREN;
     hw->TMR_CON       = 0x00000000;
     hw->TMR_CLR       = 0xffffffff;
     hw->TMR_CNT       = 0;
@@ -1114,63 +1020,19 @@ static int32 hgtimer_v4_counter_func_stop(struct timer_device *timer)
     return RET_OK;
 }
 
+
+
 #ifdef CONFIG_SLEEP
 static int32 hgtimer_v4_counter_func_suspend(struct dev_obj *obj)
 {
     struct hgtimer_v4 *dev = (struct hgtimer_v4 *)obj;
     struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
-
+    (void)hw;
     if ((!dev->counter_en) || (dev->dsleep)) {
         return RET_OK;
     }
 
-    if (0 > os_mutex_lock(&dev->bp_suspend_lock, 10000)) {
-        return RET_ERR;
-    }
-
-    /*
-     * close irq
-     */
-    irq_disable(dev->irq_num);
-
-    /*
-     * clear pending
-     */
-    hw->TMR_FLG = 0xFFFFFFFF;
-    hw->TMR_CLR = 0xFFFFFFFF;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * save the reglist
-     */
-    dev->bp_regs.tmr_con     = hw->TMR_CON    ;
-    dev->bp_regs.tmr_en      = hw->TMR_EN     ;
-    dev->bp_regs.tmr_cap1    = hw->TMR_CAP1   ;
-    dev->bp_regs.tmr_cap2    = hw->TMR_CAP2   ;
-    dev->bp_regs.tmr_cap3    = hw->TMR_CAP3   ;
-    dev->bp_regs.tmr_cap4    = hw->TMR_CAP4   ;
-    dev->bp_regs.tmr_dadr    = hw->TMR_DADR   ;
-    dev->bp_regs.tmr_dcnt    = hw->TMR_DCNT   ;
-    dev->bp_regs.tmr_dctl    = hw->TMR_DCTL   ;
-    dev->bp_regs.tmr_dlen    = hw->TMR_DLEN   ;
-    dev->bp_regs.tmr_ie      = hw->TMR_IE     ;
-    dev->bp_regs.tmr_ir_bcnt = hw->TMR_IR_BCNT;
-
-
-    /*
-     * save the irq_hdl created by user
-     */
-    dev->bp_irq_hdl_timer  = dev->_counter_irq_hdl;
-    dev->bp_irq_data_timer = dev->irq_data;
-
-
-    hgtimer_v4_clk_gating(hw, 0);
-
-    dev->dsleep = 1;
-
-    os_mutex_unlock(&dev->bp_suspend_lock);
-
+    hgtimer_v4_suspend((struct dev_obj *)dev);
     return RET_OK;
 }
 
@@ -1178,53 +1040,12 @@ static int32 hgtimer_v4_counter_func_resume(struct dev_obj *obj)
 {
     struct hgtimer_v4 *dev = (struct hgtimer_v4 *)obj;
     struct hgtimer_v4_hw *hw = (struct hgtimer_v4_hw *)dev->hw;
-
-    if ((!dev->counter_en) || (dev->dsleep)) {
+    (void)hw;
+    if ((!dev->counter_en) || (!dev->dsleep)) {
         return RET_OK;
     }
 
-    if (0 > os_mutex_lock(&dev->bp_resume_lock, 10000)) {
-        return RET_ERR;
-    }
-
-
-    hgtimer_v4_clk_gating(hw, 1);
-
-
-    /*
-     * recovery the reglist from sram
-     */
-    hw->TMR_CAP1    = dev->bp_regs.tmr_cap1   ;
-    hw->TMR_CAP2    = dev->bp_regs.tmr_cap2   ;
-    hw->TMR_CAP3    = dev->bp_regs.tmr_cap3   ;
-    hw->TMR_CAP4    = dev->bp_regs.tmr_cap4   ;
-    hw->TMR_DADR    = dev->bp_regs.tmr_dadr   ;
-    hw->TMR_DCNT    = dev->bp_regs.tmr_dcnt   ;
-    hw->TMR_DCTL    = dev->bp_regs.tmr_dctl   ;
-    hw->TMR_DLEN    = dev->bp_regs.tmr_dlen   ;
-    hw->TMR_IE      = dev->bp_regs.tmr_ie     ;
-    hw->TMR_IR_BCNT = dev->bp_regs.tmr_ir_bcnt;
-    hw->TMR_CON     = dev->bp_regs.tmr_con    ;
-    hw->TMR_EN      = dev->bp_regs.tmr_en     ;
-
-
-    /*
-     * recovery the irq handle and data
-     */
-    dev->_counter_irq_hdl = dev->bp_irq_hdl_timer;
-    dev->irq_data         = dev->bp_irq_data_timer;
-
-    os_memset((void *)&dev->bp_regs, 0, sizeof(dev->bp_regs));
-
-    /*
-     * open irq
-     */
-    irq_enable(dev->irq_num);
-
-    dev->dsleep = 0;
-
-    os_mutex_unlock(&dev->bp_resume_lock);
-
+    hgtimer_v4_resume((struct dev_obj *)dev);
     return RET_OK;
 }
 #endif
@@ -1315,7 +1136,6 @@ static void hgtimer_v4_irq_handler(void *data)
     }
 
 
-
     if ((hw->TMR_IE & LL_TIMER_IE_OVF_IE) && (hw->TMR_FLG & LL_TIMER_IE_OVF_FLG)) {
         /* clear interrupt flag */
         hw->TMR_CLR = LL_TIMER_IE_OVF_CLR;
@@ -1345,10 +1165,12 @@ static const struct timer_hal_ops timer_v4_ops = {
     .stop         = hgtimer_v4_counter_func_stop,
     .ioctl        = hgtimer_v4_counter_func_ioctl,
 #ifdef CONFIG_SLEEP
-    .ops.suspend  = hgtimer_v4_counter_func_suspend,
-    .ops.resume   = hgtimer_v4_counter_func_resume,
+    .ops.suspend  = hgtimer_v4_suspend,
+    .ops.resume   = hgtimer_v4_resume,
 #endif
 };
+
+
 
 int32 hgtimer_v4_attach(uint32 dev_id, struct hgtimer_v4 *timer)
 {
@@ -1361,8 +1183,7 @@ int32 hgtimer_v4_attach(uint32 dev_id, struct hgtimer_v4 *timer)
     timer->irq_data         = 0;
     timer->dev.dev.ops      = (const struct devobj_ops *)&timer_v4_ops;
 #ifdef CONFIG_SLEEP
-    os_mutex_init(&timer->bp_suspend_lock);
-    os_mutex_init(&timer->bp_resume_lock);
+
 #endif
     request_irq(timer->irq_num, hgtimer_v4_irq_handler, timer);
     dev_register(dev_id, (struct dev_obj *)timer);

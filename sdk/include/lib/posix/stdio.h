@@ -61,6 +61,14 @@ typedef	unsigned int mode_t;		/* permissions */
 #define	O_RDWR		2		/* +1 == FREAD|FWRITE */
 #endif
 
+#ifndef S_IFDIR
+#define S_IFDIR 0040000
+#endif
+
+#ifndef S_IFREG
+#define S_IFREG 0100000
+#endif
+
 off_t lseek(int fd, off_t offset, int whence);
 int fsync(int fd);
 
@@ -71,6 +79,7 @@ struct __stdio_file{
 struct stat {
     unsigned int    st_size;        /* File size */
     unsigned int    st_mtime;       /* Modified date */
+	unsigned int    st_mode;        /* File or directory */
     unsigned char   fattrib;        /* File attribute */
     char            *fname;         /* TODO: long file name File name */
 };

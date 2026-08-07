@@ -55,6 +55,7 @@ typedef struct {
     UVC_MANAGE uvc_msg_frame[UVC_DEFAULT_FRAME_NUM];
     UVC_MANAGE *current_frame;
 	UVC_BLANK *current_blank;
+    uint32_t dwPresentationTime;
     struct usb_device *p_dev;
 } UVC_Device;
 

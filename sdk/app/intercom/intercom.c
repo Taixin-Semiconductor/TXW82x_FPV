@@ -3,12 +3,12 @@
 #include "syscfg.h"
 #include "lwip/sockets.h"
 #include "netif/ethernetif.h"
-#include "intercom.h"
+#include "lib/umac/ieee80211.h"
 #include "audio_code_ctrl.h"
 #include "audio_msi/audio_adc.h"
 #include "audio_msi/audio_dac.h"
-#include "autpc_msi/autpc_msi.h"
 #include "magic_voice/magic_voice.h"
+#include "intercom.h"
 
 #define MAX_INTERCOM_RXBUF      14
 #define MAX_INTERCOM_TXBUF      4
@@ -16,8 +16,13 @@
 #define MAGIC_VOICE_EN          0
 #define CHANGE_PLAY_SPEED       1
 #define PLC_PROCESS             1
+#define BITRATE_ADJUST			0
 
-#define FSTYPE_AUDIO_DECODER    FSTYPE_AUDIO_OPUS_DECODER
+#define AUDIO_ENCODER			OPUS_ENC
+#define AUDIO_DECODER			OPUS_DEC
+
+#define HIGH_BITRATE            16000
+#define LOW_BITRATE             8000
 
 #define FRAME_TIME              20
 
@@ -32,12 +37,18 @@
 #define NODE_DATA_LEN          	60
 
 #define HEAD_RESERVE_BYTE       18
-#define NUM_OF_FRAME            2
+#define NUM_OF_FRAME            1
 
 #define LOSE_STATISTICAL        0
 
+#define TIMEOUT_COUNT           500
+
+#ifndef ONE_TO_MANY
 #define ONE_TO_MANY             0
-#define TIMEOUT_COUNT           2000
+#endif
+#ifndef LOW_BITRATE_MODE        
+#define LOW_BITRATE_MODE        0
+#endif
 
 static uint16_t g_play_sort = 0;
 static uint16_t g_current_sort = 1;
@@ -51,10 +62,11 @@ static uint32_t play_start_wait = 10;
 static uint8_t send_start_flag = 1;
 static uint8_t play_start_flag = 2;   //BIT(0)是否播放，BIT(1)是否接收          
 
-static uint32_t now_dac_filter_type = 0;
+static AUDIO_TRACK *audac_fiter_track = NULL;
 
 static uint8_t connected_num = 0;
 
+static uint32_t last_statistical_time = 0;
 static uint32_t lose_total = 0;
 static uint32_t max_lose_cnt = 0;
 static uint32_t slow_speed_cnt = 0;
@@ -243,6 +255,7 @@ static void output_sema_up(uint32_t *args)
 
 void losePacket_retransfer(INTERCOM_STRUCT *intercom_s, uint8_t *addr, uint32_t len)
 {
+	int32_t slen = 0;
 	if((addr + len) > ((uint8_t*)(intercom_s->encoded_ringbuf->data +
 								intercom_s->encoded_ringbuf->elementcount))) {
 		uint32_t residue_len = (uint8_t*)(intercom_s->encoded_ringbuf->data + 
@@ -254,7 +267,7 @@ void losePacket_retransfer(INTERCOM_STRUCT *intercom_s, uint8_t *addr, uint32_t 
 	else {
 		os_memcpy(intercom_s->send_buf, addr, len);
 	}	
-	sendto(intercom_s->local_trans_fd, intercom_s->send_buf, len, 0,
+	slen = sendto(intercom_s->local_trans_fd, intercom_s->send_buf, len, 0,
 		(struct sockaddr*)&(intercom_s->remote_trans_addr), sizeof(intercom_s->remote_trans_addr));
 }
 
@@ -292,7 +305,15 @@ static void intercom_retransfer_check(INTERCOM_STRUCT *intercom_s)
 			manage_p = manage_p->next;
 			if(cnt >= ENCODED_BUF_NUM)
 				break;
-		}		
+		}	
+#if BITRATE_ADJUST == ADJUST_BY_LOSS
+		if(lose_packet & BIT(31)) {
+			intercom_s->new_bitrate_mode = low_bitrate_mode;
+		}	
+		else {
+			intercom_s->new_bitrate_mode = high_bitrate_mode;
+		}
+#endif
 	}
 intercom_retransfer_check_end:
 	os_mutex_unlock(&intercom_s->send_mutex);
@@ -373,6 +394,10 @@ static void intercom_send_data(INTERCOM_STRUCT *intercom_s, uint8_t num)
 
 static void intercom_send_task(void *d)
 {
+#if BITRATE_ADJUST == ADJUST_BY_MCS
+	uint8_t avg_mcs = 7;
+	uint8_t avg_cnt = 0;
+#endif
 	uint8_t send_sequence = 0;
 	uint8_t encoded_buf[MAX_ENCODED_LEN] = {0};
 	uint8_t *data = NULL;
@@ -381,31 +406,70 @@ static void intercom_send_task(void *d)
 	uint32_t timestamp = 0;
 	INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)d;
 	struct framebuff *frame_buf = NULL;
+	AUENC_INIT auenc_init;
 
 	intercom_task_increase(intercom_s);
 	g_s_identify_num = 0;
 	os_random_bytes((uint8_t*)(&g_s_identify_num), 4);
 	os_printf("\n**********intercom ID:%d***********\n",g_s_identify_num);
 
-	intercom_s->encoder_msi = audio_encode_init(AUDIO_ENCODER, AUADC_SAMPLERATE);
+	auenc_init.destroy_self = 0;
+#if MAGIC_VOICE_EN
+	auadc_msi_add_output(AUSYS_AUAD, intercom_s->magic_voice_msi->name);
+	auenc_init.src_msi = intercom_s->magic_voice_msi;
+#else
+	auenc_init.src_msi = get_auadc_msi(AUSYS_AUAD);
+#endif
+	intercom_s->encoder_msi = audio_encode_init(AUDIO_ENCODER, audio_adc_get_samplerate(AUSYS_AUAD), &auenc_init);
 	if(!intercom_s->encoder_msi) {
 		os_printf("intercom audio encoder init fail!\n");
 		intercom_task_decrease(intercom_s);
 		return;
 	}
-#if MAGIC_VOICE_EN
-	auadc_msi_add_output(intercom_s->magic_voice_msi->name);
-	magic_voice_msi_add_output(audio_code_msi_name(AUDIO_ENCODER));
-#else
-	auadc_msi_add_output(audio_code_msi_name(AUDIO_ENCODER));
+#if (!BITRATE_ADJUST && LOW_BITRATE_MODE)
+	audio_encode_set_bitrate(intercom_s->encoder_msi, 8000);
 #endif
-	audio_code_add_output(AUDIO_ENCODER, intercom_s->msi->name);
+	audio_code_add_output(intercom_s->encoder_msi, intercom_s->msi->name);
 	intercom_s->send_stream_type = intercom_live_audio;
 	while(1) {
 		if(intercom_s->run_state == intercom_stop) 
 			break;
 		intercom_retransfer_check(intercom_s);
+#if BITRATE_ADJUST == ADJUST_BY_MCS
+		if(sys_cfgs.wifi_mode == WIFI_MODE_STA) {
+			avg_mcs += (ieee80211_conf_get_tx_mcs(WIFI_MODE_STA, NULL, 0) & 0x0f);
+		}
+		else {
+			avg_mcs += (ieee80211_conf_get_tx_mcs(WIFI_MODE_AP, NULL, 1) & 0x0f);
+		}
+		if(avg_cnt >= 20) {
+			avg_mcs /= 20;
+			avg_cnt = 0;
+			if(avg_mcs >= 4) {
+				intercom_s->new_bitrate_mode = high_bitrate_mode;
+			}
+			else {
+				intercom_s->new_bitrate_mode = low_bitrate_mode;
+			}
+		}
+		avg_cnt++;
+#endif
+#if BITRATE_ADJUST
+		if((intercom_s->cur_bitrate_mode != intercom_s->new_bitrate_mode) && (intercom_s->new_bitrate_mode == low_bitrate_mode)) {
+			audio_encode_set_bitrate(intercom_s->encoder_msi, 8000);
+			intercom_s->cur_bitrate_mode = intercom_s->new_bitrate_mode;
+			os_printf("audio set bitrate:8000\n");
+		}
+		else if((intercom_s->cur_bitrate_mode != intercom_s->new_bitrate_mode) && (intercom_s->new_bitrate_mode == high_bitrate_mode)) {
+			audio_encode_set_bitrate(intercom_s->encoder_msi, 16000);
+			intercom_s->cur_bitrate_mode = intercom_s->new_bitrate_mode;
+			os_printf("audio set bitrate:16000\n");
+		}
+#endif
 		if(send_start_flag) {
+			if(audio_code_get_status(intercom_s->encoder_msi) == AUCODEC_PAUSE) {
+				audio_code_continue(intercom_s->encoder_msi);
+			}
 			frame_buf = msi_get_fb(intercom_s->msi, 0);
 			if(frame_buf) {
 				data = frame_buf->data;
@@ -416,9 +480,9 @@ static void intercom_send_task(void *d)
 				encoded_buf[0] = send_sequence;		
 				if(data_len) {
 					if(intercom_s->send_stream_type == intercom_live_audio)
-						encoded_buf[1] = intercom_live_audio;
+						encoded_buf[1] = (intercom_live_audio << 4) | intercom_s->cur_bitrate_mode;
 					else if(intercom_s->send_stream_type == intercom_playback_audio)
-						encoded_buf[1] = intercom_playback_audio;
+						encoded_buf[1] = (intercom_playback_audio << 4) | intercom_s->cur_bitrate_mode;
 				}
 				else
 					encoded_buf[1] = 0;
@@ -448,6 +512,9 @@ static void intercom_send_task(void *d)
 			}
 			if(get_ringbuf_manage_count(intercom_s) >= NUM_OF_FRAME)
 				intercom_send_data(intercom_s, NUM_OF_FRAME);
+			if(audio_code_get_status(intercom_s->encoder_msi) == AUCODEC_RUN) {
+				audio_code_pause(intercom_s->encoder_msi);
+			}
 			os_sleep_ms(10);
 		}		
 	}
@@ -674,9 +741,20 @@ static void lose_packet_check(INTERCOM_STRUCT *intercom_s)
 		insert_into_useList(intercom_s, sublist_l, &intercom_s->useList_head);
 	}
 
-	if(lose_packet) {
+	if(intercom_s->loss_state == serious_loss) {
+		lose_packet |= BIT(31);
+	}
+	else {
+		lose_packet &= ~BIT(31);
+	}
+	if(lose_packet & 0x7FFFFFFF) {
 		sendto(intercom_s->local_ret_fd, &lose_packet, 4, 0, (struct sockaddr*)&(intercom_s->remote_ret_addr), addrlen);
 	}
+#if BITRATE_ADJUST == ADJUST_BY_LOSS
+	else if(intercom_s->loss_state != (sublist_n->type&0xF)) {
+		sendto(intercom_s->local_ret_fd, &lose_packet, 4, 0, (struct sockaddr*)&(intercom_s->remote_ret_addr), addrlen);
+	}
+#endif
 }
 
 static uint8_t is_new_device(INTERCOM_STRUCT *intercom_s, uint32_t new_identify_num)
@@ -871,7 +949,7 @@ recv_data_again:
 				}
 #endif
 				offset += HEAD_RESERVE_BYTE;
-				if(sublist_n->type != intercom_s->recv_stream_type) {
+				if((sublist_n->type>>4) != intercom_s->recv_stream_type) {
 					sublist_n->node_cnt = 0;
 					del_audio_sublist(intercom_s, sublist_l);
 					goto recv_data_again;						
@@ -936,9 +1014,7 @@ static void intercom_output_framebuf(INTERCOM_STRUCT *intercom_s, uint32_t cache
 	struct framebuff *frame_buf = NULL;
 	struct list_head *sublist_l = NULL;
 	sublist *sublist_n = NULL;	
-#if LOSE_STATISTICAL
-	static uint32_t last_statistical_time = 0;
-#endif
+	AUDIO_TRACK *audio_track = NULL;
 
 output_framebuf_again:
 	frame_buf = fbpool_get(&intercom_s->tx_pool, 0, intercom_s->msi);
@@ -1028,21 +1104,21 @@ output_framebuf_again:
 		if((cached > 0) && (cached <= (play_start_wait - 5))) {
 			if(play_speed_sta != 0) {
 				play_speed = 90;
-				msi_do_cmd(intercom_s->autpc_msi, MSI_CMD_AUTPC, MSI_AUTPC_SET_SPEED, play_speed);
+				msi_do_cmd(intercom_s->decoder_msi, MSI_CMD_AUCODER, MSI_AUCODER_SET_SPEED, play_speed);
 				play_speed_sta = 0;
 			}
 		}
 		else if(cached >= (play_start_wait + 5)) {
 			if(play_speed_sta != 1) {
 				play_speed = 110;
-				msi_do_cmd(intercom_s->autpc_msi, MSI_CMD_AUTPC, MSI_AUTPC_SET_SPEED, play_speed);
+				msi_do_cmd(intercom_s->decoder_msi, MSI_CMD_AUCODER, MSI_AUCODER_SET_SPEED, play_speed);
 				play_speed_sta = 1;
 			}
 		}
 		else if((cached == 0) || (cached == play_start_wait)) {
 			if(play_speed_sta != 2) {
 				play_speed = 100;
-				msi_do_cmd(intercom_s->autpc_msi, MSI_CMD_AUTPC, MSI_AUTPC_SET_SPEED, play_speed);
+				msi_do_cmd(intercom_s->decoder_msi, MSI_CMD_AUCODER, MSI_AUCODER_SET_SPEED, play_speed);
 				play_speed_sta = 2;
 			}
 		}	
@@ -1055,7 +1131,9 @@ output_framebuf_again:
 		frame_buf->mtype = F_AUDIO;	
 		output_res = msi_output_fb(intercom_s->msi, frame_buf);
 		// os_printf("out:%d %d\n",g_current_sort,(int32_t)(os_jiffies()-timestamp));
-		if((now_dac_filter_type==FSTYPE_AUDIO_DECODER) && (cached>=1) && (cached >= (play_start_wait-2))) {    
+		msi_cmd("R_AUDAC", MSI_CMD_AUDAC, MSI_AUDAC_GET_FILTER_TRACK, (uint32_t)(&audac_fiter_track));
+		audio_track = intercom_s->decoder_msi->priv;
+		if((audac_fiter_track==audio_track) && (cached>=1) && (cached >= (play_start_wait-2))) {    
 			cached -= 1;
 			g_current_sort += 1;
 			os_sleep_ms(5);
@@ -1063,19 +1141,23 @@ output_framebuf_again:
 		}
 		g_current_sort += 1;
 	}
-#if LOSE_STATISTICAL
 	if(os_jiffies()-last_statistical_time > 5000) {
-		_os_printf("\n");
-		os_printf("---intercom loss statistical---\n");
-		_os_printf("total loss:%d, max loss:%d, slow speed:%d, fast speed:%d\n",lose_total, max_lose_cnt, slow_speed_cnt, fast_speed_cnt);
-		_os_printf("\n");
+#if LOSE_STATISTICAL
+		os_printf("\r\naudio info:total loss:%d, max loss:%d\r\n",lose_total, max_lose_cnt);
+#endif
+		if((lose_total > 50) || (lose_total>25 && max_lose_cnt>3)) {
+			intercom_s->loss_state = serious_loss;
+		}
+		else if((lose_total < 20) && (max_lose_cnt<=2) && (intercom_s->loss_state == serious_loss)) {
+			intercom_s->loss_state = mild_loss;
+		}
+		plc_cnt = 0;
 		lose_total = 0;
 		max_lose_cnt = 0;
 		slow_speed_cnt = 0;
 		fast_speed_cnt = 0;
 		last_statistical_time = os_jiffies();
 	}
-#endif
 }
 
 static void clear_useList_func(INTERCOM_STRUCT *intercom_s)
@@ -1093,31 +1175,33 @@ static void intercom_output_task(void *d)
 {
 	uint8_t numofwait = 0;
 	uint32_t useList_clear = 0;
-    uint32_t former_dac_filter_type = 0;
-    uint32_t former_dac_samplingrate = 0;
 	struct list_head *sublist_l = NULL;
 	sublist *sublist_n = NULL;
 	INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)d;
 	struct os_semaphore *sem = &intercom_s->output_sema;
+	AUDEC_INIT audec_init;
 
 	intercom_task_increase(intercom_s);
+
+	audec_init.track_type = CALL_TRACK;
+    audec_init.priority = play_interruptible;
+    audec_init.direct_to_dac = 1;
+	audec_init.destroy_self = 0;
 #if CHANGE_PLAY_SPEED
-	intercom_s->decoder_msi = audio_decode_init(AUDIO_DECODER, AUADC_SAMPLERATE, 0);
-	audio_code_add_output(AUDIO_DECODER, intercom_s->autpc_msi->name);
-	msi_add_output(intercom_s->autpc_msi, NULL, "R_AUDAC");
-	msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_GET_FILTER_TYPE,(uint32_t)(&former_dac_filter_type));
-	msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TYPE,FSTYPE_AUDIO_OPUS_DECODER);
-	msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_GET_SAMPLING_RATE,(uint32_t)(&former_dac_samplingrate));
-	msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_SAMPLING_RATE,AUADC_SAMPLERATE);
+	audec_init.use_tpc = 1;
 #else
-	intercom_s->decoder_msi = audio_decode_init(AUDIO_DECODER, AUADC_SAMPLERATE, 1);
+    audec_init.use_tpc = 0;
 #endif
+	audec_init.speed = 100;
+	audec_init.pitch = 100;
+	audec_init.src_msi = intercom_s->msi;
+	intercom_s->decoder_msi = audio_decode_init(AUDIO_DECODER, audio_adc_get_samplerate(AUSYS_AUAD), &audec_init);
+
 	if(!intercom_s->decoder_msi) {
 		os_printf("intercom audio decoder init fail!\n");
 		intercom_task_decrease(intercom_s);
 		return;
 	}
-	msi_add_output(intercom_s->msi, NULL, intercom_s->decoder_msi->name);
 	while(1) {
 		if(intercom_s->run_state == intercom_stop) 
 			break;	
@@ -1131,35 +1215,27 @@ static void intercom_output_task(void *d)
 		}
 		if(os_sema_down(sem, 1) == 1) {	
 			g_numofcached = get_audio_sublist_count(intercom_s, (struct list_head *)&intercom_s->useList_head);
-			msi_cmd("R_AUDAC", MSI_CMD_AUDAC, MSI_AUDAC_GET_FILTER_TYPE, (uint32_t)(&now_dac_filter_type));
-			if(now_dac_filter_type != FSTYPE_AUDIO_DECODER) {
-				clear_useList_func(intercom_s);
-				numofwait = 0;
-				continue;
-			}
 			if(((play_start_flag&BIT(0)) == 0) && (g_numofcached > play_start_wait)) {
 				play_start_flag |= BIT(0);
 				numofwait = 0;
 				sublist_l = intercom_s->useList_head.next;
 				sublist_n = list_entry((struct list_head*)sublist_l, sublist, list);
 				g_current_sort = sublist_n->sort;
+				lose_total = 0;
+				max_lose_cnt = 0;
+				slow_speed_cnt = 0;
+				fast_speed_cnt = 0;
 				os_printf("intercom start\n");			
 			}
 			if( ((play_start_flag&BIT(0)) == 0) && (g_numofcached > 0) ) 
 				numofwait++;
 			if(play_start_flag&BIT(0)) {
-				lose_total = 0;
-				max_lose_cnt = 0;
-				slow_speed_cnt = 0;
-				fast_speed_cnt = 0;
 				intercom_output_framebuf(intercom_s, g_numofcached);
 			}
 		}
 	}
-#if CHANGE_PLAY_SPEED
-	msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_FILTER_TYPE,former_dac_filter_type);
-	msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_SAMPLING_RATE,former_dac_samplingrate);
-#endif
+	audio_code_pause(intercom_s->decoder_msi);
+	audio_code_clear(intercom_s->decoder_msi);
 	intercom_task_decrease(intercom_s);
 }
 
@@ -1171,6 +1247,7 @@ static void intercom_handel_task(void *d)
     int32_t trans_time_out = FRAME_TIME * 2;	
 	int32_t ret_time_out = 1;
 	INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)d;
+	int32_t tos = 0xE0;   //28
 
 	intercom_task_increase(intercom_s);
 	if(sys_cfgs.wifi_mode == WIFI_MODE_STA) {
@@ -1199,6 +1276,16 @@ static void intercom_handel_task(void *d)
 	}
 
 	if(setsockopt(intercom_s->local_ret_fd,SOL_SOCKET,SO_RCVTIMEO,&ret_time_out,sizeof(int32_t)) == -1) {
+		os_printf("intercom setsockopt fail!\n");
+		goto intercom_handel_task_err;
+	}
+
+	if(setsockopt(intercom_s->local_trans_fd,IPPROTO_IP,IP_TOS,&tos,sizeof(int32_t)) == -1) {
+		os_printf("intercom setsockopt fail!\n");
+		goto intercom_handel_task_err;
+	}
+
+	if(setsockopt(intercom_s->local_ret_fd,IPPROTO_IP,IP_TOS,&tos,sizeof(int32_t)) == -1) {
 		os_printf("intercom setsockopt fail!\n");
 		goto intercom_handel_task_err;
 	}
@@ -1352,18 +1439,11 @@ struct msi *intercom_init(void)
     }
     intercom_s->msi->priv = intercom_s;
 #if MAGIC_VOICE_EN
-	intercom_s->magic_voice_msi = magic_voice_init(AUADC_SAMPLERATE, 1, FRAME_TIME*AUADC_SAMPLERATE/1000);
+	intercom_s->magic_voice_msi = magic_voice_init(audio_adc_get_samplerate(AUSYS_AUAD), 1, FRAME_TIME*audio_adc_get_samplerate(AUSYS_AUAD)/1000);
 	if(intercom_s->magic_voice_msi == NULL) {
-        os_printf("magic voice create magic voice msi fail\n");
+        os_printf("intercom create magic voice msi fail\n");
         goto intercom_init_err;   		
 	}
-#endif
-#if CHANGE_PLAY_SPEED
-	intercom_s->autpc_msi = autpc_msi_init(AUADC_SAMPLERATE, 100, 100, FRAME_TIME*AUADC_SAMPLERATE/1000);
-    if(intercom_s->autpc_msi == NULL) {
-        os_printf("magic voice create autpc msi fail\n");
-        goto intercom_init_err;       
-    }	
 #endif
 	intercom_s->local_trans_fd = -1;
 	intercom_s->local_ret_fd = -1;
@@ -1387,18 +1467,14 @@ void intercom_deinit(struct msi *msi)
 	while(intercom_s->run_task > 0)
 		os_sleep_ms(1);
 	clear_all_device(intercom_s);
-	if(intercom_s->autpc_msi) {
-		msi_destroy(intercom_s->autpc_msi);
-	}
 	if(intercom_s->magic_voice_msi) {
 		magic_voice_deinit();
 	}
 	if(intercom_s->encoder_msi) {
-		if(audio_encode_deinit(AUDIO_ENCODER) == RET_OK)
-			auadc_msi_del_output(audio_code_msi_name(AUDIO_ENCODER));		
+		audio_encode_deinit(intercom_s->encoder_msi);		
 	}
 	if(intercom_s->decoder_msi)
-		audio_decode_deinit(AUDIO_DECODER);
+		audio_decode_deinit(intercom_s->decoder_msi);
 	if(intercom_s->ctl_timer.hdl) {
 		os_timer_stop(&intercom_s->ctl_timer);
 		os_timer_del(&intercom_s->ctl_timer);
@@ -1440,34 +1516,36 @@ void intercom_recv_enable(uint8_t state)
 
 void intercom_encode_pause(uint8_t state, uint8_t clear)
 {
-	if(state == 1) {
-		audio_code_pause(AUDIO_ENCODER);
-		if(clear) {
-			audio_code_clear(AUDIO_ENCODER);
+	struct msi *msi = msi_find("SR_INTERCOM", 1);
+	if(msi) {
+		msi_put(msi);
+		INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)(msi->priv);
+		if(state == 1) {
+			audio_code_pause(intercom_s->encoder_msi);
+			if(clear) {
+				audio_code_clear(intercom_s->encoder_msi);
+			}
 		}
+		else if(state == 0)
+			audio_code_continue(intercom_s->encoder_msi);		
 	}
-	else if(state == 0)
-		audio_code_continue(AUDIO_ENCODER);
 }
 
 void intercom_decode_pause(uint8_t state, uint8_t clear)
 {
-	if(state == 1) {
-		audio_code_pause(AUDIO_DECODER);
-		if(clear) {
-			audio_code_clear(AUDIO_DECODER);
-		}
-		struct msi *msi = msi_find("SR_INTERCOM", 1);
-		if(msi) {
-			msi_put(msi);
-			INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)(msi->priv);
-			if(intercom_s->autpc_msi) {
-				msi_do_cmd(intercom_s->autpc_msi, MSI_CMD_AUTPC, MSI_AUTPC_END_STREAM, 0);
+	struct msi *msi = msi_find("SR_INTERCOM", 1);
+	if(msi) {
+		msi_put(msi);
+		INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)(msi->priv);
+		if(state == 1) {
+			audio_code_pause(intercom_s->decoder_msi);
+			if(clear) {
+				audio_code_clear(intercom_s->decoder_msi);
 			}
 		}
+		else if(state == 0)
+			audio_code_continue(intercom_s->decoder_msi);
 	}
-	else if(state == 0)
-		audio_code_continue(AUDIO_DECODER);
 }
 
 void intercom_reset_play(void)
@@ -1475,12 +1553,16 @@ void intercom_reset_play(void)
 	struct msi *msi = msi_find("SR_INTERCOM", 1);
 	if(msi) {
 		msi_put(msi);
-		play_start_flag &= ~BIT(1);
 		INTERCOM_STRUCT *intercom_s = (INTERCOM_STRUCT*)(msi->priv);
+		audio_code_pause(intercom_s->decoder_msi);
+		audio_code_clear(intercom_s->decoder_msi);
+		msi_put(msi);
+		play_start_flag &= ~BIT(1);
 		os_event_set(&intercom_s->clear_event, clear_useList_event, NULL);
 		os_event_wait(&intercom_s->clear_event, clear_useList_finish_event, 
 						NULL, OS_EVENT_WMODE_CLEAR|OS_EVENT_WMODE_OR, osWaitForever);
 		play_start_flag |= BIT(1);
+		audio_code_continue(intercom_s->decoder_msi);
 	}
 }
 
@@ -1494,3 +1576,32 @@ void intercom_set_stream_type(uint8_t recv_type, uint8_t send_type)
 		intercom_s->send_stream_type = send_type;
 	}
 }
+
+uint32_t intercom_ctrl_key(struct key_callback_list_s *callback_list,uint32_t keyvalue,uint32_t extern_value)
+{
+	#ifdef SYS_APP_WALKIE_TALKIE
+	if( (keyvalue>>8) != AD_SPEACH)
+		return 0;
+	#else
+	if( (keyvalue>>8) != AD_DOWN)
+		return 0;
+	#endif
+
+	uint32 key_val = (keyvalue & 0xff);
+	if((key_val == KEY_EVENT_DOWN) || (key_val == KEY_EVENT_LDOWN) || (key_val == KEY_EVENT_REPEAT)) {
+		if(send_start_flag == 0) {
+			intercom_encode_pause(0, 0);
+			g_s_identify_num = 0;
+			os_random_bytes((uint8_t*)(&g_s_identify_num), 4);
+			send_start_flag = 1;
+		}
+	}
+	else if((key_val == KEY_EVENT_SUP) || (key_val == KEY_EVENT_LUP)) {
+		if(send_start_flag == 1) {
+			intercom_encode_pause(1, 1);
+			send_start_flag = 0;
+		}
+	}
+	return 0;
+}
+

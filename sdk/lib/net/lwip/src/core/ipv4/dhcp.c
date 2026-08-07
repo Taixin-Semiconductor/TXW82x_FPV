@@ -2000,4 +2000,16 @@ dhcp_supplied_address(const struct netif *netif)
   return 0;
 }
 
+s8_t dhcp_get_leasetime(const struct netif *netif, u32_t *t0, u32_t *t1, u32_t *t2)
+{
+    struct dhcp *dhcp;
+    if (netif) {
+        dhcp = netif_dhcp_data(netif);
+        if(t0) *t0 = dhcp->offered_t0_lease; // 租约总时长（秒）
+        if(t1) *t1 = dhcp->offered_t1_renew; // T1 续约时间（秒�?        if(t2) *t2 = dhcp->offered_t2_rebind; // T2 重绑定时间（秒）    
+        return 0;
+    }
+    return -1;
+}
+
 #endif /* LWIP_IPV4 && LWIP_DHCP */

@@ -12,122 +12,25 @@
 #include <include/rttusb_host.h>
 #include "hid.h"
 
-#ifdef RT_USING_RTGUI
-#include <rtgui/event.h>
-#include <rtgui/rtgui_server.h>
-#include "drv_lcd.h"
-#endif
 
 #if defined(RT_USBH_HID) && defined(RT_USBH_HID_MOUSE)
 
-//#define DBG_TAG    "usbhost.umouse"
-//#define DBG_LVL           DBG_INFO
-//#include <rtdbg.h>
-
 static struct uprotocal mouse_protocal;
-
-#ifdef RT_USING_RTGUI
-#define LKEY_PRESS 0x01
-#define RKEY_PRESS 0x02
-#define MKEY_PRESS 0x04
-#define MOUSE_SCALING 0x02
-
-static rt_bool_t lkey_down=RT_FALSE;
-//static rt_bool_t rkey_down=RT_FALSE;
-//static rt_bool_t mkey_down=RT_FALSE;
-static struct rtgui_event_mouse emouse;
-#endif
 
 static rt_err_t rt_usbh_hid_mouse_callback(void* arg)
 {
+    rt_uint32_t int1, int2;
     struct uhid* hid;
-#ifdef RT_USING_RTGUI
-    rt_uint16_t xoffset=0;
-    rt_uint16_t yoffset=0;
-#endif
+
     hid = (struct uhid*)arg;
 
-    LOG_D("hid 0x%x 0x%x",
-                                *(rt_uint32_t*)hid->buffer,
-                                *(rt_uint32_t*)(&hid->buffer[4]));
-#ifdef RT_USING_RTGUI
-    if(hid->buffer[1]!=0)
-    {
-        if(hid->buffer[1]>127)
-        {
-            xoffset=(256-hid->buffer[1])*MOUSE_SCALING;
-            if(emouse.x>xoffset)
-            {
-                emouse.x-=xoffset;
-            }
-            else
-            {
-                emouse.x=0;
-            }
-        }
-        else
-        {
-            xoffset=(hid->buffer[1])*MOUSE_SCALING;
-            if((emouse.x+xoffset)<480)
-            {
-                emouse.x+=xoffset;
-            }
-            else
-            {
-                emouse.x=480;
-            }
-        }
-    }
-    if(hid->buffer[2]!=0)
-    {
+    rt_memcpy(&int1, hid->buffer, 4);
+    rt_memcpy(&int2, hid->buffer+4, 4);
 
-        if(hid->buffer[2]>127)
-        {
-            yoffset=(256-hid->buffer[2])*MOUSE_SCALING;
-            if(emouse.y>yoffset)
-            {
-                emouse.y-=yoffset;
-            }
-            else
-            {
-                emouse.y=0;
-            }
-        }
-        else
-        {
-            yoffset=hid->buffer[2]*MOUSE_SCALING;
-            if(emouse.y+yoffset<272)
-            {
-                emouse.y+=yoffset;
-            }
-            else
-            {
-                emouse.y=272;
-            }
-        }
-    }
-    if(xoffset!=0||yoffset!=0)
+    if(int1 != 0 || int2 != 0)
     {
-        cursor_set_position(emouse.x,emouse.y);
+        os_printf("key down 0x%x, 0x%x", int1, int2);
     }
-    if(hid->buffer[0]&LKEY_PRESS)
-    {
-        if(lkey_down==RT_FALSE)
-        {
-            // rt_kprintf("mouse left key press down\n");
-            emouse.button = (RTGUI_MOUSE_BUTTON_LEFT | RTGUI_MOUSE_BUTTON_DOWN);
-            rtgui_server_post_event(&emouse.parent, sizeof(struct rtgui_event_mouse));
-            lkey_down=RT_TRUE;
-        }
-    }
-    else if(lkey_down==RT_TRUE)
-    {
-        // rt_kprintf("mouse left key press up\n");
-        emouse.button = (RTGUI_MOUSE_BUTTON_LEFT | RTGUI_MOUSE_BUTTON_UP);
-        rtgui_server_post_event(&emouse.parent, sizeof(struct rtgui_event_mouse));
-        lkey_down=RT_FALSE;
-    }
-#endif
     return RT_EOK;
 }
 
@@ -162,12 +65,8 @@ static rt_err_t rt_usbh_hid_mouse_init(void* arg)
     mouse_thread = rt_thread_create("mouse0", mouse_task, intf, 1024, 8, 100);
     rt_thread_startup(mouse_thread);
 
-    LOG_D("start usb mouse");
-#ifdef RT_USING_RTGUI
-    RTGUI_EVENT_MOUSE_BUTTON_INIT(&emouse);
-    emouse.wid = RT_NULL;
-    cursor_display(RT_TRUE);
-#endif
+    os_printf("start usb mouse");
+
     return RT_EOK;
 }
 

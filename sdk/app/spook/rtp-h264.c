@@ -50,6 +50,8 @@ struct rtp_h264 {
 	struct frame *f;
 	unsigned int timestamp;	
 	int max_send_size;
+	uint8_t first_flag;
+	uint8_t last_count;
 };
 
 
@@ -214,6 +216,7 @@ static int h264_send_more( rtp_loop_search_ep search,void *ls,void *track, void 
 		if(h264->type == 1)
 		{
 			//plen = 19;
+			out->first_flag = 1;
 			is_i_frame = 1;
 			head = ls;
 			while(head)
@@ -241,6 +244,21 @@ static int h264_send_more( rtp_loop_search_ep search,void *ls,void *track, void 
 				}
 			}
 		}
+
+
+		if(h264->type != 1 && out->last_count != h264->count)
+		{
+			out->first_flag = 0;
+		}
+
+		//如果不是1,则需要丢帧
+		if(!out->first_flag)
+		{
+			os_printf(KERN_NOTICE"drop frame\n");
+			goto rtp_h264_end;
+		}
+
+		out->last_count = h264->count + 1;
 
 		h264_flen = fb->len - 1 - h264->start_len;
 		plen_offset = 0;
@@ -275,7 +293,7 @@ static int h264_send_more( rtp_loop_search_ep search,void *ls,void *track, void 
 			}
 
 			send_buf = cache_buf;
-			os_memcpy(&send_buf[itk+14],&real_buf[plen_offset],plen);
+			hw_memcpy(&send_buf[itk+14],&real_buf[plen_offset],plen);
 
 
 			plen_offset += plen;
@@ -465,7 +483,7 @@ static int h264_send_more( rtp_loop_search_ep search,void *ls,void *track, void 
 			}
 		}
 	}
-
+rtp_h264_end:
 	head = ls;
 	while(head)
 	{

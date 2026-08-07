@@ -2,7 +2,7 @@
 #define __VIDEO_APP_USB_MSI_H
 #include "basic_include.h"
 #include "lib/multimedia/msi.h"
-#include "dev/usb/uvc_host.h"
+#include "lib/video/uvc/rtt_uvc_host.h"
 
 enum uvc_app_usb
 {

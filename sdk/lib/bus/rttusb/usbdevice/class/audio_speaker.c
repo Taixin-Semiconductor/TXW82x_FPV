@@ -581,7 +581,7 @@ int audio_speaker_init(void)
 {
     rt_thread_t speaker_tid;
     if (speaker.buffer == RT_NULL)
-        speaker.buffer = rt_malloc(UAC_MAX_PACKET_SIZE);
+        speaker.buffer = rt_malloc(UAC_MAX_PACKET_SIZE + USB_RX_BUFF_RESERVE_SIZE);
     if (speaker.buffer == RT_NULL)
     {
         os_printf("speaker buffer malloc failed\n");

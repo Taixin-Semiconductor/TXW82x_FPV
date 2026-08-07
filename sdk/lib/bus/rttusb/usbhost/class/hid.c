@@ -50,9 +50,13 @@ rt_err_t rt_usbh_hid_set_idle(struct uhintf* intf, int duration, int report_id)
     setup.wLength = 0;
     setup.wValue = (duration << 8 )| report_id;
 
-    if (rt_usb_hcd_setup_xfer(device->hcd, device->pipe_ep0_out, &setup, timeout) == 8)
-        if (rt_usb_hcd_pipe_xfer(device->hcd, device->pipe_ep0_in, RT_NULL, 0, timeout) == 0)
+    if (rt_usb_hcd_setup_xfer(device->hcd, device->pipe_ep0_out, &setup, timeout) == 8) 
+    {
+        if (rt_usb_hcd_pipe_xfer(device->hcd, device->pipe_ep0_in, RT_NULL, 0, timeout) == 0) 
+        {
             return RT_EOK;
+        }
+    }
 
     return -RT_FALSE;
 }
@@ -96,8 +100,7 @@ rt_err_t rt_usbh_hid_get_report(struct uhintf* intf, rt_uint8_t type,
             }
         }
     }
-    else
-        return -RT_FALSE;
+
     return -RT_FALSE;
 }
 
@@ -130,9 +133,14 @@ rt_err_t rt_usbh_hid_set_report(struct uhintf* intf, rt_uint8_t *buffer, rt_size
     setup.wValue = 0x02 << 8;
 
     if (rt_usb_hcd_setup_xfer(device->hcd, device->pipe_ep0_out, &setup, timeout) == 8)
-        return RT_EOK;
-    else
-        return -RT_FALSE;
+    {
+        if (rt_usb_hcd_pipe_xfer(device->hcd, device->pipe_ep0_in, RT_NULL, 0, timeout) == 0) 
+        {
+            return RT_EOK;
+        }
+    }
+
+    return -RT_FALSE;
 }
 
 /**
@@ -163,9 +171,13 @@ rt_err_t rt_usbh_hid_set_protocal(struct uhintf* intf, int protocol)
     setup.wValue = protocol;
 
     if (rt_usb_hcd_setup_xfer(device->hcd, device->pipe_ep0_out, &setup, timeout) == 8)
-        return RT_EOK;
-    else
-        return -RT_FALSE;
+    {
+        if (rt_usb_hcd_pipe_xfer(device->hcd, device->pipe_ep0_in, RT_NULL, 0, timeout) == 0) 
+        {
+            return RT_EOK;
+        }
+    }
+    return -RT_FALSE;
 }
 
 /**
@@ -308,7 +320,7 @@ static rt_err_t rt_usbh_hid_enable(void* arg)
 
     pro_id = intf->intf_desc->bInterfaceProtocol;
 
-    LOG_D("HID device enable, protocal id %d", pro_id);
+    os_printf("HID device enable, protocal id %d\n", pro_id);
 
     protocal = rt_usbh_hid_protocal_find(pro_id);
     if(protocal == RT_NULL)
@@ -326,7 +338,7 @@ static rt_err_t rt_usbh_hid_enable(void* arg)
     intf->user_data = (void*)hid;
     hid->protocal = protocal;
 
-    for(i=0; i<intf->intf_desc->bNumEndpoints; i++)
+    for(i = 0; i < intf->intf_desc->bNumEndpoints; i++)
     {
         rt_err_t ret;
         uep_desc_t ep_desc;
@@ -338,7 +350,7 @@ static rt_err_t rt_usbh_hid_enable(void* arg)
             rt_kprintf("rt_usbh_get_endpoint_descriptor error\n");
             return -RT_ERROR;
         }
-
+        analysis_usb_ep_desc(ep_desc); //获取端点描述符 打印端点描述符信息
         if(USB_EP_ATTR(ep_desc->bmAttributes) != USB_EP_ATTR_INT)
             continue;
 
@@ -347,6 +359,8 @@ static rt_err_t rt_usbh_hid_enable(void* arg)
         ret = rt_usb_hcd_alloc_pipe(intf->device->hcd, &hid->pipe_in,
             intf->device, ep_desc);
         if(ret != RT_EOK) return ret;
+
+        rt_usb_instance_add_pipe(intf->device, hid->pipe_in);
     }
 
     /* initialize hid protocal */

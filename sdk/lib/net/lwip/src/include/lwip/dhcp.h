@@ -132,6 +132,8 @@ void dhcp_inform(struct netif *netif);
 void dhcp_network_changed_link_up(struct netif *netif);
 
 u8_t dhcp_supplied_address(const struct netif *netif);
+s8_t dhcp_get_leasetime(const struct netif *netif, u32_t *t0, u32_t *t1, u32_t *t2);
+
 /* to be called every minute */
 void dhcp_coarse_tmr(void);
 /* to be called every half second */

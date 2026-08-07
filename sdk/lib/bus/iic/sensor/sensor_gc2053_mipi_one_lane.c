@@ -270,6 +270,13 @@ const _Sensor_DPC gc2053_dpc_init =
     .dynamic_black_strength = 4,
 };
 
+const _Sensor_GAMMA_BV gc2053_gamma_map = 
+{
+    .bv 		= { 15000,  8000,  3000, 1200,  600,  300, 200, 100, },
+    .y_alpha 	= {	  255,   255,   255,  192,  160,  128,  64,  32, },
+    .rgb_alpha 	= {   255,   255,   255,  192,  160,  128,  64,  32, },
+};
+
 const _Sensor_CSC gc2053_csc_init = 
 {
     .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
@@ -280,6 +287,7 @@ const _Sensor_CSC gc2053_csc_init =
     .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
     .y_gamma_alpha         = 0xff,
     .rgb_gamma_alpha       = 0xff,
+	.gamma_alpha_map       = (void *)&gc2053_gamma_map,
 };
 
 const _Sensor_GIC gc2053_gic_init = 
@@ -347,6 +355,17 @@ const _Sensor_YUVNR gc2053_yuvnr_init = {
 	.y_win_size = 0,
 };
 
+const _Sensor_COLENH_BV gc2053_ce_map[BV2COLENH_ARRAY_NUM] = {
+    {.bv =  29491, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   5000, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   3534, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =    400, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =    222, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =    115, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =     57, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =     34, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+};
+
 const _Sensor_COLENH gc2053_colenh_init = {
     .yuv_range  = 0,
     .luma       = 50, // range: 0 ~ 100
@@ -359,11 +378,8 @@ const _Sensor_COLENH gc2053_colenh_init = {
     .ce_out_ofs_y  = 128, 
     .ce_out_ofs_cb = 128, 
     .ce_out_ofs_cr = 128, // range: -128 ~ 128
-    .adj_sat_by_bv = 1,
-    .hi_sat     = 70,
-    .lo_sat     = 50,
-    .hi_sat_bv  = 3531, // high brightness for saturation
-    .lo_sat_bv  = 400,  // low brightness for saturation
+    .adj_by_bv_en  = 1,
+    .bv2colenh_map = (void *)gc2053_ce_map,
 };
 
 const _Sensor_BV2NR gc2053_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
@@ -446,76 +462,66 @@ const _Sensor_LHS gc2053_lhs_map[] = {
     {           296,           318,          340,                0,                       0}   // blue enhance,     range:
 };
 
+	
+// 预设的Gamma曲线和对应的BV值
+const _Sensor_YGAMMA gc2053_ygamma_tbl[NUM_CURVES] = {
+    {
+     .bv = 200,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 500,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 1000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 1500,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0, }},
+    {// 线性曲线，BV=500
+     .bv = 2000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}}
+};	
 
-
-
-
-const _Sensor_YGAMMA gc2053_ygamma_tbl[] = {
-	  15735808,
-	   32529423,
-	   49323039,
-	   67165231,
-	   83959872,
-	  100753488,
-	  117546080,
-	  134340720,
-	  151134336,
-	  167927952,
-	  183672992,
-	  201514159,
-	  217260224,
-	  235102415,
-	  250847456,
-	  267640047,
-	  284433663,
-	  302275855,
-	  319070496,
-	  335864112,
-	  352657728,
-	  369451344,
-	  386244960,
-	  403038576,
-	  419832192,
-	  436625808,
-	  453419424,
-	  469164464,
-	  487006655,
-	  503800272,
-	  520593888,
-	  537387504,
-	  553132544,
-	  569925135,
-	  587768351,
-	  603513392,
-	  621355583,
-	  638149200,
-	  654941792,
-	  671736432,
-	  688530048,
-	  705323664,
-	  722117280,
-	  738910896,
-	  755704512,
-	  772498128,
-	  789291744,
-	  806085360,
-	  822878976,
-	  839672592,
-	  856466208,
-	  873259824,
-	  890053440,
-	  906846032,
-	  923639648,
-	  940433264,
-	  957227904,
-	  974021520,
-	  990815136,
-	 1007608752,
-	 1024402368,
-	 1041195984,
-	 1057989600,
-	 1073734640,
-};
 
 uint8 gc2053_regValTable[29][4] = {
     // 0xb4  0xb3 0xb8 0xb9
@@ -583,7 +589,7 @@ uint32 gc2053_gainLevelTable[30] = {
     0xffffffff
 };
 
-void GC2053_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void GC2053_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     int i;
     int    gc2053_total;

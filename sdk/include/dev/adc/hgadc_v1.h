@@ -66,6 +66,12 @@ uint16 saradc_pri_channel_get_pending(struct hgadc_v1_hw *hw, uint8 pri_chan_sel
 void saradc_pri_channel_disable(struct hgadc_v1_hw *hw, uint8 pri_chanx_en);
 uint16 saradc_pri_channel_get_raw_data(struct hgadc_v1_hw *hw, uint8 pri_chan_sel);
 void sar_adc_sample_one_channel(uint32 channel, uint32 *raw_data);
+void saradc_channel_disable(struct hgadc_v1_hw *hw, uint8 chanx_en);
+uint16 saradc_one_channel_single_kick(struct hgadc_v1_hw *hw);
+uint16 saradc_channel_get_raw_data(struct hgadc_v1_hw *hw, uint8 chan_en);
+uint16 saradc_channel_get_pending(struct hgadc_v1_hw *hw, uint8 chan_en);
+void saradc_channel_config(struct hgadc_v1_hw *hw, uint8 chanx_en,uint8 smp_mode_sel,uint8 chan_sel,uint8 trg_sel);
+void saradc_channel_clr_pending(struct hgadc_v1_hw *hw, uint8 chan_en);
 
 int32 hgadc_v1_attach(uint32 dev_id, struct hgadc_v1 *adc);
 

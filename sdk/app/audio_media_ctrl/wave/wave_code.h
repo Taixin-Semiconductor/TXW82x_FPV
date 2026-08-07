@@ -4,6 +4,7 @@
 #include "basic_include.h"
 #include "lib/heap/av_heap.h"
 #include "lib/heap/av_psram_heap.h"
+#include "audio_code_ctrl.h"
 
 #ifdef PSRAM_HEAP
 #define WAVE_CODE_MALLOC    av_psram_malloc
@@ -43,16 +44,7 @@ typedef struct _wave_head {
 	TYPE_DATA_CHUNK  data_chunk;
 } TYPE_WAVE_HEAD;
 
-struct msi *wave_encode_init(uint8_t *filename, uint32_t samplerate);
-int32_t wave_encode_deinit(void);
-void wave_encode_continue(void);
-void wave_encode_pause(void);
-uint8_t get_wave_encode_status(void);
-
-struct msi *wave_decode_init(uint8_t *filename, uint8_t direct_to_dac);
-int32_t wave_decode_deinit(void);
-void wave_decode_continue(void);
-void wave_decode_pause(void);
-uint8_t get_wave_decode_status(void);
+struct msi *wave_encode_init(char *filename, uint32_t samplerate, AUENC_INIT *auenc_init);
+struct msi *wave_decode_init(char *filename, uint8_t loop_mode, AUDEC_INIT *audec_init);
 
 #endif

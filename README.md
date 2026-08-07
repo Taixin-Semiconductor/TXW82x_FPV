@@ -6,9 +6,9 @@ This repository contains the software development kit for the Taixin Semiconduct
 
 ## Release information
 
-- Version: `v2.7.0.7-39347`
-- Source: SVN release `v2.7.0.7-39347`
-- Fix known issues, add project ID 12, and support MIPI CSI image stitching for two 720p cameras.
+- Version: `v2.7.0.7-41157`
+- Source: SVN release `v2.7.0.7-41157`
+- Add local MP4 playback and GSR2701 FEM support; fix known issues.
 
 ## Development environment
 

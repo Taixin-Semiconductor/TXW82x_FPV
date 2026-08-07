@@ -5,10 +5,36 @@
 #include "devid.h"
 #include "hal/vpp.h"
 
+
+
+int32 vpp_suspend(struct vpp_device *p_vpp)
+{
+    if (p_vpp && ((const struct vpp_hal_ops *)p_vpp->dev.ops)->suspend) {
+		return ((const struct vpp_hal_ops *)p_vpp->dev.ops)->suspend(p_vpp);
+    }
+    return RET_ERR;
+}
+
+int32 vpp_resume(struct vpp_device *p_vpp)
+{
+    if (p_vpp && ((const struct vpp_hal_ops *)p_vpp->dev.ops)->resume) {
+        return ((const struct vpp_hal_ops *)p_vpp->dev.ops)->resume(p_vpp);
+    }
+    return RET_ERR;
+}
+
 int32 vpp_open(struct vpp_device *p_vpp)
 {
     if (p_vpp && ((const struct vpp_hal_ops *)p_vpp->dev.ops)->open) {
         return ((const struct vpp_hal_ops *)p_vpp->dev.ops)->open(p_vpp);
+    }
+    return RET_ERR;
+}
+
+int32 vpp_is_closed(struct vpp_device *p_vpp)
+{
+    if (p_vpp && ((const struct vpp_hal_ops *)p_vpp->dev.ops)->ioctl) {
+        return ((const struct vpp_hal_ops *)p_vpp->dev.ops)->ioctl(p_vpp, VPP_IOCTL_CMD_IS_CLOSED, 0, 0);
     }
     return RET_ERR;
 }

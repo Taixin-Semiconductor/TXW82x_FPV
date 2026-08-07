@@ -10,6 +10,17 @@
 #define STREAM_FREE   av_psram_free
 #define STREAM_ZALLOC av_psram_zalloc
 
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+typedef struct {
+    Node *head;
+    Node *tail;
+    size_t size;
+} LinkedList;
+
 typedef struct el
 {
     struct el *next, *prev;
@@ -21,6 +32,7 @@ typedef struct
 {
     el *head;
     char dir_path[32];
+    LinkedList *list;   // 存放异常文件夹
 } loop_file;
 
 // 默认当作后缀名是4位,这个应该是用户去考虑的
@@ -86,7 +98,6 @@ static int8_t loop_add_file(void *loop_f, char *file_name, int filesize)
     return ret;
 }
 
-
 static int8_t loop_add_file_sort(void *loop_f)
 {
     loop_file *loop = (loop_file *) loop_f;
@@ -97,13 +108,101 @@ static int8_t loop_add_file_sort(void *loop_f)
     return 0;
 }
 
-static uint8_t find_dir_with_min_number(const char *path, char* result_name)
+void init_list(LinkedList *list)
+{
+    list->head = list->tail = NULL;
+    list->size = 0;
+}
+
+void push_back(LinkedList *list, uint32_t value)
+{
+    Node *node = STREAM_MALLOC(sizeof(Node));
+    if (!node) return;
+    node->value = value;
+    node->next = NULL;
+
+    if (list->tail) {
+        list->tail->next = node;
+    } else {
+        list->head = node;
+    }
+    list->tail = node;
+    list->size++;
+}
+
+void free_list(void *loop_f)
+{
+    loop_file *loop = (loop_file *) loop_f;
+    LinkedList *list = (LinkedList *) loop->list;
+    if(list)
+    {
+        Node *cur = list->head;
+        while (cur) {
+            Node *next = cur->next;
+            STREAM_FREE(cur);
+            cur = next;
+        }
+        list->head = list->tail = NULL;
+        list->size = 0;
+        STREAM_FREE(list);
+        loop->list = NULL;
+    }
+}
+
+void* get_err_dir_list(void *loop_f)
+{
+    loop_file *loop = (loop_file *) loop_f;
+    return loop->list;
+}
+
+void err_dir_add_list(void *loop_f, const char *dir_path)
+{
+    loop_file *loop = (loop_file *) loop_f;
+    LinkedList *list = NULL;
+
+    if(loop->list)
+    {
+        list = (LinkedList *) loop->list;
+    }
+    else
+    {
+        list = (LinkedList *)STREAM_MALLOC(sizeof(LinkedList));
+        if(list)
+        {
+            loop->list = list;
+            init_list(list);
+        }
+        else
+        {
+            _os_printf("malloc err list failed\r\n");
+            return;
+        }
+    }
+
+    const char *last_slash = strrchr(dir_path, '/');
+    const char *num_ptr = (last_slash != NULL) ? (last_slash + 1) : dir_path;
+    char *endptr;
+    uint32_t value = strtoul(num_ptr, &endptr, 10);
+
+    if (endptr == num_ptr || (*endptr != '\0')) {
+        _os_printf("Error: '%s' is not a valid number directory\r\n", num_ptr);
+        return;
+    }
+
+    if(value > 0)
+    {
+        push_back(list, value);
+        _os_printf("add %s to err dir list\r\n", dir_path);
+    }
+}
+
+static uint8_t find_dir_with_min_number(const char *path, char* result_name, LinkedList *list)
 {
     void *dir;
     FILINFO *fil;
-    
-    unsigned int min_number = 0xFFFFFFFF;
+    uint32_t min_number = 0xFFFFFFFF;
     char min_dir_name[32];
+    uint8_t err_dir = 0;
 	
     dir = osal_opendir(path);
     if(dir == NULL) {
@@ -115,16 +214,19 @@ static uint8_t find_dir_with_min_number(const char *path, char* result_name)
         fil = osal_readdir(dir);
         
         if(fil == NULL)
+        {
             break;
+        }
 
-        if (fil->fname[0] == '.') {
+        if(fil->fname[0] == '.')
+        {
             continue;
         }
         
         if (osal_dirent_isdir(fil))
         {
             char *dir_name = fil->fname;
-            unsigned int current_number = 0;
+            uint32_t current_number = 0;
             int found_digit = 0;
             
             for (int i = 0; dir_name[i] != '\0'; i++) {
@@ -138,10 +240,22 @@ static uint8_t find_dir_with_min_number(const char *path, char* result_name)
             }
 
             if (found_digit) {
-                if (current_number < min_number) {
+                if(list)
+                {
+                    Node *cur = list->head;
+                    while (cur) {
+                        if (cur->value == current_number) {
+                            err_dir = 1;
+                            break;
+                        }
+                        cur = cur->next;
+                    }
+                }
+                if (current_number < min_number && !err_dir) {
                     min_number = current_number;
                     os_strcpy(min_dir_name, dir_name);
                 }
+                err_dir = 0;
             }
         }
     }
@@ -197,7 +311,6 @@ static void get_file(void *loop_f, const char *path, const char *extension_name)
                 // 后缀名匹配
                 if (memcmp(extension_name, extension_filename, extension_name_len) == 0)
                 {
-                    // _os_printf("fname:%s\tsize:%d\n", fname,filesize);
                     el *name       = (el *) STREAM_MALLOC(sizeof(el));
                     name->filesize = filesize;
                     os_strncpy(name->filename, fname, sizeof(name->filename));
@@ -215,7 +328,7 @@ void *get_file_list(const char *rec_path, const char *extension_name)
     char dir_path[32];
     char min_dir_name[32];
     
-    if(find_dir_with_min_number(rec_path, min_dir_name))
+    if(find_dir_with_min_number(rec_path, min_dir_name, NULL))
     {
         os_printf("fine dir error, path: %s\r\n", rec_path);
         return NULL;
@@ -225,6 +338,32 @@ void *get_file_list(const char *rec_path, const char *extension_name)
     loop_file *loop = loop_get_file_init();
     if (loop)
     {
+        loop->list = NULL;
+        os_strcpy(loop->dir_path, dir_path);
+        get_file(loop, dir_path, extension_name);
+        // 排序
+        loop_add_file_sort(loop);
+    }
+    
+    return loop;
+}
+
+void *get_file_list2(const char *rec_path, const char *extension_name, void *list)
+{
+    char dir_path[32];
+    char min_dir_name[32];
+    
+    if(find_dir_with_min_number(rec_path, min_dir_name, list))
+    {
+        os_printf("fine dir error, path: %s\r\n", rec_path);
+        return NULL;
+    }
+
+    os_sprintf(dir_path, "%s/%s", rec_path, min_dir_name);
+    loop_file *loop = loop_get_file_init();
+    if (loop)
+    {
+        loop->list = list;
         os_strcpy(loop->dir_path, dir_path);
         get_file(loop, dir_path, extension_name);
         // 排序

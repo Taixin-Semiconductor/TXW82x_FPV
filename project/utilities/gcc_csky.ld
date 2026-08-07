@@ -31,7 +31,7 @@
 MEMORY
 {
     ISRAM  : ORIGIN = 0x04001000 , LENGTH = 0x2a000   
-    SRAM   : ORIGIN = 0x200065fc , LENGTH = 0x40000  /*起始地址为CoreCode BSS结束地址 */ 
+    SRAM   : ORIGIN = 0x200069d0 , LENGTH = 0x40000  /*起始地址为CoreCode BSS结束地址 */ 
     SRAM2  : ORIGIN = 0x20068000 , LENGTH = 0x3A00    /*末尾预留256byte做为CoreSetting数据*/
     FLASH  : ORIGIN = 0x10000000 , LENGTH = 0x200000 
     PSRAM  : ORIGIN = 0x28000000 , LENGTH = 0x800000 
@@ -75,7 +75,7 @@ SECTIONS
 		. = ALIGN(0x10) ;
         KEEP(*(SYS_PARAM))     /*如果预留参数区的Size 大于4K时 不能再放在此位置*/
         . = ALIGN(0x1000);
-        . = . + 0x5f6d8; /*预留CodeCode Size大小区间*/
+        . = . + 0x618d4; /*预留CodeCode Size大小区间*/
         . = ALIGN(0x4);
         __stext = . ;
         *(.text)

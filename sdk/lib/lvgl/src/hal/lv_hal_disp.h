@@ -321,7 +321,7 @@ lv_coord_t lv_disp_get_dpi(const lv_disp_t * disp);
  * @param rotation rotation angle
  */
 void lv_disp_set_rotation(lv_disp_t * disp, lv_disp_rot_t rotation);
-
+void lv_disp_set_full_screen_rotation(lv_disp_t * disp, lv_disp_rot_t rotation, lv_coord_t hor_res, lv_coord_t ver_res);
 /**
  * Get the current rotation of this display.
  * @param disp pointer to a display (NULL to use the default display)

@@ -1152,7 +1152,7 @@ static int g_isrErrno;
 int *__errno_location(void)
 {
     if (!__in_interrupt()) {
-        return &g_active_task[cpu_cur_get()]->errno;
+        return &g_active_task[cpu_cur_get()]->task_errno;
     } else {
         return &g_isrErrno;
     }

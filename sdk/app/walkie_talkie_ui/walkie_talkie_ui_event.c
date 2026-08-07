@@ -1,0 +1,440 @@
+#include "walkie_talkie_ui_event.h"
+#include "stream_define.h"
+#include "lib/multimedia/msi.h"
+#include "hal/scale.h"
+#include "audio_media_ctrl/audio_media_ctrl.h"
+#include "syscfg.h"
+#include "battery_det.h"
+#include "ui_vpp_ipf_ctrl.h"
+#include "ui_vpp_ipf_resource.h"
+#include "scale_msi.h"
+#include "lib/umac/ieee80211.h"
+#include "lib/common/atcmd.h"
+#include "lib/heap/av_heap.h"
+#include "lib/heap/av_psram_heap.h"
+#ifdef PIN_FROM_PARAM
+#include "pin_param.h"
+#endif
+
+
+void sys_wifi_pair_start(uint8 ifidx, uint16 magic);
+#define _DEBUG(fmt, ...)    //os_printf(fmt, ##__VA_ARGS__)
+
+// View Switch
+#define L_W  320
+#define L_H  240
+
+#define S_W  128
+#define S_H  96
+
+#define T_OFFSET 8
+
+// wifi pair  interface
+typedef struct {
+    uint8_t pair_success;
+    uint8_t pair_mac[6];
+    uint8_t aid;
+    uint8_t net_pair_switch;
+} wifi_pair_status_t;
+
+extern wifi_pair_status_t wifi_pair;
+extern struct system_status sys_status;
+extern void jpg_decode_run(uint32_t addr, uint32_t id);
+extern struct msi *sim_video_more_msi(char *name, int w, int h, uint16_t *filter);
+
+#define WALKIE_TALKIE_JPG_DECODE_CACHE_MAX_SIZE     (15*1024)
+
+static uint8_t *walkie_talkie_jpg_decode_cache = NULL;
+static uint8_t *walkie_talkie_jpg_decode_last_addr = NULL;
+static uint8 user_dispnum = 0;      // 当前显示的画面数量
+static struct msi *prompt_play_msi = NULL; // 提示音播放组件句柄
+
+// 回调函数指针
+static wt_msi_callback_t g_msi_cb = NULL;
+
+// 注册回调接口
+void walkie_talkie_register_msi_callback(wt_msi_callback_t cb)
+{
+    g_msi_cb = cb;
+}
+
+// 发送事件接口
+int walkie_talkie_send_event(wt_msi_event_t event, uint32_t param1, uint32_t param2, uint32_t param3)
+{
+    if (g_msi_cb) {
+        return g_msi_cb(event, param1, param2, param3);  // 返回回调函数返回值
+    }
+    return -1; // 没有注册回调函数
+}
+
+
+// GPIO 背光回调
+static void lcd_backlight_on(uint32 param1, uint32 parma2, uint32 param3)
+{
+    gpio_set_mode(MACRO_PIN(LCD_BACKLIGHT_IO), GPIO_PULL_NONE, GPIO_PULL_LEVEL_NONE);   //PA_3
+    gpio_set_dir(MACRO_PIN(LCD_BACKLIGHT_IO), GPIO_DIR_OUTPUT);
+    gpio_set_val(MACRO_PIN(LCD_BACKLIGHT_IO), 1);
+}
+
+// MSI 事件处理回调函数
+static int walkie_talkie_ui_event_handler(wt_msi_event_t event, uint32_t param1, uint32_t param2, uint32_t param3)
+{
+    switch (event)
+    {
+    case WT_EVT_MSI_INIT:       // 初始化 MSI 组件
+        {
+            _DEBUG("## WT Event: MSI Init Start \n");
+            static const uint16_t filter[]  = {FSTYPE_YUV_P0, FSTYPE_YUV_P1, FSTYPE_YUV_P2, FSTYPE_NONE};
+            
+            // 可以显示更多的图(通过filter去设置,每一张图都会合并,多摄像头可以参考)
+            struct msi  *sim_video = sim_video_more_msi("sim_video", 320, 240, (uint16_t *) filter);
+            if (sim_video) {
+                msi_add_output(sim_video, NULL, R_VIDEO_P0);    // sim_video输出到R_VIDEO_P0的msi
+            }
+
+            // 将scale3的数据发送到sim_video,然后sim_video去dam2d去重新组成一张图给到lcd显示
+            struct msi *scale3 = scale3_msi(S_PREVIEW_SCALE3);
+            if (scale3) {
+                // scale3输出到sim_video的msi     即scaler3--->sim--->r_video_p0
+                msi_add_output(scale3, NULL, "sim_video");
+            }
+
+            struct msi *scale2 = scale2_msi("scale2", 320, 240, 320, 240, FSTYPE_YUV_P0, 10);
+            if (scale2) {
+                msi_add_output(scale2, NULL, "sim_video");
+            }
+        }
+        break;
+
+    case WT_EVT_DECODE_LOGO:    // 解码开机 Logo
+        {
+            uint8_t *ui_logo = (uint8_t*)param1;
+            uint32_t size = param2;
+            _DEBUG("## WT Event: Decode Logo Start \n");
+
+            if (walkie_talkie_jpg_decode_cache == NULL) {
+                walkie_talkie_jpg_decode_cache = (uint8_t *)av_psram_malloc(WALKIE_TALKIE_JPG_DECODE_CACHE_MAX_SIZE);
+            }
+            if (!walkie_talkie_jpg_decode_cache) return -1;
+
+            if (size > WALKIE_TALKIE_JPG_DECODE_CACHE_MAX_SIZE) {
+                return -1;
+            }
+
+            if (walkie_talkie_jpg_decode_last_addr != ui_logo) {
+                walkie_talkie_jpg_decode_last_addr = ui_logo;
+                os_memcpy(walkie_talkie_jpg_decode_cache, ui_logo, size);    // cpu copy
+                sys_dcache_clean_range((uint32_t*)walkie_talkie_jpg_decode_cache, size); 
+            }
+
+            int _ret = scale2_cfg_run(MJPEG_DEC, 0);
+            if(_ret == 0) {
+                jpg_decode_run((uint32)walkie_talkie_jpg_decode_cache, 0);
+            }
+        }
+        break;
+
+    case WT_EVT_JPG_DECODE_RUN:
+        {
+            uint8_t *ui_jpg = (uint8_t*)param1;
+            uint32_t size = param2;
+            _DEBUG("## WT Event: Jpg Decode Start \n");
+            if (walkie_talkie_jpg_decode_cache == NULL) {
+                walkie_talkie_jpg_decode_cache = (uint8_t *)av_psram_malloc(WALKIE_TALKIE_JPG_DECODE_CACHE_MAX_SIZE);
+            }
+            if (!walkie_talkie_jpg_decode_cache) return -1;
+
+            if (size > WALKIE_TALKIE_JPG_DECODE_CACHE_MAX_SIZE) {
+                return -1;
+            }
+
+            if (walkie_talkie_jpg_decode_last_addr != ui_jpg) {
+                walkie_talkie_jpg_decode_last_addr = ui_jpg;
+                os_memcpy(walkie_talkie_jpg_decode_cache, ui_jpg, size);    // cpu copy
+                sys_dcache_clean_range((uint32_t*)walkie_talkie_jpg_decode_cache, size); 
+            }
+
+            int _ret = scale2_cfg_run(MJPEG_DEC, 0);
+            if(_ret == 0) {
+                jpg_decode_run((uint32)walkie_talkie_jpg_decode_cache, 0);
+            }
+        }
+        break;
+
+    case WT_EVT_BACKLIGHT_ON:   // 开启背光
+        {
+            _DEBUG("## WT Event: Backlight Init \n");
+            os_run_func_delay(lcd_backlight_on, (uint32_t)NULL, (uint32_t)NULL, 200);
+        }
+        break;
+
+    case WT_EVT_VOLUME_SET:   // 音量设置
+        {
+            // 参数转换回 uint8_t 音量值
+            uint8_t vol_val = (uint8_t)param1;
+            
+            _DEBUG("## WT Event: Volume Change to %d \n", vol_val);
+
+            uint8_t backVol=0;
+            const uint32 dacgain_table[]=
+            {  // 0~100
+                0,
+                10,
+                20,
+                30,
+                40,
+                50,
+                60,
+                70,
+                80,
+                90,
+                100
+            };
+
+            if(vol_val>10)
+                vol_val =10;
+
+            if(backVol!=vol_val)
+            {
+                backVol = vol_val;
+
+                msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_MEDIA_VOLUME,dacgain_table[vol_val]);
+                msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_CALL_VOLUME,dacgain_table[vol_val]);
+                msi_cmd("R_AUDAC",MSI_CMD_AUDAC,MSI_AUDAC_SET_BELL_VOLUME,dacgain_table[vol_val]);
+            }
+        }
+        break;
+
+    case WT_EVT_VIEW_SWITCH:    // 视图切换
+        {
+            _DEBUG("## WT Event: View Switch \n");
+
+            uint8_t p0p1_flag = (uint8_t)param1;
+
+            switch (p0p1_flag)
+            {
+                case 0 :  //P1_bg  P0_front
+                    os_sleep_ms(10);		
+                    scale2_output_size_local_change(0,0,0,0,L_W,L_H);
+                    #if USE_90_DEGREE_LOGO
+                    scale3_output_size_local_change(0,0,T_OFFSET,L_H-S_H-T_OFFSET,S_W,S_H);		
+                    #else
+                    scale3_output_size_local_change(0,0,L_W-S_W-6,6,S_W,S_H);		
+                    #endif
+                break;
+
+                case 1 :  //P1_front  P0_back  
+                    os_sleep_ms(10);	
+                    #if USE_90_DEGREE_LOGO
+                    scale2_output_size_local_change(0,0,T_OFFSET,L_H-S_H-T_OFFSET,S_W,S_H);		
+                    #else
+                    scale2_output_size_local_change(0,0,L_W-S_W-6,6,S_W,S_H);
+                    #endif
+                    scale3_output_size_local_change(0,0,0,0,L_W,L_H);
+                break;
+
+                case 2 :  //P0_only
+                    os_sleep_ms(10);
+                    #if USE_90_DEGREE_LOGO
+                    scale2_output_size_local_change(0,0,T_OFFSET,L_H-S_H-T_OFFSET,S_W,S_H);	
+                    #else
+                    scale2_output_size_local_change(0,0,L_W-S_W-6,6,S_W,S_H);
+                    #endif
+                    scale3_output_size_local_change(0,1,0,0,L_W,L_H);
+                break;
+                
+                case 3 :  //P1_only
+                    os_sleep_ms(10);
+                    scale2_output_size_local_change(0,1,0,0,L_W,L_H);
+                    #if USE_90_DEGREE_LOGO
+                    scale3_output_size_local_change(0,0,T_OFFSET,L_H-S_H-T_OFFSET,S_W,S_H);	
+                    #else
+                    scale3_output_size_local_change(0,0,L_W-S_W-6,6,S_W,S_H);		
+                    #endif
+                break;
+            
+                default:
+                    break;
+            }
+        }
+        break;
+    
+    case WT_EVT_PROMPT_TONE_PLAY:  // 提示音播放
+        {
+            _DEBUG("## WT Event: Prompt Tone Play \n");
+            char *filepath = (char *)param1;
+
+            AUDEC_INIT audec_init;
+            uint8_t play_mode = 1;
+
+            //delayUnmute(100);
+
+            if(prompt_play_msi) {
+                audio_file_play_stop(prompt_play_msi);
+                prompt_play_msi = NULL;
+            }
+            audec_init.track_type = MEDIA_TRACK;
+            audec_init.priority = play_nonInterruptible;
+            audec_init.direct_to_dac = 1;
+            audec_init.use_tpc = 0;
+            audec_init.destroy_self = 1;
+            audec_init.src_msi = NULL;
+            prompt_play_msi = audio_file_play_init(filepath,play_mode,&audec_init);
+        }
+        break;
+
+    case WT_EVT_PAIR_MODE_SET:   // 配对模式设置
+        {
+            _DEBUG("## WT Event: Pair Mode Set \n");
+            uint8_t enable = (uint8_t)param1;
+
+            if(enable)
+            {
+                sys_status.pair_role = 0;
+                ieee80211_conf_set_pair_ngo(sys_cfgs.wifi_mode, 1);
+                ieee80211_conf_set_mutl_pair(sys_cfgs.wifi_mode, 0);
+                sys_wifi_pair_start(sys_cfgs.wifi_mode, 1);
+            }
+            else
+            {
+                ieee80211_conf_set_pair_ngo(sys_cfgs.wifi_mode, 0);
+                ieee80211_conf_set_mutl_pair(sys_cfgs.wifi_mode, 0);
+                sys_wifi_pair_start(sys_cfgs.wifi_mode, 0);
+            }
+        }
+        break;
+
+    case WT_EVT_PAIRSTATUS_GET:  // 获取配对状态
+        {
+            _DEBUG("## WT Event: Get Pair Status \n");
+            return wifi_pair.net_pair_switch;
+        }
+        break;
+
+    case WT_EVT_PAIRSUCCESS_GET:  // 获取配对成功状态
+        {
+            _DEBUG("## WT Event: Get Pair Success Status \n");
+            return wifi_pair.pair_success;
+        }
+        break;
+
+    case WT_EVT_DISP_NUM_SET:    // 设置当前显示的画面数量
+        {
+            _DEBUG("## WT Event: Set Display Number \n");
+            uint8_t dispnum = (uint8_t)param1;
+            user_dispnum = dispnum;
+        }
+
+        break;
+
+    case WT_EVT_DISP_NUM_GET:    // 获取当前显示的画面数量
+        {
+            _DEBUG("## WT Event: Get Display Number \n");
+            return user_dispnum;
+        }
+        break;
+
+    case WT_EVT_DAC_EMPTY_GET:   // 获取 DAC 空状态
+        {
+            _DEBUG("## WT Event: Get DAC Empty Status \n");
+            uint32_t res = 0;
+
+            msi_cmd("R_AUDAC", MSI_CMD_AUDAC, MSI_AUDAC_GET_EMPTY, (uint32_t)(&res));
+
+            return res;
+        }
+        break;
+    
+    case WT_EVT_BAT_DET_INIT:    // 电池检测初始化
+        {
+            _DEBUG("## WT Event: Battery Detection Init \n");
+            bat_ad_init();
+        }
+        break;
+
+    case WT_EVT_BAT_GET_LEVEL:
+        {
+            int level = bat_get_level();
+            _DEBUG("## WT Event: Battery get level:%d\n", level);
+            return level;
+        }
+        break;
+
+
+    case WT_EVT_WIFI_CONNECT_GET:        // 获取 WiFi 连接状态
+        {
+            _DEBUG("## WT Event: Get WiFi Connect Status \n");
+            return sys_status.wifi_connected;
+        }
+        break;
+
+    case WT_EVT_WIFI_SIGNAL_RSSI_GET:    // 获取 WiFi 信号强度（RSSI）
+        {
+            _DEBUG("## WT Event: Get WiFi Signal RSSI \n");
+            return (int8)sys_status.rssi;
+        }
+        break;
+
+    case WT_EVT_WIFI_SIGNAL_EVM_GET:     // 获取 WiFi 信号质量（EVM）
+        {
+            _DEBUG("## WT Event: Get WiFi Signal EVM \n");
+            return (int8)sys_status.evm;
+        }
+        break;
+
+    case WT_EVT_WIFI_CHANNEL_GET:        // 获取 WiFi 信道
+        {
+            _DEBUG("## WT Event: Get WiFi Channel \n");
+            return (int8)sys_status.channel;
+        }
+        break;
+
+    case WT_EVT_WIFI_FREQ_OFFSET_GET:     // 获取 WiFi 频偏
+        {
+            _DEBUG("## WT Event: Get WiFi Frequency Offset \n");
+            return 11;
+        }
+        break;
+
+    case WT_EVT_VPP_IPF_INIT:
+        {
+            ui_vpp_ipf_ctrl_init();
+        }   
+        break;
+
+    case WT_EVT_VPP_IPF_CTRL:
+        {
+            uint32_t *val = (uint32_t*)param1;
+            if((*val) < UI_VPP_IPF_RES_MAX_NUM)
+            {
+                os_sleep_ms(10);
+                ui_vpp_ipf_update_resource((void*)ipf_imgSrcTable[(*val)]);
+            }
+
+            if((*val) < UI_VPP_IPF_RES_MAX_NUM)
+            {
+                ++(*val);
+            }
+            else
+            {
+                (*val) = 0;
+                ui_vpp_ipf_update_resource(NULL);
+            }
+        }
+        break;
+
+
+    default:
+        return -1;
+    }
+    return 0;
+}
+
+
+// 模块初始化注册回调
+void walkie_talkie_msi_ext_init(void)
+{
+    walkie_talkie_register_msi_callback(walkie_talkie_ui_event_handler);
+}
+
+

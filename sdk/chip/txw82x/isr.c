@@ -6,15 +6,12 @@
  * @date     02. June 2017
  ******************************************************************************/
 #include "sys_config.h"
-#include <csi_config.h>
-
-#include "soc.h"
-#include <csi_kernel.h>
 #include "typesdef.h"
 #include "errno.h"
 #include "osal/irq.h"
 #include "osal/string.h"
 
+extern void isr_run(void (*hdl)(void *data), void *data);
 extern void ck_usart_irqhandler(int32_t idx);
 extern void dw_timer_irqhandler(int32_t idx);
 extern void dw_gpio_irqhandler(int32_t idx);
@@ -37,6 +34,7 @@ void csi_intrpt_exit_do(uint32 irqn)
         enable_irq(0); 
     } 
 }
+
 
 #define  CSI_INTRPT_ENTER(irqn) csi_kernel_intrpt_enter()
 #define  CSI_INTRPT_EXIT(irqn)  csi_intrpt_exit_do(irqn)
@@ -96,6 +94,13 @@ uint32_t in_disable_irq(void)
     return __in_disable_irq(__get_PSR());
 }
 
+#define SYSTEM_ISR_HANDLE_FUNC(func_name,irqn)\
+    ATTRIBUTE_ISR void func_name(void)\
+    {\
+        CSI_INTRPT_ENTER(irqn);\
+        isr_run(sys_irqs[irqn].handle, sys_irqs[irqn].data);\
+        CSI_INTRPT_EXIT(irqn);\
+    }
 
 #define SYSTEM_IRQ_HANDLE_FUNC(func_name,irqn)\
     ATTRIBUTE_ISR void func_name(void)\
@@ -140,7 +145,7 @@ uint32 sysirq_time(void)
     uint32_t cnt;
     uint32_t total;
     uint16_t max, min;
-    os_printf("SYS IRQ TIME:\r\n");
+    os_printf(KERN_ALERT"SYS IRQ TIME:\r\n");
     for (i = 0; i < IRQ_NUM; i++) {
         if (sys_irqs[i].trig_cnt) {
             cnt   = sys_irqs[i].trig_cnt;
@@ -152,7 +157,7 @@ uint32 sysirq_time(void)
             sys_irqs[i].tot_cycle = 0;
             sys_irqs[i].max = 0;
             sys_irqs[i].min = 0;
-            os_printf("  IRQ%-2d: trig:%d,\t total:%dus, \t(max:%d, min:%d, avg:%d)\r\n", i, cnt, total, max, min, total/cnt);
+            os_printf(KERN_ALERT"  IRQ%-2d: trig:%d,\t total:%dus, \t(max:%d, min:%d, avg:%d)\r\n", i, cnt, total, max, min, total/cnt);
         }
     }
 #endif
@@ -163,6 +168,7 @@ __ram ATTRIBUTE_ISR void CPU_SOFT_INT_IRQHandler(void)
 {
     /* only use for CPU1 */
     CSI_INTRPT_ENTER(CPU_SOFT_INT_IRQn);
+    SYS_IRQ_STATE_ST(CPU_SOFT_INT_IRQn);
 
     uint32 flags = disable_irq();
     uint32 wdt_feed_time = CoreSetting->cpu_clk/8; // ~0.5s
@@ -182,26 +188,31 @@ __ram ATTRIBUTE_ISR void CPU_SOFT_INT_IRQHandler(void)
         }
     }
     sysctrl_cpu1_kick_cpu0_softint();//ack
-
     enable_irq(flags);
+    
+    SYS_IRQ_STATE_END(CPU_SOFT_INT_IRQn);
     CSI_INTRPT_EXIT(CPU_SOFT_INT_IRQn);
 }
 
 ATTRIBUTE_ISR void CORET_IRQHandler(void)
 {
-    SYS_IRQ_STATE_ST(CORET_IRQn);
     CSI_INTRPT_ENTER(CORET_IRQn);
+    SYS_IRQ_STATE_ST(CORET_IRQn);
+    
     readl(0xE000E010);
     systick_handler();
-    CSI_INTRPT_EXIT(CORET_IRQn);
+        
     SYS_IRQ_STATE_END(CORET_IRQn);
+    CSI_INTRPT_EXIT(CORET_IRQn);
 }
 
 ATTRIBUTE_ISR void CPU_DBG_ON_IRQHandler(void)
 {
     //BIT0: CPU1 SOFTRESET PENDING , W1C
-    volatile uint32 *dbg = (volatile uint32 *)CPUDBG_BASE;
     CSI_INTRPT_ENTER(CPU_DBG_ON_IRQn);
+    SYS_IRQ_STATE_ST(CPU_DBG_ON_IRQn);
+    
+    volatile uint32 *dbg = (volatile uint32 *)CPUDBG_BASE;
     
     uint32_t sys_core1_static(int32 printf_en);
     sys_core1_static(1);
@@ -212,6 +223,8 @@ ATTRIBUTE_ISR void CPU_DBG_ON_IRQHandler(void)
 //        _os_printf("CPU1 debug ...RD_IRQ_EN=%08x RD_IRQ_STA=%08x\r\n", *(volatile int *)0x80001000, *(volatile int *)0x80001004);
 //        _os_printf("CPU0/1_SOFTINT=%08x %08x %08x\r\n", *(volatile uint32 *)(0x80001200), *(volatile uint32 *)(0x80001200), sys_soft_int_cnt, sys_soft_int_wait_cnt);
     }
+    
+    SYS_IRQ_STATE_END(CPU_DBG_ON_IRQn);
     CSI_INTRPT_EXIT(CPU_DBG_ON_IRQn);
 }
 

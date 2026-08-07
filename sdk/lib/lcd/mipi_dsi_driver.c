@@ -397,15 +397,23 @@ void mipi_dsi_io_remap(uint8_t *cfgbuf){
 }
 
 
-
+#define DSI_CLK_SELECT  DSI_MODULE_CLK_480M
 void mipi_dsi_init(uint32 w,uint32 h,uint32 dclk,uint8 vsa,uint8 vbp,uint8 vfp,uint8 hsa,uint8 hbp,uint8 hfp,uint8 lanenum,uint8 colortype){
 	uint8_t itk = 0;
 	uint8_t cfgbuf[10];
+	//uint8_t idbuf[10];
 	int GENERIC_VC_ID = 0x0;
 	int dpi2laneclkratio;
 	struct dsi_device *dsi_dev;
 	dsi_dev = (struct dsi_device *)dev_get(HG_DSI_DEVID); 
-	dpi2laneclkratio = 60*1000/(dclk/1000000);
+
+	if(DSI_CLK_SELECT == DSI_MODULE_CLK_480M){
+		dpi2laneclkratio = 60*1000/(dclk/1000000);
+	}else if(DSI_CLK_SELECT == DSI_MODULE_CLK_240M){
+		dpi2laneclkratio = 30*1000/(dclk/1000000);
+	}else{
+		dpi2laneclkratio = 120*1000/(dclk/1000000);
+	}
 	//dpipixel_fifo_mipi = dpi_pixel_buf;//os_malloc(4*w);//
 	generic_fifo_mipi  = os_malloc(w);//
 
@@ -413,7 +421,16 @@ void mipi_dsi_init(uint32 w,uint32 h,uint32 dclk,uint8 vsa,uint8 vbp,uint8 vfp,u
 		_os_printf("generic_fifo_mipi room error....\r\n");
 		return;
 	}
-	dsi_init(dsi_dev,1,4,1,lanenum);
+
+	
+	if(DSI_CLK_SELECT == DSI_MODULE_CLK_480M){
+		dsi_init(dsi_dev,1,4,1,lanenum,DSI_MODULE_CLK_480M,7);
+	}else if(DSI_CLK_SELECT == DSI_MODULE_CLK_240M){
+		dsi_init(dsi_dev,1,2,1,lanenum,DSI_MODULE_CLK_240M,7);
+	}else{
+		dsi_init(dsi_dev,4,8,1,lanenum,DSI_MODULE_CLK_960M,7);    //120/15  8
+	}
+	
 	mipi_dsi_max_clk_time(dsi_dev,0x10);
 	mipi_dsi_remain_stop_state(dsi_dev,2);
 	mipi_dsi_set_lane_num(dsi_dev,lanenum);
@@ -460,6 +477,7 @@ void mipi_dsi_init(uint32 w,uint32 h,uint32 dclk,uint8 vsa,uint8 vbp,uint8 vfp,u
 	printf("\r\n");
 	//mipi_dsi_set_lane_remap(dsi_dev,2,1,0,4,3,1,1,1,0,0); 
 	//mipi_dsi_set_lane_remap(dsi_dev,2,0,1,4,3,1,0,0,0,0); 
+	
 	mipi_dsi_set_lane_remap(dsi_dev,cfgbuf[0],cfgbuf[1],cfgbuf[2],cfgbuf[3],cfgbuf[4],cfgbuf[5],cfgbuf[6],cfgbuf[7],cfgbuf[8],cfgbuf[9]);
 		
 	mipi_set_maxrpack(dsi_dev,0x10);   
@@ -476,8 +494,8 @@ void mipi_dsi_init(uint32 w,uint32 h,uint32 dclk,uint8 vsa,uint8 vbp,uint8 vfp,u
 
 
 	mipi_set_cmd(dsi_dev,GENERIC_VC_ID,0x09);
-	mipi_get_data(dsi_dev,idbuf,1);
-	_os_printf("id:%02x %02x   \r\n",idbuf[0],idbuf[1]);
+	mipi_get_data(dsi_dev,idbuf,4);
+	_os_printf("id:%02x %02x %02x\r\n",idbuf[0],idbuf[1],idbuf[2]);
 	mipi_set_cmd(dsi_dev,GENERIC_VC_ID,0x0A);
 	mipi_get_data(dsi_dev,idbuf,1);
 	_os_printf("id:%02x %02x   \r\n",idbuf[0],idbuf[1]);

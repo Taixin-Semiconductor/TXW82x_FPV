@@ -54,7 +54,8 @@ struct _usb_ep0_ctrl {
     //单次发送包的最大长度
     uint32                  ep0_oneptk_max_size;
 
-    uint8 ep0_buf[68]   __attribute__((aligned(4)));
+    uint8 ep0_buf[1024]   __attribute__((aligned(4)));    //针对iso传输接收非word对齐的数据dma写入的情况  fix:修改64为1024
+
 };
 
 struct usb11_ep_trx_ctrl {
@@ -114,7 +115,9 @@ int32 hgusb11_v0_dev_ep_enable(struct usb_device *p_usb_d, uint8 ep, uint16 max_
 int32 hgusb11_v0_dev_ep_disable(struct usb_device *p_usb_d, uint8 ep);
 int32 hgusb11_v0_dev_ep_read(struct usb_device *p_usb_d, uint8 address, void *buffer);
 int32 hgusb11_v0_dev_ep_read_prepare(struct usb_device *p_usb_d, uint8 address, void *buffer, uint32 size);
+int32 hgusb11_v0_dev_read(struct usb_device *p_usb_d, uint8 ep, uint8 *buff, uint32 len, uint8 sync);
 int32 hgusb11_v0_dev_ep_write(struct usb_device *p_usb_d, uint8 address, void *buffer, uint32 size);
+int32 hgusb11_v0_dev_write(struct usb_device *p_usb_d, uint8 ep, uint8 *buff, uint32 len, uint8 sync);
 int32 hgusb11_v0_dev_ep0_send_status(struct usb_device *p_usb_d);
 int32 hgusb11_v0_dev_attach(uint32 dev_id, struct hgusb11_dev *p_dev);
 int32 hgusb11_v0_dev_close(struct usb_device *p_usb_d);

@@ -404,6 +404,11 @@ extern int32 ieee80211_conf_set_security_policy(uint8 ifidx, uint8 security_poli
 extern int32 ieee80211_conf_set_sae_pwe_loop(uint8 ifidx, uint8 loop);
 extern int32 ieee80211_conf_set_ap_psmode_en(uint8 ifidx, uint8 enable);
 extern int32 ieee80211_conf_set_pair_ngo(uint8 ifidx, uint8 enable);
+extern int32 ieee80211_conf_set_mutl_pair(uint8 ifidx, uint8 enable);
+extern int32 ieee80211_conf_set_linkcost_param(uint8 ifidx, struct ieee80211_linkcost_param *param);
+extern int32 ieee80211_conf_set_pair_channel(uint8 ifidx, uint8 chan);
+extern int32 ieee80211_conf_get_tx_mcs(uint8 ifidx, uint8 *sta_addr, uint32 aid);
+extern int32 ieee80211_conf_set_tx_mcs(uint8 ifidx, uint32 mcs, uint32 type);
 
 extern void ieee80211_crypto_ec_support(void);
 extern void ieee80211_crypto_ecdh_support(void);

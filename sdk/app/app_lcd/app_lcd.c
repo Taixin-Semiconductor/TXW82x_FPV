@@ -17,38 +17,36 @@
 
 #define LCD_ROTATE_LINE 64
 
-#define OSD_EN 1
-#define LCD_SCREEN_RECORD_EN	   0        //录屏功能
+#define OSD_EN               1
+#define LCD_SCREEN_RECORD_EN 0 // 录屏功能
 
 struct app_lcd_s lcd_msg_s;
 
-void lcd_hardware_init565();
-void lcd_hardware_init666();
+void        lcd_hardware_init565();
+void        lcd_hardware_init666();
 extern void lcd_register_read_3line(struct spi_device *spi_dev, uint32 code, uint8 *buf, uint32 len);
 extern void lcd_table_init(struct spi_device *spi_dev, uint8_t *lcd_table);
 extern void lcd_table_init_MCU(struct lcdc_device *lcd_dev, uint8_t (*lcd_table)[2]);
-extern void lcd_reg_table_init(struct lcdc_device *lcd_dev,uint8 lcd_bus_type,uint8_t *lcd_table);
+extern void lcd_reg_table_init(struct lcdc_device *lcd_dev, uint8 lcd_bus_type, uint8_t *lcd_table);
 
 // 暂时没有作处理
 static void lcd_timeout1(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
-    os_printf("%s:%d\n", __FUNCTION__, __LINE__);
-    struct app_lcd_s *lcd_s = (struct app_lcd_s *)irq_data;
+    struct app_lcd_s   *lcd_s   = (struct app_lcd_s *) irq_data;
     struct lcdc_device *lcd_dev = lcd_s->lcd_dev;
-    lcdc_set_timeout_info(lcd_dev,0,3);
+    lcdc_set_timeout_info(lcd_dev, 0, 3);
 
-    os_printf("......................................................................"
-              "..................................................lcd_timeout\r\n");
+    os_printf("lcd_timeout\r\n");
     // 出现timeout,说明可能哪里卡住了,让应用层重新启动
     lcd_s->hardware_ready = 1;
-    
+    lcd_s->rekick_lcd     = 1;
 }
 
 // 暂时没有作处理
 static void lcd_te_isr1(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
     os_printf("%s:%d\n", __FUNCTION__, __LINE__);
-    struct app_lcd_s *lcd_s = (struct app_lcd_s *)irq_data;
+    struct app_lcd_s   *lcd_s = (struct app_lcd_s *) irq_data;
     struct lcdc_device *lcd_dev;
     lcd_dev = lcd_s->lcd_dev;
     os_printf("--------------------------------------------te------------------"
@@ -57,27 +55,31 @@ static void lcd_te_isr1(uint32 irq_flag, uint32 irq_data, uint32 param1)
 
 static void lcd_squralbuf_done1(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
-    struct app_lcd_s *lcd_s = (struct app_lcd_s *)irq_data;
+    struct app_lcd_s *lcd_s = (struct app_lcd_s *) irq_data;
     // 理论这里只是唤醒信号量之类,由线程来决定是否继续显示
     // os_printf("%s:%d\n",__FUNCTION__,__LINE__);
 #if LCD_SCREEN_RECORD_EN
     static uint32 lcd_num = 0;
-    static uint32 dither = 0;
-	if((lcd_num%200) == 0){
-		os_printf("---------------------------------------------------------\r\n");
-		if(dither == 1){
-			lcdc_dither_en(lcd_s->lcd_dev,0);
-			lcdc_screen_start(lcd_s->lcd_dev,1);
-			dither = 0;
-		}else{
-			lcdc_dither_en(lcd_s->lcd_dev,1);
-			lcdc_screen_start(lcd_s->lcd_dev,1);
-			dither = 1;
-		}
-	}
+    static uint32 dither  = 0;
+    if ((lcd_num % 200) == 0)
+    {
+        os_printf("---------------------------------------------------------\r\n");
+        if (dither == 1)
+        {
+            lcdc_dither_en(lcd_s->lcd_dev, 0);
+            lcdc_screen_start(lcd_s->lcd_dev, 1);
+            dither = 0;
+        }
+        else
+        {
+            lcdc_dither_en(lcd_s->lcd_dev, 1);
+            lcdc_screen_start(lcd_s->lcd_dev, 1);
+            dither = 1;
+        }
+    }
 #endif
-    lcd_s->end_time = os_jiffies();
-	lcd_s->refresh_time = lcd_s->end_time-lcd_s->start_time;
+    lcd_s->end_time     = os_jiffies();
+    lcd_s->refresh_time = lcd_s->end_time - lcd_s->start_time;
     if (lcd_s->hardware_auto_ks)
     {
         lcd_s->hardware_ready = 0;
@@ -101,26 +103,26 @@ static void lcd_squralbuf_done1(uint32 irq_flag, uint32 irq_data, uint32 param1)
             lcd_s->hardware_ready = 1;
         }
     }
-
     lcd_s->app_lcd_cb(lcd_s);
 
 #if 1
-    uint32_t st0,st1;
-	struct dsi_device *dsi_dev;
-	dsi_dev = lcd_s->lcd_dsi_dev;//(struct dsi_device *)dev_get(HG_DSI_DEVID); 
-	st0 = mipi_dsi_get_sta0(dsi_dev);
-	st1 = mipi_dsi_get_sta1(dsi_dev);	
-	if((st0 != 0)||(st1 != 0)){
-		printf("L(%08x	%08x)\r\n",st0,st1);
-		mipi_dsi_reset_module(dsi_dev);
-	}
+    uint32_t           st0, st1;
+    struct dsi_device *dsi_dev;
+    dsi_dev = lcd_s->lcd_dsi_dev; //(struct dsi_device *)dev_get(HG_DSI_DEVID);
+    st0     = mipi_dsi_get_sta0(dsi_dev);
+    st1     = mipi_dsi_get_sta1(dsi_dev);
+    if ((st0 != 0) || (st1 != 0))
+    {
+        os_printf("L(%08x	%08x)\r\n", st0, st1);
+        mipi_dsi_reset_module(dsi_dev);
+    }
 #endif
 }
 
-
 #if LCD_SCREEN_RECORD_EN
-static void lcd_screen_finish(uint32 irq_flag, uint32 irq_data, uint32 param1){
-	os_printf("%s  %d\r\n",__func__,__LINE__);
+static void lcd_screen_finish(uint32 irq_flag, uint32 irq_data, uint32 param1)
+{
+    os_printf("%s  %d\r\n", __func__, __LINE__);
 }
 #endif
 
@@ -145,7 +147,7 @@ uint8_t g_set_hardware_auto_ks(uint8_t en)
     }
     else
     {
-        flags = disable_irq();
+        flags                      = disable_irq();
         lcd_msg_s.hardware_auto_ks = en;
         enable_irq(flags);
     }
@@ -156,21 +158,22 @@ uint8_t g_set_hardware_auto_ks(uint8_t en)
 // 返回的是osd旋转和w h
 static void get_osd_w_h(uint16_t *w, uint16_t *h, uint8_t *rotate)
 {
-    *w = lcdstruct.osd_w;
-    *h = lcdstruct.osd_h;
+    *w      = lcdstruct.osd_w;
+    *h      = lcdstruct.osd_h;
     *rotate = lcdstruct.osd_scan_mode;
 }
 
-static void get_video_w_h(uint16_t *video_w,uint16_t *video_h){
+static void get_video_w_h(uint16_t *video_w, uint16_t *video_h)
+{
     *video_w = lcdstruct.video_w;
-    *video_h = lcdstruct.video_h;	
+    *video_h = lcdstruct.video_h;
 }
 
 // 返回屏幕的size和旋转角度
 static void get_screen_w_h(uint16_t *screen_w, uint16_t *screen_h, uint8_t *video_rotate)
 {
-    *screen_w = lcdstruct.screen_w;
-    *screen_h = lcdstruct.screen_h;
+    *screen_w     = lcdstruct.screen_w;
+    *screen_h     = lcdstruct.screen_h;
     *video_rotate = lcdstruct.scan_mode;
 }
 
@@ -192,7 +195,7 @@ void lcd_hardware_init(uint16_t *w, uint16_t *h, uint8_t *rotate, uint16_t *scre
             lcd_hardware_init565();
         }
     }
-    else if ((lcdstruct.lcd_bus_type == LCD_BUS_RGB)||(lcdstruct.lcd_bus_type == LCD_BUS_SPI4))
+    else if ((lcdstruct.lcd_bus_type == LCD_BUS_RGB) || (lcdstruct.lcd_bus_type == LCD_BUS_SPI4))
     {
         lcd_hardware_init565();
     }
@@ -204,19 +207,19 @@ void lcd_hardware_init(uint16_t *w, uint16_t *h, uint8_t *rotate, uint16_t *scre
     // 返回osd的w和h
     get_osd_w_h(w, h, rotate);
     get_screen_w_h(screen_w, screen_h, video_rotate);
-	get_video_w_h(video_w,video_h);
+    get_video_w_h(video_w, video_h);
 }
 
 // 主要硬件初始化,但由于存在rgb屏,还是会有部分寄存器需要配置
 void lcd_hardware_init565()
 {
-    uint8 pixel_dot_num = 1;
+    uint8               pixel_dot_num = 1;
     struct lcdc_device *lcd_dev;
-    struct spi_device *spi_dev;
-//	uint32_t rbuf[4];
-//	uint8_t *pt8;
-    lcd_dev = (struct lcdc_device *)dev_get(HG_LCDC_DEVID);
-    spi_dev = (struct spi_device *)dev_get(HG_SPI0_DEVID);
+    struct spi_device  *spi_dev;
+    //	uint32_t rbuf[4];
+    //	uint8_t *pt8;
+    lcd_dev = (struct lcdc_device *) dev_get(HG_LCDC_DEVID);
+    spi_dev = (struct spi_device *) dev_get(HG_SPI0_DEVID);
 
     uint8_t rst = MACRO_PIN(PIN_LCD_RESET);
 
@@ -238,11 +241,11 @@ void lcd_hardware_init565()
             spi_open(spi_dev, 1000000, SPI_MASTER_MODE, SPI_WIRE_SINGLE_MODE, SPI_CPOL_1_CPHA_1);
             spi_ioctl(spi_dev, SPI_SET_FRAME_SIZE, 9, 0);
             // lcd spi_cfg
-            _os_printf("read lcd id(%x)\r\n", (unsigned int)spi_dev);
+            _os_printf("read lcd id(%x)\r\n", (unsigned int) spi_dev);
             lcd_register_read_3line(spi_dev, 0xda, spi_buf, 4);
             _os_printf("***ID:%02x %02x %02x %02x\r\n", spi_buf[0], spi_buf[1], spi_buf[2], spi_buf[3]);
 
-            lcd_table_init(spi_dev, (uint8_t *)lcdstruct.init_table);
+            lcd_table_init(spi_dev, (uint8_t *) lcdstruct.init_table);
             gpio_set_val(PIN_SPI0_CS, 1);
             gpio_iomap_output(PIN_SPI0_CS, GPIO_IOMAP_OUTPUT);
         }
@@ -250,7 +253,7 @@ void lcd_hardware_init565()
 
     // scale_to_lcd_config();
     lcdc_init(lcd_dev);
-    if ((lcdstruct.lcd_bus_type == LCD_BUS_I80)||(lcdstruct.lcd_bus_type == LCD_BUS_SPI4))
+    if ((lcdstruct.lcd_bus_type == LCD_BUS_I80) || (lcdstruct.lcd_bus_type == LCD_BUS_SPI4))
     {
         lcdc_open(lcd_dev);
     }
@@ -276,33 +279,37 @@ void lcd_hardware_init565()
     lcdc_set_bigendian(lcd_dev, 1);
     if (lcdstruct.lcd_bus_type == LCD_BUS_I80)
     {
-        lcd_table_init_MCU(lcd_dev, lcdstruct.init_table);
+        // lcd_table_init_MCU(lcd_dev, lcdstruct.init_table);
+        lcd_reg_table_init(lcd_dev, lcdstruct.lcd_bus_type, (uint8_t *) (lcdstruct.init_table));
     }
     else if (lcdstruct.lcd_bus_type == LCD_BUS_MIPI)
     {
-        mipi_dsi_init(lcdstruct.screen_w, lcdstruct.screen_h, lcdstruct.pclk, lcdstruct.vlw, lcdstruct.vbp, lcdstruct.vfp, lcdstruct.hlw, lcdstruct.hbp, lcdstruct.hfp, lcdstruct.lane_num, lcdstruct.color_mode);
-    }else if (lcdstruct.lcd_bus_type == LCD_BUS_SPI4){
-		lcdc_spi_cs_lock_time(lcd_dev,0x20,0x20,0x20);
-		lcdc_cmd_auto_send(lcd_dev,0,0);
+        mipi_dsi_init(lcdstruct.screen_w, lcdstruct.screen_h, lcdstruct.pclk, lcdstruct.vlw, lcdstruct.vbp, lcdstruct.vfp, lcdstruct.hlw, lcdstruct.hbp, lcdstruct.hfp, lcdstruct.lane_num,
+                      lcdstruct.color_mode);
+    }
+    else if (lcdstruct.lcd_bus_type == LCD_BUS_SPI4)
+    {
+        lcdc_spi_cs_lock_time(lcd_dev, 0x20, 0x20, 0x20);
+        lcdc_cmd_auto_send(lcd_dev, 0, 0);
 
-//		pt8 = (uint8_t *)rbuf;
-//		pt8[0] = 1;
-//		pt8[1] = 4;
-//		pt8[2] = 0x04;
-//		lcdc_reg_read_data(lcd_dev,1,4,rbuf);	
-//		os_printf("ID:%02x %02x %02x %02x %02x %02x %02x\r\n",pt8[0],pt8[1],pt8[2],pt8[3],pt8[4],pt8[5],pt8[6]);
-		lcd_reg_table_init(lcd_dev,lcdstruct.lcd_bus_type,(uint8_t *)(lcdstruct.init_table));
-	}
+        //		pt8 = (uint8_t *)rbuf;
+        //		pt8[0] = 1;
+        //		pt8[1] = 4;
+        //		pt8[2] = 0x04;
+        //		lcdc_reg_read_data(lcd_dev,1,4,rbuf);
+        //		os_printf("ID:%02x %02x %02x %02x %02x %02x %02x\r\n",pt8[0],pt8[1],pt8[2],pt8[3],pt8[4],pt8[5],pt8[6]);
+        lcd_reg_table_init(lcd_dev, lcdstruct.lcd_bus_type, (uint8_t *) (lcdstruct.init_table));
+    }
 }
 
 void lcd_hardware_init666()
 {
-    uint8 pixel_dot_num = 1;
+    uint8               pixel_dot_num = 1;
     struct lcdc_device *lcd_dev;
-    struct spi_device *spi_dev;
+    struct spi_device  *spi_dev;
 
-    lcd_dev = (struct lcdc_device *)dev_get(HG_LCDC_DEVID);
-    spi_dev = (struct spi_device *)dev_get(HG_SPI0_DEVID);
+    lcd_dev = (struct lcdc_device *) dev_get(HG_LCDC_DEVID);
+    spi_dev = (struct spi_device *) dev_get(HG_SPI0_DEVID);
 
     uint8_t rst = MACRO_PIN(PIN_LCD_RESET);
 
@@ -323,11 +330,11 @@ void lcd_hardware_init666()
             spi_open(spi_dev, 1000000, SPI_MASTER_MODE, SPI_WIRE_SINGLE_MODE, SPI_CPOL_1_CPHA_1);
             spi_ioctl(spi_dev, SPI_SET_FRAME_SIZE, 9, 0);
             // lcd spi_cfg
-            _os_printf("read lcd id(%x)\r\n", (unsigned int)spi_dev);
+            _os_printf("read lcd id(%x)\r\n", (unsigned int) spi_dev);
             lcd_register_read_3line(spi_dev, 0xda, spi_buf, 4);
             _os_printf("***ID:%02x %02x %02x %02x\r\n", spi_buf[0], spi_buf[1], spi_buf[2], spi_buf[3]);
 
-            lcd_table_init(spi_dev, (uint8_t *)lcdstruct.init_table);
+            lcd_table_init(spi_dev, (uint8_t *) lcdstruct.init_table);
             gpio_set_val(PIN_SPI0_CS, 1);
             gpio_iomap_output(PIN_SPI0_CS, GPIO_IOMAP_OUTPUT);
         }
@@ -384,44 +391,53 @@ void lcd_hardware_init666()
 }
 
 // lcd相关参数配置,w、h、rotate
-void lcd_arg_setting(uint16_t w, uint16_t h, uint8_t rotate, uint16_t screen_w, uint16_t screen_h, uint16_t video_w, uint16_t video_h,uint8_t video_rotate)
+void lcd_arg_setting(uint16_t w, uint16_t h, uint8_t rotate, uint16_t screen_w, uint16_t screen_h, uint16_t video_w, uint16_t video_h, uint8_t video_rotate)
 {
     struct app_lcd_s *lcd_s = &lcd_msg_s;
-    lcd_s->w = w;
-    lcd_s->h = h;
-    lcd_s->rotate = rotate;
-    lcd_s->screen_w = screen_w;
-    lcd_s->screen_h = screen_h;
-    lcd_s->video_w = video_w;
-    lcd_s->video_h = video_h;	
-    lcd_s->video_rotate = video_rotate;
+    lcd_s->w                = w;
+    lcd_s->h                = h;
+    lcd_s->rotate           = rotate;
+    lcd_s->screen_w         = screen_w;
+    lcd_s->screen_h         = screen_h;
+    lcd_s->video_w          = video_w;
+    lcd_s->video_h          = video_h;
+    lcd_s->video_rotate     = video_rotate;
 }
 
 // 芯片lcd的驱动初始化
 void lcd_driver_init(const char *osd_encode_name, const char *lcd_osd_name, const char *lcd_video_p0, const char *lcd_video_p1)
 {
-    struct app_lcd_s *lcd_s = &lcd_msg_s;
-	struct dsi_device *dsi_dev;
-	dsi_dev = (struct dsi_device *)dev_get(HG_DSI_DEVID); 
-	dev_put((struct dev_obj *)dsi_dev);
+    struct app_lcd_s  *lcd_s = &lcd_msg_s;
+    struct dsi_device *dsi_dev;
+    dsi_dev = (struct dsi_device *) dev_get(HG_DSI_DEVID);
+    dev_put((struct dev_obj *) dsi_dev);
     lcd_s->osd_enc_msi = osd_encode_msi_init(osd_encode_name);
+
+    // 对应的rb初始化
+    RB_INIT(&lcd_s->osd_rb, LCD_RB_COUNT);
+    RB_INIT(&lcd_s->p0_rb, LCD_RB_COUNT);
+    RB_INIT(&lcd_s->p1_rb, LCD_RB_COUNT);
+    RB_INIT(&lcd_s->p2_rb, LCD_RB_COUNT);
+
+    RB_INIT(&lcd_s->delete_rb, LCD_DELETE_RB_COUNT);
 #if 1
-    lcd_s->lcd_osd_msi = lcd_osd_msi(lcd_osd_name);
-    lcd_s->video_p0_msi = lcd_video_msi_init(lcd_video_p0, FSTYPE_YUV_P0);
-    lcd_s->video_p1_msi = lcd_video_msi_init(lcd_video_p1, FSTYPE_YUV_P1);
+    lcd_s->lcd_osd_msi      = lcd_osd_msi(lcd_osd_name);
+    lcd_s->video_p0_msi     = lcd_video_msi_init(lcd_video_p0, FSTYPE_YUV_P0);
+    lcd_s->video_p1_msi     = lcd_video_msi_init(lcd_video_p1, FSTYPE_YUV_P1);
+    lcd_s->csc_video_p2_msi = lcd_video_msi_init(R_CSC_VIDEO_P2, FSTYPE_YUV_P0);
 #endif
 
-    lcd_s->hardware_ready = 1;
-    lcd_s->thread_exit = 0;
+    lcd_s->hardware_ready   = 1;
+    lcd_s->thread_exit      = 0;
     lcd_s->hardware_auto_ks = 0;
-    lcd_s->get_auto_ks = 0;
+    lcd_s->get_auto_ks      = 0;
 
     struct lcdc_device *lcd_dev;
 
-    lcd_dev = (struct lcdc_device *)dev_get(HG_LCDC_DEVID);
-	dev_put((struct dev_obj *)lcd_dev);
-    lcd_s->lcd_dev = lcd_dev;
-	lcd_s->lcd_dsi_dev = dsi_dev;
+    lcd_dev = (struct lcdc_device *) dev_get(HG_LCDC_DEVID);
+    dev_put((struct dev_obj *) lcd_dev);
+    lcd_s->lcd_dev     = lcd_dev;
+    lcd_s->lcd_dsi_dev = dsi_dev;
 
     lcdc_set_video_size(lcd_dev, lcdstruct.video_w, lcdstruct.video_h);
 
@@ -436,9 +452,9 @@ void lcd_driver_init(const char *osd_encode_name, const char *lcd_osd_name, cons
     lcdc_set_video_en(lcd_dev, 0);
 
     // 设置默认值,因为这个一定要配置,并且地址与p1的地址范围要一样(就是全部是psram或者全部是sram,所以这里最好都是设置psram)
-    lcdc_set_p0_rotate_y_src_addr(lcd_dev, (uint32)0x28000000);
-    lcdc_set_p0_rotate_u_src_addr(lcd_dev, (uint32)0x28000000);
-    lcdc_set_p0_rotate_v_src_addr(lcd_dev, (uint32)0x28000000);
+    lcdc_set_p0_rotate_y_src_addr(lcd_dev, (uint32) 0x28000000);
+    lcdc_set_p0_rotate_u_src_addr(lcd_dev, (uint32) 0x28000000);
+    lcdc_set_p0_rotate_v_src_addr(lcd_dev, (uint32) 0x28000000);
 
     lcdc_set_osd_start_location(lcd_dev, lcdstruct.osd_x, lcdstruct.osd_y);
     lcdc_set_osd_size(lcd_dev, lcdstruct.osd_w, lcdstruct.osd_h);
@@ -456,37 +472,38 @@ void lcd_driver_init(const char *osd_encode_name, const char *lcd_osd_name, cons
     lcdc_video_enable_auto_ks(lcd_dev, 0);
     lcdc_set_timeout_info(lcd_dev, 1, 3);
 
-    lcdc_request_irq(lcd_dev, LCD_DONE_IRQ, (lcdc_irq_hdl)&lcd_squralbuf_done1, (uint32)lcd_s);
+    lcdc_request_irq(lcd_dev, LCD_DONE_IRQ, (lcdc_irq_hdl) &lcd_squralbuf_done1, (uint32) lcd_s);
 #if LCD_SCREEN_RECORD_EN
-    uint8_t *video_psram_screen = (uint8_t *)av_psram_zalloc(SCALE_CONFIG_W*SCALE_HIGH+SCALE_CONFIG_W*SCALE_HIGH/2);
-    os_printf("LCD_SCREEN_RECORD_EN psram addr:%x\n",video_psram_screen);
-    lcdc_screen_yuv_addr(lcd_dev,video_psram_screen,video_psram_screen+SCALE_CONFIG_W*SCALE_HIGH,video_psram_screen+SCALE_CONFIG_W*SCALE_HIGH+SCALE_CONFIG_W*SCALE_HIGH/4);
-    lcdc_request_irq(lcd_dev,SCREEN_DONE_IRQ,(lcdc_irq_hdl )&lcd_screen_finish,(uint32)lcd_s);
+    uint8_t *video_psram_screen = (uint8_t *) av_psram_zalloc(SCALE_CONFIG_W * SCALE_HIGH + SCALE_CONFIG_W * SCALE_HIGH / 2);
+    os_printf("LCD_SCREEN_RECORD_EN psram addr:%x\n", video_psram_screen);
+    lcdc_screen_yuv_addr(lcd_dev, video_psram_screen, video_psram_screen + SCALE_CONFIG_W * SCALE_HIGH, video_psram_screen + SCALE_CONFIG_W * SCALE_HIGH + SCALE_CONFIG_W * SCALE_HIGH / 4);
+    lcdc_request_irq(lcd_dev, SCREEN_DONE_IRQ, (lcdc_irq_hdl) &lcd_screen_finish, (uint32) lcd_s);
 #endif
     // lcdc_request_irq(lcd_dev, OSD_EN_IRQ, (lcdc_irq_hdl)&lcd_osd_isr1_msi, (uint32)lcd_s);
-    lcdc_request_irq(lcd_dev, TIMEOUT_IRQ, (lcdc_irq_hdl)&lcd_timeout1, (uint32)lcd_s);
-#if (LCD_TE != 255)
-    lcdc_set_te_edge(lcd_dev, 1);
-    lcdc_request_irq(lcd_dev, LCD_TE_IRQ, (lcdc_irq_hdl)&lcd_te_isr1, (uint32)lcd_s);
-#endif
+    lcdc_request_irq(lcd_dev, TIMEOUT_IRQ, (lcdc_irq_hdl) &lcd_timeout1, (uint32) lcd_s);
+    if (MACRO_PIN(LCD_TE) != 255)
+    {
+        lcdc_te_edge_cfg(lcd_dev, 1);
+        lcdc_request_irq(lcd_dev, LCD_TE_IRQ, (lcdc_irq_hdl) &lcd_te_isr1, (uint32) lcd_s);
+    }
     lcdc_open(lcd_dev);
 
-    #if 0
+#if 0
     //extern void lcd_thread(void *d);
     //lcd_s->thread_hdl = os_task_create("lcd_thread", lcd_thread2, lcd_s, OS_TASK_PRIORITY_NORMAL, 0, NULL, 1024);
-    #else
-    extern int32 lcd_msi_work(struct os_work *work);
-    extern void lcd_msi_irq_callback(void *data);
+#else
+    extern int32 lcd_msi_work(struct os_work * work);
+    extern void  lcd_msi_irq_callback(void *data);
     lcd_s->app_lcd_cb = lcd_msi_irq_callback;
     OS_WORK_INIT(&lcd_s->work, lcd_msi_work, 0);
     os_run_work_delay(&lcd_s->work, 1);
-    #endif
+#endif
 }
 
 void wait_lcd_exit()
 {
     struct app_lcd_s *lcd_s = &lcd_msg_s;
-    lcd_s->thread_exit = 1;
+    lcd_s->thread_exit      = 1;
     while (lcd_s->thread_hdl)
     {
         os_sleep_ms(1);
@@ -540,10 +557,10 @@ void lcd_driver_reinit()
 
     lcdc_request_irq(lcd_dev, OSD_EN_IRQ, (lcdc_irq_hdl)&lcd_osd_isr1_msi, (uint32)lcd_s);
     lcdc_request_irq(lcd_dev, TIMEOUT_IRQ, (lcdc_irq_hdl)&lcd_timeout1, (uint32)lcd_s);
-#if (LCD_TE != 255)
-    lcdc_set_te_edge(lcd_dev, 1);
-    lcdc_request_irq(lcd_dev, LCD_TE_IRQ, (lcdc_irq_hdl)&lcd_te_isr1, (uint32)lcd_s);
-#endif
+    if (MACRO_PIN(LCD_TE) != 255) {
+        lcdc_set_te_edge(lcd_dev, 1);
+        lcdc_request_irq(lcd_dev, LCD_TE_IRQ, (lcdc_irq_hdl)&lcd_te_isr1, (uint32)lcd_s);
+    }
     lcdc_open(lcd_dev);
     // lcdc_set_start_run(lcd_dev);
 

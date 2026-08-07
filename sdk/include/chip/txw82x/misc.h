@@ -405,19 +405,29 @@ int32 sys_get_cpu_dcache_enable(void);
  *  usage( this -> DMA kick) 
  */
 void sys_dcache_clean_range (uint32_t *addr, int32_t dsize);
-/** use when DMA destination is psram 
+
+/* usefor TCPIP CHKSUM */
+void sys_dcache_clean_range_unaligned (uint32_t *addr, int32_t dsize);
+
+/** use when DMA destination is PSRAM 
  *  usage : (  this -> DMA) ; 
  */
 void sys_dcache_clean_invalid_range (uint32_t *addr, int32_t dsize);
-/** use when DMA destination is psram 
+void sys_dcache_clean_invalid_range_unaligned (uint32_t *addr, int32_t dsize);
+
+/** use when DMA destination is PSRAM 
+ *   Note：this function will auto writeback data head & tail (16/32byte unaligned)
  *  1.usage : ( DMA done-> this) ; 
  *  2.Precondition: dma buffer addr & size is 16/32byte aligned 
  *  3.DMA buffer size is not checked
  */
 void sys_dcache_invalid_range (uint32_t *addr, int32_t dsize);
 
-/* usefor TCPIP CHKSUM */
-void sys_dcache_clean_range_unaligned (uint32_t *addr, int32_t dsize);
+/** use when DMA destination is PSRAM 
+ *   Note：this function will auto writeback data head & tail (16/32byte unaligned)
+ */
+void sys_dcache_invalid_range_unaligned (uint32_t *addr, int32_t dsize);
+
 
 #ifdef __cplusplus
 }

@@ -1,8 +1,8 @@
-#ifndef MBEDTLS_SHA256_ALT_H
-#define MBEDTLS_SHA256_ALT_H
+#ifndef _MBEDTLS_SHA1_ALT_H_
+#define _MBEDTLS_SHA1_ALT_H_
+
 
 #if defined(MBEDTLS_SHA1_ALT)
-
 #include "typesdef.h"
 #include "list.h"
 #include "dev.h"
@@ -12,6 +12,7 @@
 #include "mbedtls/build_info.h"
 #include "mbedtls/platform_util.h"
 #include "hal/sha.h"
+
 
 typedef struct mbedtls_sha1_context {
     uint32_t MBEDTLS_PRIVATE(total)[2];          /*!< The number of Bytes processed.  */
@@ -23,4 +24,4 @@ mbedtls_sha1_context;
 
 #endif /* MBEDTLS_SHA1_ALT */
 
-#endif /* MBEDTLS_SHA1_ALT_H */
+#endif /* _MBEDTLS_SHA1_ALT_H_ */

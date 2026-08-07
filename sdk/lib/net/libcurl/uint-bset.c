@@ -25,8 +25,7 @@
 #include "curl_setup.h"
 #include "uint-bset.h"
 
-/* The last 3 #include files should be in this order */
-#include "curl_printf.h"
+/* The last 2 #include files should be in this order */
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -79,8 +78,9 @@ UNITTEST unsigned int Curl_uint_bset_capacity(struct uint_bset *bset)
 {
   return bset->nslots * 64;
 }
+#endif
 
-UNITTEST unsigned int Curl_uint_bset_count(struct uint_bset *bset)
+unsigned int Curl_uint_bset_count(struct uint_bset *bset)
 {
   unsigned int i;
   unsigned int n = 0;
@@ -90,7 +90,6 @@ UNITTEST unsigned int Curl_uint_bset_count(struct uint_bset *bset)
   }
   return n;
 }
-#endif
 
 bool Curl_uint_bset_empty(struct uint_bset *bset)
 {

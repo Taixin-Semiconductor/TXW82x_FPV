@@ -16,6 +16,7 @@
 #include "lib/multimedia/msi.h"
 #include "video_app_usb_msi.h"
 #include "video/uvc/rtt_uvc_host.h"
+#include "sysevt_usb/sysevt_usb.h"
 #ifdef RT_USBH_UAC
 #include "usbh_audio.h"
 #endif
@@ -41,7 +42,7 @@
 
 #define CONFIG_USBHOST_MAX_VIDEO_CLASS 2
  
-#define VIDEO_SET_INTF_ALTSETTING  2      //设置需要配置的AltSetting，默认为1 (根据打印，选择所需的Altersetting)
+#define VIDEO_SET_INTF_ALTSETTING  1      //设置需要配置的AltSetting，默认为1 (根据打印，选择所需的Altersetting)
 
 static struct uclass_driver usbh_video_class;
 
@@ -639,7 +640,7 @@ static rt_err_t rt_usbh_class_driver_video_enable(void *arg)
 
     usbh_video_intf_altersetting_ep_config(video_class);
 
-    video_class->rx_buff = (rt_uint8_t *)rt_malloc(video_class->video_rx_size+video_class->uvc_head);
+    video_class->rx_buff = (rt_uint8_t *)rt_malloc(video_class->video_rx_size + video_class->uvc_head + USB_RX_BUFF_RESERVE_SIZE);
     if(video_class->rx_buff == RT_NULL) {
         os_printf("malloc rx_buff fail!!!!!!!!!!!\n");
         return RT_ENOMEM;
@@ -648,7 +649,7 @@ static rt_err_t rt_usbh_class_driver_video_enable(void *arg)
 
     #if USBH_VIDEO_PPB
     video_class->usbh_pingpang_flag = 0;
-    video_class->rx_double_buff = (rt_uint8_t *)rt_malloc(video_class->video_rx_size+video_class->uvc_head);
+    video_class->rx_double_buff = (rt_uint8_t *)rt_malloc(video_class->video_rx_size + video_class->uvc_head + USB_RX_BUFF_RESERVE_SIZE);
     if(video_class->rx_double_buff == RT_NULL) {
         rt_free(video_class->rx_buff);
         video_class->rx_buff = RT_NULL;
@@ -1019,27 +1020,49 @@ rt_uint32_t rtt_usbh_video_user_open(rt_uint8_t dev_num)
     switch(dev_num)
     {
         case 0:
-            usbh_video_open((&g_video_class[0]), USBH_VIDEO_FORMAT_MJPEG, 640, 480, VIDEO_SET_INTF_ALTSETTING);
+        {
+            /* 摄像头0 设置需要打开的格式、分辨率 */
+            rt_uint8_t  video_format    = USBH_VIDEO_FORMAT_MJPEG;
+            rt_uint32_t width           = 640;
+            rt_uint32_t height          = 480;
+
+            rt_uint8_t fb_mtype         = (video_format == USBH_VIDEO_FORMAT_MJPEG) ? F_JPG : ((video_format == USBH_VIDEO_FORMAT_BASED) ? F_H264 : F_YUV);
+
+            usbh_video_open((&g_video_class[dev_num]), video_format, width, height, VIDEO_SET_INTF_ALTSETTING);
+            system_event_usbh_video_update_info(dev_num, g_video_class[dev_num].devname, video_format, width, height);
+
             #ifdef PSRAM_HEAP
             extern struct usbh_video_priv_func uvc_host_stream_1;
             uvc_host_stream_1.dev_num = dev_num;
             uvc_host_stream_1.p_dev = p_dev;
-            usbh_video_enum_finish_init(g_video_class[0].devname,(F_JPG << 8) | (FSTYPE_USB_CAM0),&uvc_host_stream_1,&usb_dma_mjpeg_irq_times);
+            usbh_video_enum_finish_init(g_video_class[dev_num].devname,(fb_mtype << 8) | (FSTYPE_USB_CAM0),&uvc_host_stream_1,&usb_dma_mjpeg_irq_times);
             #else
 
             #endif
+        }
         break;
 
         case 1:
-            usbh_video_open((&g_video_class[1]), USBH_VIDEO_FORMAT_MJPEG, 1280, 720, VIDEO_SET_INTF_ALTSETTING);
+        {
+            /* 摄像头1 设置需要打开的格式、分辨率 */
+            rt_uint8_t  video_format    = USBH_VIDEO_FORMAT_MJPEG;
+            rt_uint32_t width           = 1280;
+            rt_uint32_t height          = 720;
+
+            rt_uint8_t fb_mtype         = (video_format == USBH_VIDEO_FORMAT_MJPEG) ? F_JPG : ((video_format == USBH_VIDEO_FORMAT_BASED) ? F_H264 : F_YUV);
+
+            usbh_video_open((&g_video_class[dev_num]), video_format, width, height, VIDEO_SET_INTF_ALTSETTING);
+            system_event_usbh_video_update_info(dev_num, g_video_class[dev_num].devname, video_format, width, height);
+
             #ifdef PSRAM_HEAP
             extern struct usbh_video_priv_func uvc_host_stream_2;
             uvc_host_stream_2.dev_num = dev_num;
             uvc_host_stream_2.p_dev = p_dev;
-            usbh_video_enum_finish_init(g_video_class[1].devname,(F_JPG << 8) | (FSTYPE_USB_CAM1),&uvc_host_stream_2,&usb_dma_h264_irq_times);
+            usbh_video_enum_finish_init(g_video_class[dev_num].devname,(fb_mtype << 8) | (FSTYPE_USB_CAM1),&uvc_host_stream_2,&usb_dma_h264_irq_times);
             #else
 
             #endif
+        }
         break;
         
         default:
@@ -1199,6 +1222,7 @@ __attribute__((weak)) void usbh_video_stop(struct usbh_video *video_class)
 ucd_t rt_usbh_class_driver_video(void)
 {
     uvc_device_pool_init();
+    system_event_usbh_video_init();
     usbh_video_class.class_code = USB_CLASS_VIDEO;
 
     usbh_video_class.enable = rt_usbh_class_driver_video_enable;

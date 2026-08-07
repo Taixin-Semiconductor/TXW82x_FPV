@@ -1126,7 +1126,7 @@ __STATIC_INLINE void csi_dcache_enable (void)
     CACHE->CIR = CACHE_CIR_INV_ALL_Msk;         /* invalidate all Cache */
     CACHE->CER =  (uint32_t)(CACHE_CER_EN_Msk | CACHE_CER_WA_Msk | CACHE_CER_WB_Msk | CACHE_CER_DCW_Msk) & (~CACHE_CER_CFIG_Msk);  /* enable all Cache */
 #endif
-    __NOP();__NOP();__NOP();__NOP();
+
 }
 
 
@@ -1138,10 +1138,11 @@ __STATIC_INLINE void csi_dcache_enable (void)
 __STATIC_INLINE void csi_dcache_disable (void)
 {
 #if (__DCACHE_PRESENT == 1U)
+    __DSB();
     CACHE->CER &=  ~(uint32_t)CACHE_CER_EN_Msk;  /* disable all Cache */
     CACHE->CIR = CACHE_CIR_INV_ALL_Msk;          /* invalidate all Cache */
 #endif
-    __NOP();__NOP();__NOP();__NOP();
+
 }
 
 __STATIC_INLINE uint32_t csi_is_cache_enable (void)

@@ -15,5 +15,5 @@ void scale_to_lcd_config(uint32_t iw,uint32_t ih);
 void scale2_mutex_init();
 void scale3_to_memory_for_thumb(uint16_t iw,uint16_t ih,uint16_t ow,uint16_t oh,uint32_t outadr,uint32_t yuvsram,uint16_t lanenum);
 void scale_soft_from_psram_to_enc(struct scale_device *scale_dev,uint8_t * psram_data,uint32_t w,uint32 h,uint32_t ow,uint32_t oh);
-
+void scale2_from_h264_config_for_msi(struct scale_device *scale_dev,uint32_t yinsram,uint32_t uinsram,uint32_t vinsram,uint32_t yuvoutbuf,uint32 in_w,uint32 in_h,uint32 out_w,uint32 out_h,uint8_t larger);
 #endif

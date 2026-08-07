@@ -26,6 +26,7 @@ enum SYSEVT_MAINID { /* uint16 */
     SYS_EVENT_BLE,
     SYS_EVENT_LTE,
     SYS_EVENT_MEDIA,
+    SYS_EVENT_USB,
 
     ////////////////////////////////////
     SYSEVT_MAINID_ID,
@@ -130,6 +131,12 @@ enum SYSEVT_MEDIA_SUBEVT { /* uint16 */
 };
 #define SYSEVT_NEW_MEDIA_EVT(subevt, data) sys_event_new(SYS_EVENT(SYS_EVENT_MEDIA, subevt), data)
 
+//////////////////////////////////////////
+enum SYSEVT_USB_SUBEVT { /* uint16 */
+    SYSEVT_USB_DEVICE_CONNECT = 1, //USB设备连接
+    SYSEVT_USB_DEVICE_DISCONNECT,  //USB设备断开
+};
+#define SYSEVT_NEW_USB_EVT(subevt, data) sys_event_new(SYS_EVENT(SYS_EVENT_USB, subevt), data)
 
 #ifdef __cplusplus
 }

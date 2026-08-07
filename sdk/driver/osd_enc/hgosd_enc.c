@@ -141,12 +141,75 @@ static int32 hgosdenc_close(struct osdenc_device *p_osd){
 	return 0;
 }
 
+int32 hgosdenc_suspend(struct dev_obj *obj){
+	struct hgosd *osd_hw = (struct hgosd*)obj;
+	struct hgosdenc_hw *hw;
+	struct hgosdenc_hw *hw_cfg;
+	//确保已经被打开并且休眠过,直接返回
+	if(!osd_hw->opened || osd_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	osd_hw->dsleep = 1;
+	osd_hw->cfg_backup = (uint32 *)os_malloc(sizeof(struct hgosdenc_hw));
+	hw_cfg = (struct hgosdenc_hw*)osd_hw->cfg_backup;
+	hw     = (struct hgosdenc_hw*)osd_hw->hw;
+	
+	hw_cfg->OSD_ENC_CON=hw->OSD_ENC_CON;   
+	hw_cfg->OSD_ENC_STA=hw->OSD_ENC_STA;   
+	hw_cfg->OSD_ENC_SADR=hw->OSD_ENC_SADR;	
+	hw_cfg->OSD_ENC_TADR=hw->OSD_ENC_TADR;	
+	hw_cfg->OSD_ENC_RLEN=hw->OSD_ENC_RLEN;	
+	hw_cfg->OSD_ENC_DLEN=hw->OSD_ENC_DLEN;	
+	hw_cfg->OSD_ENC_IDENT0=hw->OSD_ENC_IDENT0;
+	hw_cfg->OSD_ENC_IDENT1=hw->OSD_ENC_IDENT1;
+	hw_cfg->OSD_ENC_TRANS0=hw->OSD_ENC_TRANS0;
+	hw_cfg->OSD_ENC_TRANS1=hw->OSD_ENC_TRANS1;
+
+	irq_disable(osd_hw->irq_num);
+	return 0;
+}
+
+int32 hgosdenc_resume(struct dev_obj *obj){
+	struct hgosd *osd_hw = (struct hgosd*)obj;
+	struct hgosdenc_hw *hw;
+	struct hgosdenc_hw *hw_cfg;
+	//如果已经被打开并且没有休眠过,直接返回
+	if(!osd_hw->opened || !osd_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	osd_hw->dsleep = 0;	
+	hw_cfg = (struct hgosdenc_hw*)osd_hw->cfg_backup;
+	hw     = (struct hgosdenc_hw*)osd_hw->hw;
+
+	hw->OSD_ENC_CON=hw_cfg->OSD_ENC_CON;   
+	hw->OSD_ENC_STA=hw_cfg->OSD_ENC_STA;   
+	hw->OSD_ENC_SADR=hw_cfg->OSD_ENC_SADR;	
+	hw->OSD_ENC_TADR=hw_cfg->OSD_ENC_TADR;	
+	hw->OSD_ENC_RLEN=hw_cfg->OSD_ENC_RLEN;	
+	hw->OSD_ENC_DLEN=hw_cfg->OSD_ENC_DLEN;	
+	hw->OSD_ENC_IDENT0=hw_cfg->OSD_ENC_IDENT0;
+	hw->OSD_ENC_IDENT1=hw_cfg->OSD_ENC_IDENT1;
+	hw->OSD_ENC_TRANS0=hw_cfg->OSD_ENC_TRANS0;
+	hw->OSD_ENC_TRANS1=hw_cfg->OSD_ENC_TRANS1;
+
+	irq_enable(osd_hw->irq_num);
+	os_free(osd_hw->cfg_backup);
+	return 0;
+}
+
+
 static const struct osdenc_hal_ops dev_ops = {
     .open        = hgosdenc_open,
     .close       = hgosdenc_close,
     .ioctl       = hgosd_ioctl,
     .request_irq = osd_enc_irq_register,
     .release_irq = osd_enc_irq_unregister,
+#ifdef CONFIG_SLEEP	
+	.ops.suspend = hgosdenc_suspend,
+	.ops.resume  = hgosdenc_resume,
+#endif 
 };
 
 

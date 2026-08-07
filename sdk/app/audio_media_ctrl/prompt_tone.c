@@ -10,11 +10,11 @@ static int32_t prompt_tone_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t
     switch(cmd_id) {
         case MSI_CMD_FREE_FB:
         {
+            ret = RET_ERR;
             if(tone_s) {
                 struct framebuff *frame_buf = (struct framebuff *)param1;
                 fbpool_put(&tone_s->tx_pool, frame_buf);
             }
-            ret = RET_OK+1;
             break; 
         }        
 		case MSI_CMD_POST_DESTROY:
@@ -30,7 +30,6 @@ static int32_t prompt_tone_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t
                 fbpool_destroy(&tone_s->tx_pool);
 				PROMPTTONE_FREE(tone_s);
             }
-            ret = RET_OK;
             break; 
         }         
         default:
@@ -44,10 +43,11 @@ void prompt_tone_task(void *d)
     struct framebuff *frame_buf = NULL;
     PROMPT_TONE_STRUCT *tone_s = (PROMPT_TONE_STRUCT*)d;
 
-	os_sleep_ms(5000);
     while(1) {  
-        if(get_audio_code_status(MP3_DEC) == AUDIO_STOP)
+        if(audio_code_get_status(tone_s->mp3_msi) == AUCODEC_END) {
+            msi_do_cmd(tone_s->mp3_msi, MSI_CMD_AUCODER, MSI_AUCODER_DEINIT, 0);
             break;
+        }
         frame_buf = fbpool_get(&tone_s->tx_pool, 0, NULL);
         if(frame_buf) {
             if(tone_s->tone_buf_offset >= tone_s->tone_buf_size) {
@@ -81,6 +81,7 @@ struct msi *play_prompt_tone(const uint8_t *tone_buf, uint32_t size)
     struct framebuff *frame_buf = NULL;
 	struct msi *tone_msi = NULL;
     struct msi *mp3_msi = NULL;
+    AUDEC_INIT audec_init;
 
     tone_msi = msi_new("S_PROMPTTONE", MAX_PROMPTTONE_TXBUF, &msi_isnew);
 	if(tone_msi == NULL) {
@@ -110,8 +111,19 @@ struct msi *play_prompt_tone(const uint8_t *tone_buf, uint32_t size)
 			goto play_prompt_tone_err;
     }
     tone_s->msi->priv = tone_s;
-    mp3_msi = audio_decode_init(MP3_DEC, 0, 1);
-	msi_add_output(tone_msi, NULL, audio_code_msi_name(MP3_DEC));
+    audec_init.track_type = BELL_TRACK;
+    audec_init.priority = play_interruptible;
+    audec_init.direct_to_dac = 1;
+    audec_init.use_tpc = 0;
+    audec_init.destroy_self = 0;
+    audec_init.src_msi = tone_msi;
+    mp3_msi = audio_decode_init(MP3_DEC, 0, &audec_init);
+    if(mp3_msi == NULL) {
+        os_printf("tone_s create mp3 msi fail!\n");
+        goto play_prompt_tone_err;
+    }
+	msi_add_output(tone_msi, NULL, mp3_msi->name);
+    tone_s->mp3_msi = mp3_msi;
     tone_s->task_hdl = os_task_create("prompt_tone_task", prompt_tone_task, (void*)tone_s, OS_TASK_PRIORITY_NORMAL, 0, NULL, 1024);
 	if(tone_s->task_hdl == NULL)  {
 		os_printf("create tone_s task fail!\r\n");

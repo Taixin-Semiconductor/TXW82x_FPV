@@ -287,7 +287,7 @@ const _Sensor_LSC       f37p_lsc_init = {
     .p_lsc_tbl =        f37p_lsc_tbl,
 };
 
-void f37p_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void f37p_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint8  gain_segment[]    = {1, 2, 4, 8, 16, 32};
     uint8  sensor_gain_part1 = 0;

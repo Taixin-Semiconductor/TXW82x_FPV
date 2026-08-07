@@ -74,6 +74,10 @@ const struct hgisp_param_info isp_master_param =
         .awb_back_cons_en   = 1,
         .awb_back_wp_min_ratio = 0.2,
         .manual_gain        = {256, 256, 256, 256},
+        .awb_crop_pixel_start_h	= 0,
+		.awb_crop_pixel_start_v	= 0,
+        .awb_crop_pixel_end_h 	= 0,
+        .awb_crop_pixel_end_v 	= 0,
     },
 
     .cfg_ae = {
@@ -85,58 +89,70 @@ const struct hgisp_param_info isp_master_param =
                                        20, 30, 50, 30, 20,//150
                                        20, 30, 30, 30, 20,//130
                                        20, 20, 20, 20, 20},//100
+        .ae_crop_start_h           = 0,
+        .ae_crop_start_v           = 0,
+        .ae_crop_size_h            = 0,
+        .ae_crop_size_v            = 0,
+        .hist_crop_start_h         = 1,
+        .hist_crop_start_v         = 1,
+        .hist_crop_end_h           = 0,
+        .hist_crop_end_v           = 0,
         .ae_lock_cnt               = 10,
         .ae_lock_tolerance         = 12,
         .reduce_fps_en             = 0,
         .lowlight_lsb_gain_en      = 1,
         .lowlight_lsb_gain_4hi_fps = 64,    // lowlight_lsb_gain_en==0 ? 16 : 64
         .lowlight_lsb_gain_4lo_fps = 64,    // lowlight_lsb_gain_en==0 ? 16 : 64
-
         .hist_hs_bin_thr           = 224,
         .hist_upper_hs_pixel_ratio = 0.94,
         .hist_upper_pixel_ratio    = 0.88,
         .hist_lower_pixel_ratio    = 0.00,
 
-        .abl_luma_target_max       = 100,
-        .dark_pos_thr_max          = 50,
-        .abl_diff_ratio            = 0.03,
-        .abl_dark_pos_diff_thr     = 9,     // 0.15 * 61
-        .abl_bright_pos_diff_thr   = 6,     // 0.10 * 61
-        .bright_pixel_high_ratio   = 0.10,
-        .bright_pixel_sub_ratio    = 0.05,
-        .dark_pixel_low_ratio      = 0.55,
-        .dark_pixel_high_ratio     = 0.85,
-        .abl_dark_pos_low_wthr     = 18,    // 0.30 * 61,
-        .abl_dark_pos_add_wthr     = 12,    // 0.20 * 61,
-        .bright_pos_adjust_ratio   = 0.80,
-        .aoe_dark_pos_wthr         = 30,    // 0.50 * 61,
-        .aoe_bright_pos_wthr       = 9,     // 0.15 * 61,
         .abl_bv_gain_sel           = 0,
         .abl_expo_line_low_ratio   = 0.80,
-        .abl_expo_line_high_ratio  = 1.00,
         .abl_expo_gain_low_thr     = 260,
+        .abl_expo_line_high_ratio  = 1.00,
         .abl_expo_gain_high_thr    = 324,
-        .abl_hist_thr[0]           = 50,
-        .abl_hist_thr[1]           = 230,
         .aoe_expo_gain_thr[0]      = 384-50,
         .aoe_expo_gain_thr[1]      = 384,
         .abl_bv_thr[0]             = 6645,  // 80lx
         .abl_bv_thr[1]             = 13216, // 160lx
         .aoe_bv_thr[0]             = 3531,  // 40lx
         .aoe_bv_thr[1]             = 6645,  // 80lx
-
+        .abl_hist_thr[0]           = 50,
+        .abl_hist_thr[1]           = 230,
+        .dark_pixel_low_ratio      = 0.55,
+        .dark_pixel_high_ratio     = 0.85,
+        .bright_pixel_high_ratio   = 0.10,
+        .bright_pixel_sub_ratio    = 0.05,
+        .dark_pos_thr_max          = 50,    
+        .bright_pos_adjust_ratio   = 0.80,
+        .abl_dark_pos_low_wthr     = 18,    // 0.30 * 61,
+        .abl_dark_pos_add_wthr     = 12,    // 0.20 * 61,
+        .aoe_dark_pos_wthr         = 30,    // 0.50 * 61,
+        .aoe_bright_pos_wthr       = 9,     // 0.15 * 61,
+        .abl_luma_target_max       = 100,
+        .abl_diff_ratio            = 0.03,
+        .abl_dark_pos_diff_thr     = 9,     // 0.15 * 61
+        .abl_bright_pos_diff_thr   = 6,     // 0.10 * 61
+        
         .stg_mode                  = 0,
         .stg_ratio_slope           = 0.3*256,
         .stg_max_offset            = 0,
     },
     
     .config_wdr = {
+        .dynamic_gamma_en          = 0,
+        .y_gamma_opt               = 0,
         .wdr_en                    = 0,
         .temporal_smooth_alpha     = 0.1,
         .noise_floor               = 128,
         .noise_floor_out           = 128,
         .shadow_boost_target       = 512,
         .highlight_compress_target = 870,
+        .auto_noise_floor_out      = 1,
+        .min_ns_percentile         = 0.01,
+        .max_ns_percentile         = 0.07,
     },
 };
 

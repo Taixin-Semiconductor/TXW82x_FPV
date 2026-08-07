@@ -103,7 +103,6 @@ const struct hgisp_param_info isp_master_param =
         .lowlight_lsb_gain_en      = 1,
         .lowlight_lsb_gain_4hi_fps = 64,    // lowlight_lsb_gain_en==0 ? 16 : 64
         .lowlight_lsb_gain_4lo_fps = 64,    // lowlight_lsb_gain_en==0 ? 16 : 64
-
         .hist_hs_bin_thr           = 180,
         .hist_upper_hs_pixel_ratio = 0.94,
         .hist_upper_pixel_ratio    = 0.88,
@@ -119,7 +118,7 @@ const struct hgisp_param_info isp_master_param =
         .abl_bv_thr[0]			   = 1e20,
         .abl_bv_thr[1]			   = 1e20,
         .aoe_bv_thr[0]			   = 0,
-        .aoe_bv_thr[0]			   = 0,
+        .aoe_bv_thr[1]			   = 0,
         .abl_hist_thr[0]		   = 50,			// hist
         .abl_hist_thr[1]		   = 236,
         .dark_pixel_low_ratio	   = 0.60,
@@ -239,6 +238,14 @@ const struct hgisp_param_info isp_slave0_param =
                                       2, 3, 5, 3, 2,
                                       2, 3, 3, 3, 2,
                                       2, 2, 2, 2, 2},
+        .ae_crop_start_h           = 0,
+        .ae_crop_start_v           = 0,
+        .ae_crop_size_h            = 0,
+        .ae_crop_size_v            = 0,
+        .hist_crop_start_h         = 1,
+        .hist_crop_start_v         = 1,
+        .hist_crop_end_h           = 0,
+        .hist_crop_end_v           = 0,
         .ae_lock_cnt              = 10,
         .ae_lock_tolerance        = 12,
         .reduce_fps_en            = 0,
@@ -375,6 +382,14 @@ const struct hgisp_param_info isp_slave1_param =
                                        20, 30, 50, 30, 20,
                                        20, 30, 30, 30, 20,
                                        20, 20, 20, 20, 20},
+        .ae_crop_start_h           = 0,
+        .ae_crop_start_v           = 0,
+        .ae_crop_size_h            = 0,
+        .ae_crop_size_v            = 0,
+        .hist_crop_start_h         = 1,
+        .hist_crop_start_v         = 1,
+        .hist_crop_end_h           = 0,
+        .hist_crop_end_v           = 0,
         .ae_lock_cnt               = 10,
         .ae_lock_tolerance         = 12,
         .reduce_fps_en             = 0,
@@ -418,6 +433,8 @@ const struct hgisp_param_info isp_slave1_param =
     },
 
     .config_wdr = {
+        .dynamic_gamma_en          = 0,
+        .y_gamma_opt               = 0,
         .wdr_en                    = 0,
         .temporal_smooth_alpha     = 0.1,
         .noise_floor               = 128,

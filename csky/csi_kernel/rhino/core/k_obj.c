@@ -4,11 +4,10 @@
 
 #include <k_api.h>
 
-__bobj int32_t      errno;
 __bobj uint64_t     g_sys_tick_count;
-__bobj uint32_t     g_sys_tick_cycles;
 __bobj uint32_t     g_cpuloading;
 __bobj uint32_t     g_cpuloading_int;
+__bobj volatile uint64_t g_sys_time_last;
 
 __bobj kstat_t      g_sys_stat;
 __bobj uint8_t      g_idle_task_spawned[RHINO_CONFIG_CPU_NUM];

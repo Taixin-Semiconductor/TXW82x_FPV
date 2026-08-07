@@ -280,7 +280,7 @@ int mbedtls_sha1_update(mbedtls_sha1_context *ctx,
         ilen  -= fill;
         left = 0;
     }
-
+    
     while (ilen >= 64) {
         if ((ret = mbedtls_internal_sha1_process(ctx, input)) != 0) {
             return ret;

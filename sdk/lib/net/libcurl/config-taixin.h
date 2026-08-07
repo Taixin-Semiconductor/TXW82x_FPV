@@ -311,7 +311,7 @@
 /***************************************************************/
 /*      Disable or Enable some features                       */
 /***************************************************************/
-#define CURL_DISABLE_MIME
+//#define CURL_DISABLE_MIME
 #define CURL_DISABLE_HSTS
 #define CURL_DISABLE_DOH
 #define CURL_DISABLE_PROXY

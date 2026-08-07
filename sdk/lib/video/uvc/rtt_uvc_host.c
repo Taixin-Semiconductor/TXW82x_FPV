@@ -56,6 +56,7 @@ static void uvc_device_blank_node_init(UVC_Device* uvc_device)
             os_printf("blank node[%d] buf malloc failed\n", i);
             return;
         }
+        sys_dcache_invalid_range((uint32_t*)blank->buf_ptr, blank->blank_len);
         list_add_tail(&blank->list, &uvc_device->free_uvc_tab);
         os_printf("blank node[%d] :%x  ptr:%x\n", i, blank, blank->buf_ptr);
         blank++;
@@ -166,6 +167,7 @@ static void uvc_device_free_err_frame(UVC_Device* uvc_device, UVC_MANAGE *frame)
         }
         frame->frame_end = UVC_DEVICE_FRAME_ERROR;
         uvc_device->current_frame = NULL;
+        // uvc_device->initial_fid_detected = 0;
     }    
 }
 
@@ -312,7 +314,7 @@ struct list_head *uvc_device_user_get_frame(void* device)
 
     // os_printf("%s %d\n", __FUNCTION__, __LINE__);
 
-    irq_disable(usb_device_ioctl(uvc_device->p_dev, USB_HOST_GET_DMA_IRQ_VECTOR, (uint32)NULL, (uint32)NULL));
+    uint32_t flags = disable_irq();
 
     for (frame_num = 0; frame_num < UVC_DEFAULT_FRAME_NUM; frame_num++) {
         if (uvc_device->uvc_msg_frame[frame_num].state == UVC_DEVICE_FRAME_STATE_AVAILABLE) {
@@ -333,7 +335,7 @@ struct list_head *uvc_device_user_get_frame(void* device)
 #endif
 
 __exit:
-    irq_enable(usb_device_ioctl(uvc_device->p_dev, USB_HOST_GET_DMA_IRQ_VECTOR, (uint32)NULL, (uint32)NULL));
+    enable_irq(flags);
 
     return list;
 }
@@ -347,9 +349,9 @@ void uvc_device_user_set_frame_using(void *uvc_msg_frame)
 void uvc_device_user_set_frame_idle(void *uvc_msg_frame)
 {
     UVC_MANAGE *frame = (UVC_MANAGE*)uvc_msg_frame;
-    frame->state = UVC_DEVICE_FRAME_STATE_IDLE;    
     frame->frame_len = 0;
     frame->frame_end = 0;
+    frame->state = UVC_DEVICE_FRAME_STATE_IDLE;    
 }
 
 int uvc_device_user_get_frame_blank_node_num(void* device, struct list_head *head)
@@ -376,6 +378,7 @@ int uvc_device_user_get_frame_blank_node_num(void* device, struct list_head *hea
 void uvc_device_user_free_blank_node(void* device, struct list_head *del)
 {
     UVC_Device* uvc_device = (UVC_Device*)device;
+    UVC_BLANK *uvc_b = (UVC_BLANK *)del;
 
     if (!uvc_device || uvc_device->is_register == UVC_DEVICE_REGISTER_BUSY || uvc_device->is_register == UVC_DEVICE_REGISTER_BUSY) {
         return ;
@@ -383,11 +386,13 @@ void uvc_device_user_free_blank_node(void* device, struct list_head *del)
 
     // os_printf("%s %d\n", __FUNCTION__, __LINE__);
 
-    irq_disable(usb_device_ioctl(uvc_device->p_dev, USB_HOST_GET_DMA_IRQ_VECTOR, (uint32)NULL, (uint32)NULL));
+    sys_dcache_invalid_range((uint32_t*)uvc_b->buf_ptr, uvc_b->blank_len);
+
+    uint32_t flags = disable_irq();
 
     list_move(del, &uvc_device->free_uvc_tab);
 
-    irq_enable(usb_device_ioctl(uvc_device->p_dev, USB_HOST_GET_DMA_IRQ_VECTOR, (uint32)NULL, (uint32)NULL)); 
+    enable_irq(flags);
 }
 
 void uvc_device_user_del_frame(void* device, void *get_f)
@@ -400,16 +405,15 @@ void uvc_device_user_del_frame(void* device, void *get_f)
 
     // os_printf("%s %d\n", __FUNCTION__, __LINE__);
 
-    irq_disable(usb_device_ioctl(uvc_device->p_dev, USB_HOST_GET_DMA_IRQ_VECTOR, (uint32)NULL, (uint32)NULL));
 
     uvc_device_free_get_blank_node_list(get_f, &uvc_device->free_uvc_tab);
 
-    irq_enable(usb_device_ioctl(uvc_device->p_dev, USB_HOST_GET_DMA_IRQ_VECTOR, (uint32)NULL, (uint32)NULL)); 
 }
 
 /* ------------------------------- UVC数据包解析状态机 ------------------------------- */
 #define UVC_DEVICE_CHECK_HEADER_EOH
 #define UVC_DEVICE_BULK_CHECK_MJPEG_HEADER
+// #define UVC_DEVICE_CHECK_PTS
 
 void process_uvc_payload(uint8_t dev_num, uint8_t ep_type, uint8_t video_format, uint8_t *payload, uint32_t payload_len, bool drop) {
     UVC_Device* dev = find_uvc_device(dev_num);
@@ -535,13 +539,24 @@ void process_uvc_payload(uint8_t dev_num, uint8_t ep_type, uint8_t video_format,
         if ((frame ? (dev->last_fid != cur_fid) : 0)) {
             if(((ep_type & USB_EP_ATTR_TYPE_MASK) == USB_EP_ATTR_ISOC)) 
             {
-                os_printf("[UVC] FID changed %d->%d payload[0]:0x%x payload[1]:0x%x\n", dev->last_fid, cur_fid, payload[0], payload[1]);
+                //os_printf("[UVC] FID changed %d->%d payload[0]:0x%x payload[1]:0x%x\n", dev->last_fid, cur_fid, payload[0], payload[1]);
                 uvc_device_free_err_frame(dev, frame);//结束
                 dev->current_blank = NULL;
                 dev->current_frame = NULL;
-                goto _exit;
+                frame = NULL;
             }
         }
+
+        #ifdef UVC_DEVICE_CHECK_PTS
+        if (header->headerInfoUnion.headerInfoBitmap.PTS) {
+            if ((frame ? (dev->dwPresentationTime != header->dwPresentationTime) : 0)) {
+                uvc_device_free_err_frame(dev, frame);//结束
+                dev->current_blank = NULL;
+                dev->current_frame = NULL;
+                frame = NULL;
+            }
+        }
+        #endif
 
         if(frame == NULL && data_len > 0) {
             // 获取新帧
@@ -561,11 +576,22 @@ void process_uvc_payload(uint8_t dev_num, uint8_t ep_type, uint8_t video_format,
             } else {
 
             }
-
+            if(video_format == USBH_VIDEO_FORMAT_MJPEG && (payload[payload[0]] != 0xFF || payload[payload[0] + 1] != 0xD8)){
+                uvc_device_free_err_frame(dev, frame);//结束
+                dev->current_blank = NULL;
+                dev->current_frame = NULL;
+                goto _exit;
+            }
             dev->current_frame = frame;
             dev->current_blank = NULL;
             dev->last_fid = cur_fid;
-            
+
+            #ifdef UVC_DEVICE_CHECK_PTS
+            if (header->headerInfoUnion.headerInfoBitmap.PTS) {
+                dev->dwPresentationTime = header->dwPresentationTime;
+            }
+            #endif
+
             // 初始化帧信息
             frame->frame_counter = dev->frame_counter;;
             frame->frame_len = 0;
@@ -641,7 +667,7 @@ void process_uvc_payload(uint8_t dev_num, uint8_t ep_type, uint8_t video_format,
                 uint32_t copy_len = MIN(_data_len, blank->re_space);
                 if (copy_len > 0) {
                     // os_printf("copy_len:%d %x %x\r\n", copy_len, data_ptr, frame->cpbuff);
-                    os_memcpy(frame->cpbuff, data_ptr, copy_len);
+                    hw_memcpy(frame->cpbuff, data_ptr, copy_len);
                     data_ptr += copy_len;
                     _data_len -= copy_len;
                     frame->cpbuff += copy_len;  // 更新当前写入位置

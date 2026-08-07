@@ -589,7 +589,7 @@ enum ospi_clk_src {
 #define sysctrl_ospi_clk_src_sel(ospi_clk_src)     SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON4, BIT(22)|BIT(21), ospi_clk_src, 21)
 #define sysctrl_ospi_reset()                       SYSCTRL_REG_BITS_S0S1(SYSCTRL->CLK_CON4, BIT(20))
 
-#define sysctrl_qspi_lock()                        SYSCTRL_REG_OPT(SYSCTRL->SYS_KEY = ~0x1fac87e4)
+#define sysctrl_qspi_lock()                        SYSCTRL_REG_OPT(SYSCTRL->SYS_KEY = 0xe053781b)
 #define sysctrl_qspi_unlock()                      SYSCTRL_REG_OPT(SYSCTRL->SYS_KEY = 0x1fac87e4)
 #define sysctrl_ospi_lock()                        SYSCTRL_REG_OPT(SYSCTRL->SYS_KEY = ~0x01ac87e4)
 #define sysctrl_ospi_unlock()                      SYSCTRL_REG_OPT(SYSCTRL->SYS_KEY = 0x01ac87e4)
@@ -1294,6 +1294,7 @@ int32 peripheral_clock_set(HG_Peripheral_Type peripheral, uint32 clk_hz);
 uint32 peripheral_clock_get(HG_Peripheral_Type peripheral);
 
 uint32 sysctrl_efuse_get_chip_uuid(uint8* pbuf, uint32 len);
+uint32 sysctrl_get_chip_uuid(uint8* pbuf, uint32 len);
 
 uint32 sysctrl_efuse_validity_get(void);
 

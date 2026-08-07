@@ -22,37 +22,6 @@
 
 #define HASH_MOD (9)
 
-// 初始化photo的文件夹
-// 这里正常是先判断是否有对应文件夹再考虑是否创建
-// 每次热插拔应该都要去初始化一次,防止sd卡更换后没有对应的目录
-void init_photo_path()
-{
-    osal_fmkdir(IMG_PATH);
-    osal_fmkdir(REC_PATH);
-    osal_fmkdir(THUMB_PATH);
-    osal_fmkdir(THUMB_PATH "/0");
-    osal_fmkdir(THUMB_PATH "/1");
-    osal_fmkdir(THUMB_PATH "/2");
-    osal_fmkdir(THUMB_PATH "/3");
-    osal_fmkdir(THUMB_PATH "/4");
-    osal_fmkdir(THUMB_PATH "/5");
-    osal_fmkdir(THUMB_PATH "/6");
-    osal_fmkdir(THUMB_PATH "/7");
-    osal_fmkdir(THUMB_PATH "/8");
-#if 0
-    VFS_mkdir("/" MAIN_PATH "/" NORMAL_PATH, 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH, 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/0", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/1", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/2", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/3", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/4", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/5", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/6", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/7", 0);
-    VFS_mkdir("/" MAIN_PATH "/" THUMB_PATH "/8", 0);
-#endif
-}
 uint32_t calc_hash(const char *filename)
 {
     uint32_t    hash   = 0;
@@ -344,7 +313,7 @@ uint8_t file_delete(const char *filename, uint8_t type)
     }
     _os_printf("File deleted successfully: %s\n", jpg_path);
     
-    gen_thumb_path(filename, thumb_path, sizeof(thumb_path));
+    gen_thumb_path(jpg_path, thumb_path, sizeof(thumb_path));
 
     res = osal_unlink(thumb_path);
     if (res != FR_OK) {

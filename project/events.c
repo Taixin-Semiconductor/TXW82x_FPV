@@ -17,6 +17,7 @@
 #include "lwip/dns.h"
 #include "syscfg.h"
 #include "lib/bluetooth/uble/ble_demo.h"
+#include "sysevt_usb/sysevt_usb.h"
 
 extern int32 sys_wifi_event_hdl_wifi_pair(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2);
 extern int32 sys_wifi_event_hdl_pairled(uint8 ifidx, uint16 evt, uint32 param1, uint32 param2);
@@ -32,6 +33,12 @@ static void sys_event_hdl_dhcp(uint32 event_id, uint32 data, uint32 priv)
                 lwip_netif_set_dhcp2("w0", 1);
                 os_printf(KERN_NOTICE"wifi connected, start dhcp client ...\r\n");
             }
+			if(sys_cfgs.wifi_mode == WIFI_MODE_STA) {
+				ieee80211_conf_get_ssid(sys_cfgs.wifi_mode, sys_cfgs.ssid);
+				ieee80211_conf_get_psk(sys_cfgs.wifi_mode, sys_cfgs.psk);
+				sys_cfgs.key_mgmt = ieee80211_conf_get_keymgmt(sys_cfgs.wifi_mode);
+				syscfg_save();				
+			}
             break;
 
         case SYS_EVENT(SYS_EVENT_NETWORK, SYSEVT_LWIP_DHCPC_DONE): {
@@ -65,6 +72,9 @@ sysevt_hdl_res sys_event_hdl(uint32 event_id, uint32 data, uint32 priv)
      */
 
     sys_event_hdl_dhcp(event_id, data, priv);
+
+    system_event_usbh_video_hdl(event_id, data, priv);
+
     return SYSEVT_CONTINUE;
 }
 
@@ -98,6 +108,12 @@ static int32 sys_wifi_event_hdl_default(uint8 ifidx, uint16 evt, uint32 param1, 
         case IEEE80211_EVENT_CHANNEL_CHANGE:
             sys_status.channel = param2;
             sys_cfgs.channel = param2;
+            break;
+        case IEEE80211_EVENT_PAIR_SUCCESS:
+            if(WIFI_MODE_STA == ifidx)
+            {
+                ieee80211_pairing(sys_cfgs.wifi_mode, 0);
+            }  
             break;
         default:
             break;

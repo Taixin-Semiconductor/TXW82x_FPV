@@ -310,7 +310,7 @@ struct dsi_device {
 
 struct dsi_hal_ops{
     struct devobj_ops ops;
-    int32(*init)(struct dsi_device *dsi_dev,uint8 clk_div,uint8_t tx_esc_clk_div,uint8_t auto_clklane,uint8_t lane_num);
+    int32(*init)(struct dsi_device *dsi_dev,uint8 clk_div,uint8_t tx_esc_clk_div,uint8_t auto_clklane,uint8_t lane_num,uint8_t clkselect,uint8_t div_strong);
 	int32(*deinit)(struct dsi_device *dsi_dev);
     int32(*open)(struct dsi_device *dsi_dev);
     int32(*close)(struct dsi_device *dsi_dev);
@@ -319,7 +319,14 @@ struct dsi_hal_ops{
     int32(*release_irq)(struct dsi_device *dsi_dev, uint32 irq_flag);
 };
 
-int32 dsi_init(struct dsi_device *p_dsi,uint8 clk_div,uint8_t tx_esc_clk_div,uint8_t auto_clklane,uint8_t lane_num);
+enum dsi_module_clk {
+    DSI_MODULE_CLK_480M = 0,
+    DSI_MODULE_CLK_960M,
+
+	DSI_MODULE_CLK_240M,
+};	
+
+int32 dsi_init(struct dsi_device *p_dsi,uint8 clk_div,uint8_t tx_esc_clk_div,uint8_t auto_clklane,uint8_t lane_num,uint8_t clkselect,uint8_t div_strong);
 int32 dsi_deinit(struct dsi_device *p_dsi);
 int32 dsi_open(struct dsi_device *p_dsi);
 int32 dsi_close(struct dsi_device *p_dsi);

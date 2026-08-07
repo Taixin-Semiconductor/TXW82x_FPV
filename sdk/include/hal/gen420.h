@@ -27,12 +27,17 @@ struct gen420_device {
 struct gen420_hal_ops{
     struct devobj_ops ops;
     int32(*open)(struct gen420_device *gen420);
+	int32(*suspend)(struct gen420_device *gen420);
+	int32(*resume)(struct gen420_device *gen420);	
     int32(*close)(struct gen420_device *gen420);
     int32(*ioctl)(struct gen420_device *gen420, enum gen420_ioctl_cmd cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct gen420_device *gen420,uint32 irq_flag,gen420_irq_hdl irq_hdl,  uint32 irq_data);
     int32(*release_irq)(struct gen420_device *gen420, uint32 irq_flag);
 };
 
+
+int32 gen420_suspend(struct gen420_device *p_gen);
+int32 gen420_resume(struct gen420_device *p_gen);
 int32 gen420_open(struct gen420_device *p_gen);
 int32 gen420_close(struct gen420_device *p_gen);
 int32 gen420_request_irq(struct gen420_device *p_gen, uint32 irq_flags, gen420_irq_hdl irq_hdl, uint32 irq_data);

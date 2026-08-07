@@ -5,6 +5,18 @@
 extern "C" {
 #endif
 
+enum fw_code
+{
+    FW_CODE_OK = 0,
+    FW_OTA_INIT_ERR,         //ota初始化错误
+    FW_CODE_LEN_TOO_SHORT,   // 数据长度太短
+    FW_ID_CHECKSUM_ERR,     //客户id校验错误
+    FW_HEAD_CHECK_ERR,      //头校验错误
+    FW_OUT_OFF_ORDER_ERR,   //ota长度超过配置的长度
+    FW_VERIFY_ERR,          //写入校验错误
+    FW_END_ERR,             //ota结束回写校验码错误
+};
+
 #define fw_ota_dbg(fmt, ...)                //os_printf(fmt, ##__VA_ARGS__)
 
 /* The OTA marker and marker size are only applicable to huge-ic chips. */

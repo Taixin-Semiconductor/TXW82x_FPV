@@ -177,7 +177,7 @@ rt_err_t rt_usbh_attatch_instance(uinst_t device)
     rt_err_t ret = RT_EOK;
     rt_uint8_t cfg_desc_buff[18];
     udev_desc_t dev_desc;
-    uintf_desc_t intf_desc;
+    uintf_desc_t intf_desc = RT_NULL;
     uiad_desc_t iad_desc;
     ucfg_desc_t cfg_desc;
     // uep_desc_t ep_desc;

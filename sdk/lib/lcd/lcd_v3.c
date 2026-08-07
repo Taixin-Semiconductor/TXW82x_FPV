@@ -1238,6 +1238,18 @@ void jpg_decode_to_lcd(uint32 photo,uint32 jpg_w,uint32 jpg_h,uint32 video_w,uin
 	jpg_decode_photo(jpg_dev,photo,0);
 }
 
+void jpg_decode_run(uint32 photo,uint32 len)
+{
+	struct jpg_device *jpg_dev;
+    
+	jpg_dev = (struct jpg_device *)dev_get(HG_JPG1_DEVID);	
+	jpg_request_irq(jpg_dev,(jpg_irq_hdl )&jpg_dec_timeout_isr,JPG_IRQ_FLAG_TIME_OUT,jpg_dev);
+	jpg_request_irq(jpg_dev,(jpg_irq_hdl )&jpg_dec_error_isr,JPG_IRQ_FLAG_ERROR,jpg_dev);
+	jpg_request_irq(jpg_dev,(jpg_irq_hdl )&jpg_done_dec_isr,JPG_IRQ_FLAG_JPG_DONE,jpg_dev);
+	jpg_decode_target(jpg_dev,1);
+	jpg_decode_photo(jpg_dev,photo,len);
+}
+
 int32 jpg_decode_is_finish(){
 	struct jpg_device *jpg_dev;
 	jpg_dev = (struct jpg_device *)dev_get(HG_JPG1_DEVID);	

@@ -54,8 +54,8 @@
 
 #include "curlx/inet_ntop.h"
 #include "if2ip.h"
-/* The last 3 #include files should be in this order */
-#include "curl_printf.h"
+
+/* The last 2 #include files should be in this order */
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -94,7 +94,7 @@ unsigned int Curl_ipv6_scope(const struct sockaddr *sa)
 
 #if !defined(CURL_DISABLE_BINDLOCAL) || !defined(CURL_DISABLE_FTP)
 
-#if defined(HAVE_GETIFADDRS)
+#ifdef HAVE_GETIFADDRS
 
 if2ip_result_t Curl_if2ip(int af,
 #ifdef USE_IPV6
@@ -109,7 +109,7 @@ if2ip_result_t Curl_if2ip(int af,
 
 #if defined(USE_IPV6) && \
     !defined(HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID)
-  (void) local_scope_id;
+  (void)local_scope_id;
 #endif
 
   if(getifaddrs(&head) >= 0) {
@@ -153,7 +153,7 @@ if2ip_result_t Curl_if2ip(int af,
               }
 
               if(scopeid)
-                msnprintf(scope, sizeof(scope), "%%%u", scopeid);
+                curl_msnprintf(scope, sizeof(scope), "%%%u", scopeid);
 #endif
             }
             else
@@ -162,7 +162,7 @@ if2ip_result_t Curl_if2ip(int af,
                 &((struct sockaddr_in *)(void *)iface->ifa_addr)->sin_addr;
             res = IF2IP_FOUND;
             ip = curlx_inet_ntop(af, addr, ipstr, sizeof(ipstr));
-            msnprintf(buf, buf_size, "%s%s", ip, scope);
+            curl_msnprintf(buf, buf_size, "%s%s", ip, scope);
             break;
           }
         }
@@ -208,7 +208,7 @@ if2ip_result_t Curl_if2ip(int af,
   if(len >= sizeof(req.ifr_name))
     return IF2IP_NOT_FOUND;
 
-  dummy = socket(AF_INET, SOCK_STREAM, 0);
+  dummy = CURL_SOCKET(AF_INET, SOCK_STREAM, 0);
   if(CURL_SOCKET_BAD == dummy)
     return IF2IP_NOT_FOUND;
 
@@ -252,14 +252,14 @@ if2ip_result_t Curl_if2ip(int af,
                           const char *interf,
                           char *buf, size_t buf_size)
 {
-    (void) af;
+    (void)af;
 #ifdef USE_IPV6
-    (void) remote_scope;
-    (void) local_scope_id;
+    (void)remote_scope;
+    (void)local_scope_id;
 #endif
-    (void) interf;
-    (void) buf;
-    (void) buf_size;
+    (void)interf;
+    (void)buf;
+    (void)buf_size;
     return IF2IP_NOT_FOUND;
 }
 

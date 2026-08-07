@@ -251,7 +251,7 @@ static rt_err_t _get_interface(struct udevice* device, ureq_t setup)
 {
     rt_uint8_t value;
     uintf_t intf;
-    ufunction_t func;
+    ufunction_t func = RT_NULL;
 
     /* parameter check */
     RT_ASSERT(device != RT_NULL);
@@ -290,7 +290,7 @@ static rt_err_t _get_interface(struct udevice* device, ureq_t setup)
  */
 static rt_err_t _set_interface(struct udevice* device, ureq_t setup)
 {
-    ufunction_t func;
+    ufunction_t func = RT_NULL;
     uintf_t intf;
     uep_t ep;
     struct rt_list_node* i;

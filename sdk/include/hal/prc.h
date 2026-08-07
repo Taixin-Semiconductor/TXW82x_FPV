@@ -70,13 +70,16 @@ struct prc_device {
 struct prc_hal_ops {
 	struct devobj_ops ops;
 	int32(*init)(struct prc_device *prc_dev);
+	int32(*suspend)(struct prc_device *prc_dev);
+	int32(*resume)(struct prc_device *prc_dev);	
 	int32(*deinit)(struct prc_device *prc_dev);
     int32(*ioctl)(struct prc_device *prc_dev, enum prc_ioctl_cmd ioctl_cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct prc_device *prc_dev, uint32 irq_flag, prc_irq_hdl irq_hdl, uint32 irq_data);
     int32(*release_irq)(struct prc_device *prc_dev, uint32 irq_flag);
 };
 
-
+int32 prc_suspend(struct prc_device *p_prc);
+int32 prc_resume(struct prc_device *p_prc);
 int32 prc_set_width(struct prc_device *p_prc, uint32 width);
 int32 prc_set_yuv_mode(struct prc_device *p_prc, uint32 mode);
 int32 prc_set_yaddr(struct prc_device *p_prc, uint32 addr);

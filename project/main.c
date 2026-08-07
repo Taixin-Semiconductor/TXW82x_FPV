@@ -21,6 +21,7 @@
 #include "lib/net/skmonitor/skmonitor.h"
 #include "syscfg.h"
 #include "app/user_app.h"
+#include "cpu1_mem.h"
 
 extern uint32 srampool_start;
 extern uint32 srampool_end;
@@ -157,12 +158,23 @@ __init static void sys_heap_info()
     /*打印各个heap区间信息*/
     os_printf("------------------------------------------------------------\r\n");
     os_printf("System Heaps Info, Total: %d (%p ~ %p)\r\n", SRAM_POOL_SIZE, SRAM_POOL_START, SRAM_POOL_START+SRAM_POOL_SIZE);
-    os_printf("| CPU1 HEAP   : %p ~ %p, Size:%-8d     |\r\n", CONFIG_CORE_HEAP_START, CONFIG_CORE_HEAP_START+CONFIG_CORE_HEAP_SIZE, CONFIG_CORE_HEAP_SIZE);
-    os_printf("| CPU1 RXBUF  : %p ~ %p, Size:%-8d     |\r\n", CONFIG_CORE_RXBUF_ADDR, CONFIG_CORE_RXBUF_ADDR+CONFIG_CORE_RXBUF_SIZE, CONFIG_CORE_RXBUF_SIZE);
-    os_printf("| CPU1 SKBPOOL: %p ~ %p, Size:%-8d     |\r\n", CONFIG_CORE_SKB_POOL_ADDR, CONFIG_CORE_SKB_POOL_ADDR+CONFIG_CORE_SKB_POOL_SIZE, CONFIG_CORE_SKB_POOL_SIZE);
-    os_printf("| CPU0 AVHEAP : %p ~ %p, Size:%-8d     |\r\n", CONFIG_AVHEAP_START, CONFIG_AVHEAP_START+CONFIG_AVHEAP_SIZE, CONFIG_AVHEAP_SIZE);
+    uint8_t *cpu1_heap;
+    uint8_t *skb_heap;
+    uint8_t *rxbuf_heap;
+    uint32_t cpu1_heap_size;
+    uint32_t skb_heap_size;
+    uint32_t rxbuf_heap_size;
+
+    cpu1_heap = (uint8_t*)cpu1_heap_get(&cpu1_heap_size);
+    skb_heap = (uint8_t*)cpu1_skb_heap_get(&skb_heap_size);
+    rxbuf_heap = (uint8_t*)cpu1_RXBUF_heap_get(&rxbuf_heap_size);
+    os_printf("| CPU1 HEAP   : %p ~ %p, Size:%-8d     |\r\n", cpu1_heap, cpu1_heap+cpu1_heap_size, cpu1_heap_size);
+    os_printf("| CPU1 RXBUF  : %p ~ %p, Size:%-8d     |\r\n", rxbuf_heap, rxbuf_heap+rxbuf_heap_size, rxbuf_heap_size);
+    os_printf("| CPU1 SKBPOOL: %p ~ %p, Size:%-8d     |\r\n", skb_heap, skb_heap+skb_heap_size, skb_heap_size);
+    //os_printf("| CPU0 AVHEAP : %p ~ %p, Size:%-8d     |\r\n", CONFIG_AVHEAP_START, CONFIG_AVHEAP_START+CONFIG_AVHEAP_SIZE, CONFIG_AVHEAP_SIZE);
     os_printf("| CPU0 HEAP   : %p ~ %p, Size:%-8d     |\r\n", SYS_HEAP_START, SYS_HEAP_START+SYS_HEAP_SIZE, SYS_HEAP_SIZE);
     os_printf("------------------------------------------------------------\r\n");
+    cpu1_info_free();
 }
 
 static int32 sys_main_loop(struct os_work *work)
@@ -201,8 +213,16 @@ __init static void sys_app_init(void)
     sys_app_ipc_init();
 #endif
 
-#ifdef SYS_APP_BBM
-    sys_app_bbm_init();
+#ifdef SYS_APP_BBM_LCD
+    sys_app_bbm_lcd_init();
+#endif
+
+#ifdef SYS_APP_WALKIE_TALKIE
+    sys_app_walkie_talkie_init();
+#endif
+
+#ifdef SYS_APP_BBM_CAM
+	sys_app_bbm_cam_init();
 #endif
 
 #if SYS_APP_BLENC

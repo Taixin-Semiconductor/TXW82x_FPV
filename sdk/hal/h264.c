@@ -5,6 +5,23 @@
 #include "devid.h"
 #include "hal/h264.h"
 
+int32 h264_suspend(struct h264_device *p_h264)
+{
+    if (p_h264 && ((const struct h264_hal_ops *)p_h264->dev.ops)->suspend) {
+		return ((const struct h264_hal_ops *)p_h264->dev.ops)->suspend(p_h264);
+    }
+    return RET_ERR;
+}
+
+int32 h264_resume(struct h264_device *p_h264)
+{
+    if (p_h264 && ((const struct h264_hal_ops *)p_h264->dev.ops)->resume) {
+        return ((const struct h264_hal_ops *)p_h264->dev.ops)->resume(p_h264);
+    }
+    return RET_ERR;
+}
+
+
 int32 h264_init(struct h264_device *p_h264,enum h264_module_clk clk_type)
 {
     if (p_h264 && ((const struct h264_hal_ops *)p_h264->dev.ops)->init) {

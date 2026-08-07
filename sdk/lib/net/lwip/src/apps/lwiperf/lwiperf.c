@@ -141,6 +141,7 @@ typedef struct _lwiperf_state_tcp {
   ip_addr_t remote_addr;
   unsigned long long xfer_record; //hugeic added
   unsigned long long tick_record; //hugeic added
+  u8_t *send_buf;
 } lwiperf_state_tcp_t;
 
 /** List of active iperf sessions */
@@ -297,6 +298,11 @@ lwiperf_tcp_close(lwiperf_state_tcp_t *conn, enum lwiperf_report_type report_typ
     err = tcp_close(conn->server_pcb);
     LWIP_ASSERT("error", err == ERR_OK);
   }
+  if(conn->send_buf && conn->send_buf != lwiperf_txbuf_const)
+  {
+    os_free(conn->send_buf);
+    conn->send_buf = NULL;
+  }
   LWIPERF_FREE(lwiperf_state_tcp_t, conn);
 }
 
@@ -351,7 +357,7 @@ lwiperf_tcp_client_send_more(lwiperf_state_tcp_t *conn)
     } else {
       /* transmit data */
       /* @todo: every x bytes, transmit the settings again */
-      txptr = LWIP_CONST_CAST(void *, &lwiperf_txbuf_const[conn->bytes_transferred % 10]);
+      txptr = LWIP_CONST_CAST(void *, &conn->send_buf[conn->bytes_transferred % 10]);
       txlen_max = TCP_MSS;
       if (conn->bytes_transferred == 48) { /* @todo: fix this for intermediate settings, too */
         txlen_max = TCP_MSS - 24;
@@ -412,6 +418,16 @@ lwiperf_tcp_client_connected(void *arg, struct tcp_pcb *tpcb, err_t err)
   }
   conn->poll_count = 0;
   conn->time_started = sys_now();
+  conn->send_buf = (u8_t*)os_malloc(sizeof(lwiperf_txbuf_const));
+  if(conn->send_buf)
+  {
+    hw_memcpy(conn->send_buf, lwiperf_txbuf_const, sizeof(lwiperf_txbuf_const));
+  }
+  else
+  {
+    os_printf(KERN_EMERG"lwiperf will use flash buf,speed maybe slow\n");
+    conn->send_buf = (uint8_t*)lwiperf_txbuf_const;
+  }
   return lwiperf_tcp_client_send_more(conn);
 }
 
@@ -1006,6 +1022,7 @@ void lwiperf_udp_client_start(void *arg)
     uint32_t usec = 0;
     uint64 time = 0;
     int64_t wait_us = 0;
+	int send_res;
     struct iperf_udp *udp = (struct iperf_udp *)arg;
 
     if(!udp) {
@@ -1082,9 +1099,14 @@ void lwiperf_udp_client_start(void *arg)
         memcpy(packet_buf, &seq, 4);
         memcpy(packet_buf + 4, &sec, 4);
         memcpy(packet_buf + 8, &usec, 4);
-
-        lwip_sendto(sock, packet_buf, udp->packet_len, 0, 
+		
+again:
+        send_res = lwip_sendto(sock, packet_buf, udp->packet_len, 0, 
             (struct sockaddr *)&server_addr, sizeof(server_addr));
+        if(send_res<0)
+        {
+          goto again;
+        }
         seq_num++;
 
         time = get_time_us();

@@ -1,5 +1,5 @@
 # ROM Writable : SYSCTRL->SYS_CON3[4]
-set *(unsigned int *)0x40020010=0x08000010
+# set *(unsigned int *)0x40020010=0x08000010
 
 # watchdog close : WDT->WDTKEY
 set *(unsigned int *)0x400C1004=0xdddd

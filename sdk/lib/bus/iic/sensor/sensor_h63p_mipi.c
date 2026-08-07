@@ -156,32 +156,6 @@ const _Sensor_AWB h63p_awb_init =
         .coarse_max_rg = 230, 
     },
 
-
-//    .constraint = {
-//		.section_num = 4,
-//		//   色温:   7500, 6500, 5000, 4000, 3000
-//		// rgain:    542,  531,  466,  427,  349
-//		// bgain:    433,  484,  533,  566,  695
-//		// 下范围,上范围
-//		// 下,上
-//		//    15,   10
-//		//    15,   15
-//		//    20,   15
-//		//    15,   15
-//		//    15,   10
-//		.color_temp          = {         6500,        5000,        4000,        3000,           0,           0,           0},
-//		.sec_line_slope      = {   0.71428571,   1.5789474,   1.6206897,   1.5909091,           0,           0,           0},
-//		.sec_line_offset     = {    47.142857,  -99.631579,  -131.96552,  -205.09091,           0,           0,           0},
-//		.sec_line_sqrtk2add1 = {   0.81373347,  0.53505208,  0.52510733,  0.53217155,           0,           0,           0},
-//		.center_line_slope   = {  -0.66666667, -0.58333333, -0.62857143,           0,           0,           0},
-//		.center_line_offset  = {          217,      205.25,   212.17143,           0,           0,           0},
-//		.lower_line_slope    = {   -1.0344963, -0.19354257, -0.62858901,           0,           0,           0},
-//		.lower_line_offset   = {     240.8974,   131.32201,   194.45743,           0,           0,           0},
-//		.upper_line_slope    = {  -0.58222977,   -0.582807, -0.81057448,           0,           0,           0},
-//		.upper_line_offset   = {    222.43953,   222.52555,   259.16802,           0,           0,           0},
-//		.corner_limit        = {     149.13948,    130.92278,    152.24035,    180.01743,    81.300452,    193.32172,    102.46637},
-//    },
-
 	.constraint = {
 		.section_num = 4,
 
@@ -220,6 +194,55 @@ const _Sensor_AE h63p_ae_init =
     .hs_scene_bv_lut       = {197, 2784},
     .lowlight_lsb_bv_lut   = {72, 88, 129, 197, 347,  669, 1391, 1e30},
     .lowlight_lsb_gain_lut = {64, 64,  48,  40,  32,   24,   16,   16},  // u7.4
+};
+
+const _Sensor_DPC h63p_dpc_init = 
+{
+    .static_psram_addr      = (uint32)0,
+    .white_threshold        = 115,
+    .black_threshold        = 115,
+    .white_threshold_min    = 30,
+    .black_threshold_min    = 30,
+    .sensitivity_value      = 128,
+    .dynamic_white_strength = 4,
+    .dynamic_black_strength = 4,
+};
+
+const _Sensor_GAMMA_BV h63p_gamma_map = 
+{
+    .bv = {
+        29491, 3534, 1599, 347, 222, 115, 57, 34,
+    },
+
+    .y_alpha = {
+        255,  255, 192, 192, 128, 128, 64, 64,                         
+    },
+
+    .rgb_alpha = {
+        255,  255, 192, 192, 128, 128, 64, 64,     
+    },
+};
+
+const _Sensor_CSC h63p_csc_init = 
+{
+    .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
+    .rgb2yuv_range         = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_in_gamut      = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_in_range      = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_out_gamut     = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
+    .y_gamma_alpha         = 0xff,
+    .rgb_gamma_alpha       = 0xff,
+	.gamma_alpha_map       = (void *)&h63p_gamma_map,
+};
+
+const _Sensor_GIC h63p_gic_init = 
+{
+    .w_thres  = 14,
+    .w_slope  = 16,
+    .w_str    = 127,
+    .mu_thres = 5,
+    .mu_slope = 16,
 };
 
 const _Sensor_CSUPP h63p_csupp_init = {
@@ -284,6 +307,17 @@ const _Sensor_YUVNR h63p_yuvnr_init = {
 	.y_win_size = 0,
 };
 
+const _Sensor_COLENH_BV h63p_ce_map[BV2COLENH_ARRAY_NUM] = {
+    {.bv =  48664, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   5993, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   3022, .hue = 0, .luma = 50, .contrast = 56, .saturation = 70},
+    {.bv =   1391, .hue = 0, .luma = 50, .contrast = 56, .saturation = 60},
+    {.bv =    381, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =    369, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =    184, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+    {.bv =     90, .hue = 0, .luma = 50, .contrast = 56, .saturation = 50},
+};
+
 const _Sensor_COLENH h63p_colenh_init = {
     .yuv_range     = 0, // 0: narrow range, 1: full range
     .luma          = 52, // range: 0 ~ 100
@@ -296,27 +330,31 @@ const _Sensor_COLENH h63p_colenh_init = {
     .ce_out_ofs_y  = 128, 
     .ce_out_ofs_cb = 128, 
     .ce_out_ofs_cr = 128, // range: -128 ~ 128
-    .adj_sat_by_bv = 1,
-    .hi_sat        = 60,
-    .lo_sat        = 50,
-    .hi_sat_bv     = 1391, // high brightness for saturation
-    .lo_sat_bv     = 347, // low brightness for saturation
+    .adj_by_bv_en  = 1,
+    .bv2colenh_map = (void *)h63p_ce_map,
 };
 
 const _Sensor_BV2NR h63p_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
-    //           bv, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx
-    {         24647,                      8,           511,                      63,         0,         0},    // 320lux
-    {          2784,                      8,           511,                      63,         0,         0},    // 40lux
-    {          1391,                      8,           350,                      63,         0,         0},    // 20lux
-    {           669,                      8,           260,                      63,         1,         0},    // 10lux
-    {           347,                      8,           260,                      63,         2,         1},    // 5p03lux
-    {           197,                      8,           260,                      63,         3,         1},    // 2p5lux
-    {           129,                      8,           200,                      63,         3,         2},    // 1p25lux
-    {            88,                     19,           160,                      63,         3,         2},    // 0p62lux
-    {            72,                     19,           128,                      63,         3,         2},    // 0p31lux
-    {            64,                     19,           128,                      63,         3,         2},    // 0p1lux
-    {             0,                     19,           128,                      63,         3,         2},    // 0p01lux
+    //           ev, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx
+    {    29491,                     6 ,           511,                      63,         0,         0,             0,             0},    // 320lux
+    {     3534,                     8 ,           460,                      63,         0,         0,             1,             1},    // 40lux
+    {     1599,                     8 ,           350,                      63,         1,         0,             1,             1},    // 20lux
+    {      791,                     16,           271,                      63,         1,         1,             2,             1},    // 10lux
+    {      222,                     16,           165,                      63,         2,         1,             2,             1},    // 5p03lux
+    {      115,                     16,           135,                      63,         2,         1,             2,             1},    // 2p5lux
+    {       57,                     20,           101,                      63,         3,         1,             2,             1},    // 1p25lux
+    {       34,                     24,            62,                      63,         4,         2,             2,             1},    // 0p62lux
+    {       26,                     26,            50,                      63,         4,         2,             2,             1},    // 0p31lux
+    {       21,                     28,            40,                      63,         5,         2,             2,             1},    // 0p1lux
+    {       16,                     31,            25,                      63,         5,         2,             2,             1},    // 0p01lux
 };
+
+const _Sensor_WDR h63p_wdr_init = {
+    .wdr_bv           = {791, 1599, 3534,  7000, 10000, 14000, 28000, 56000},
+    .max_ns_slope     = {1.0,  1.0,  1.0,   1.0,  1.25,   1.5,   2.0,   3.0},
+    .max_shadow_slope = {1.0,  1.0,  1.0,   1.0,   1.0,  1.25,   1.5,   1.5},
+};
+
 const uint32 h63p_lsc_tbl[] = {
 0x0007560F, 0x00059D97, 0x0004A143, 0x00041113, 0x00041105, 0x00045D0D, 0x00057535, 0x0007358F, 0x00000216, 0x0007520D, 0x00059195, 0x00049942, 0x00041112, 0x00041D04, 0x0004690B, 0x00057534, 
 0x0007358F, 0x0000020C, 0x00073606, 0x00059192, 0x00049943, 0x00041510, 0x00041104, 0x0004690A, 0x00057135, 0x0007198C, 0x00000208, 0x00073202, 0x00059592, 0x00049D41, 0x00041D12, 0x00041D06, 
@@ -382,15 +420,62 @@ const _Sensor_LHS h63p_lhs_map[] = {
     {           296,           318,          340,                0,                       00}   // blue enhance,     range:
 };
 
-const _Sensor_YGAMMA h63p_ygamma_tbl[] = {
-    0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
-    0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
-    0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
-    0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
-    0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
-    0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
-    0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
-    0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0, 
+const _Sensor_YGAMMA h63p_ygamma_tbl[NUM_CURVES] = {
+    {
+     .bv = 200,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 500,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 1000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}},
+    {
+     .bv = 1500,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0, }},
+    {// 线性曲线，BV=500
+     .bv = 2000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}}
 };
 
 uint32 h63p_gainLevelTable[] = {
@@ -406,7 +491,7 @@ uint32 h63p_gainLevelTable[] = {
 };
 
 
-void h63p_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void h63p_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
 
     uint32 index        = 0;
@@ -445,6 +530,9 @@ const _Sensor_ISP_Init h63p_isp_init =
     .p_ccm        = (_Sensor_CCM    *)&h63p_ccm_init,
     .p_awb        = (_Sensor_AWB    *)&h63p_awb_init,
     .p_ae         = (_Sensor_AE     *)&h63p_ae_init,
+	.p_dpc        = (_Sensor_DPC    *)&h63p_dpc_init,
+	.p_csc        = (_Sensor_CSC    *)&h63p_csc_init,
+	.p_gic        = (_Sensor_GIC    *)&h63p_gic_init,
     .p_csupp      = (_Sensor_CSUPP  *)&h63p_csupp_init,
     .p_sharp      = (_Sensor_SHARP  *)&h63p_sharp_init,
     .p_yuvnr      = (_Sensor_YUVNR  *)&h63p_yuvnr_init,    
@@ -453,6 +541,7 @@ const _Sensor_ISP_Init h63p_isp_init =
     .p_lsc        = (_Sensor_LSC    *)&h63p_lsc_init,
     .p_lhs        = (_Sensor_LHS    *)h63p_lhs_map,
     .p_ygamma     = (_Sensor_YGAMMA *)h63p_ygamma_tbl,
+	.p_wdr        = (_Sensor_WDR    *)&h63p_wdr_init,
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ h63p_cmd= 

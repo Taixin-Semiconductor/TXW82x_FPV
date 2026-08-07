@@ -17,7 +17,7 @@
 #include "gen420_hardware_msi.h"
 #include "hal/jpeg.h"
 #include "video_msi.h"
-struct msi *scale3_normal_msi(const char *name, uint16_t ow, uint16_t oh);
+struct msi        *scale3_normal_msi(const char *name, uint16_t ow, uint16_t oh);
 extern struct msi *jpg_decode_msi(const char *name);
 extern struct msi *jpg_decode_msg_msi(const char *name, uint16_t out_w, uint16_t out_h, uint16_t step_w, uint16_t step_h, uint32_t filter);
 extern struct msi *jpg_thumb_msi_init(const char *msi_name, uint16_t filter, uint8_t thumb_stype);
@@ -36,13 +36,10 @@ static uint8_t     filter(void *f, uint8_t recv_type)
     return res;
 }
 
-
-
 static void takephoto_photo_init(const char *thumb_msi_name)
 {
     // 将AUTO_JPG绑定缩略图
     msi_add_output(NULL, AUTO_JPG, R_JPG_THUMB); // 拍照缩略图
-
 
     // 启动接收线程,这个主要是拍照用,获取到照片后,如果有缩略图需要,则会传输到下一个数据流
     struct msi *jpg_thumb_msi = jpg_thumb_msi_init(R_JPG_THUMB, FRAMEBUFF_SOURCE_CAMERA0, FSTYPE_NORMAL_THUMB_JPG);
@@ -54,8 +51,6 @@ static void takephoto_photo_init(const char *thumb_msi_name)
         msi_add_output(jpg_thumb_msi, NULL, R_FILE_MSI);
     }
 }
-
-
 
 static uint8_t filter_720P(void *f, uint8_t recv_type)
 {
@@ -73,15 +68,15 @@ static uint8_t filter_720P(void *f, uint8_t recv_type)
 static void takephoto_photo_720P_init(const char *thumb_msi_name)
 {
     // 将AUTO_JPG绑定缩略图
-    //msi_add_output(NULL, AUTO_JPG, R_JPG_THUMB); // 拍照缩略图
+    // msi_add_output(NULL, AUTO_JPG, R_JPG_THUMB); // 拍照缩略图
 
-    struct msi *scale3_msi = scale3_normal_msi(S_SCALE3_720P, 1280, 720);
+    struct msi *scale3_msi     = scale3_normal_msi(S_SCALE3_720P, 1280, 720);
     struct msi *gen420_jpg_msi = gen420_jpg_msi_init(SR_GEN420_720P_JPG, JPGID0, FSTYPE_GEN420_720P, JPG_LOCK_NORMAL_ENCODE, GEN420_QUEUE_JPEG, NULL, filter_720P);
-    
-    if(scale3_msi && gen420_jpg_msi)
+
+    if (scale3_msi && gen420_jpg_msi)
     {
-        msi_do_cmd(gen420_jpg_msi,MSI_CMD_JPG_RECODE,MSI_JPG_RECODE_FORCE_TYPE,FSTYPE_GEN420_720P);
-        msi_add_output(scale3_msi,NULL,gen420_jpg_msi->name);
+        msi_do_cmd(gen420_jpg_msi, MSI_CMD_JPG_RECODE, MSI_JPG_RECODE_FORCE_TYPE, FSTYPE_GEN420_720P);
+        msi_add_output(scale3_msi, NULL, gen420_jpg_msi->name);
         msi_add_output(gen420_jpg_msi, NULL, R_JPG_THUMB);
     }
     // 启动接收线程,这个主要是拍照用,获取到照片后,如果有缩略图需要,则会传输到下一个数据流
@@ -144,7 +139,7 @@ static void takephoto_thumb_init(const char *thumb_msi_name)
     }
 
     // 启动一个专门用yuv->gen420->mjpg的模块,这个模块会接收mjpg图片,并且通过filter函数决定是否转发
-    struct msi *gen420_jpg_msi = gen420_jpg_msi_init(R_GEN420_THUMB_JPG, JPGID0, FSTYPE_NORMAL_THUMB_JPG,JPG_LOCK_GEN420_THUBM_ENCODE, GEN420_QUEUE_THUMB_JPEG, NULL, filter);
+    struct msi *gen420_jpg_msi = gen420_jpg_msi_init(R_GEN420_THUMB_JPG, JPGID0, FSTYPE_NORMAL_THUMB_JPG, JPG_LOCK_GEN420_THUBM_ENCODE, GEN420_QUEUE_THUMB_JPEG, NULL, filter);
     if (gen420_jpg_msi && thumb_msi)
     {
         // 设置magic
@@ -164,6 +159,18 @@ void takephoto_720P_with_thumb_init(const char *thumb_msi_name)
 {
     takephoto_photo_720P_init(thumb_msi_name);
     takephoto_thumb_init(thumb_msi_name);
+}
+
+void common_takephoto_normal_init(const char *thumb_msi_name)
+{
+    takephoto_photo_init(thumb_msi_name);
+    takephoto_thumb_init(thumb_msi_name);
+}
+
+void common_takephoto_noraml_api(struct msi *jpg_normal_msi)
+{
+    msi_do_cmd(jpg_normal_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO_SETPATH, (uint32_t) "0:/IMG");
+    msi_do_cmd(jpg_normal_msi, MSI_CMD_JPG_THUMB, MSI_JPG_THUMB_TAKEPHOTO, 1);
 }
 
 #define MAX_USER_VIDEO_TX 16

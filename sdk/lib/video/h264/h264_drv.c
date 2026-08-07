@@ -36,6 +36,8 @@
 #define H264_I_ONLY         0
 #endif
 
+void h264_sema_up();
+
 volatile uint32_t h264_dev_num = 1;
 volatile struct	h264_cfg_t    enc_cfg;
 volatile struct h264_ctl_t	  enc_ctl;
@@ -97,12 +99,17 @@ void h264wq_sema_up()
  * 将传入的frame根节点下的buf池都送回空间池（free_tab）中
  */
 static bool free_get_node_list(volatile struct list_head *head,volatile struct list_head *free){
+	bool ret = 1;
+	uint32_t flags = disable_irq();
 	if(list_empty((struct list_head *)head)){
-		return 0;
+		ret = 0;
+		goto free_get_node_list_end;
 	}	
 
 	list_splice_init((struct list_head *)head,(struct list_head *)free);
-	return 1;
+	free_get_node_list_end:
+	enable_irq(flags);
+	return ret;
 }
 
 /**@brief 
@@ -175,28 +182,33 @@ static void set_frame_ready(h264_frame *hf){
  * 从空间池中提取一个节点，放到队列中，并将此节点作为返回值返回
  */
 static struct list_head *get_node(volatile struct list_head *head,volatile struct list_head *del){
+	struct list_head *ret = NULL;
+	uint32_t flags = disable_irq();
 	if(list_empty((struct list_head *)del)){
-		return 0;
+		goto get_node_end;
 	}
 
 	list_move((struct list_head *)del->next,(struct list_head *)head);
-
-	return head->next;				//返回最新的位置
+	ret = head->next;
+	get_node_end:
+	enable_irq(flags);
+	return ret;				//返回最新的位置
 }
 
 /**@brief 
  * 从当前使用的节点回放到消息池中
  */
 static bool put_node(volatile struct list_head *head,volatile struct list_head *del){
+	bool ret = 1;
+	uint32_t flags = disable_irq();
 	if(list_empty((struct list_head *)del)){
-		return 0;
+		ret = 0;
+		goto put_node_end;
 	}
-	uint32_t flags;
-	flags = disable_irq();
 	list_move(del->next,(struct list_head *)head);
+	put_node_end:
 	enable_irq(flags);
-
-	return 1;
+	return ret;
 }
 
 
@@ -218,23 +230,20 @@ void del_264_frame(volatile struct list_head* frame_list)
 
 	h264_frame* fl;
 	uint32_t flags;
+	flags = disable_irq();
 	if(list_empty((struct list_head *)frame_list) != TRUE){	
-		flags = disable_irq();
 		free_get_node_list(frame_list,&h264_free_tab);
 		fl = list_entry((struct list_head *)frame_list,h264_frame,list);
 		fl->usable = 0;
-		enable_irq(flags);
-		return;		
+		goto del_264_frame_end;
 
 	}else{
-		flags = disable_irq();
 		fl = list_entry((struct list_head *)frame_list,h264_frame,list);
 		fl->usable = 0;
-		enable_irq(flags);
-		return;
+		goto del_264_frame_end;
 	}
-
-
+	del_264_frame_end:
+	enable_irq(flags);
 }
 
 uint32 get_h264_node_len_new(void *get_f)
@@ -338,7 +347,7 @@ int del_h264_first_node(void *d)
 
 	uint8_t *h264_buf = get_h264_first_buf(get_f);
 	uint32_t h264_buf_node_len = get_h264_node_len_new((void *)get_f);
-	sys_dcache_clean_invalid_range((uint32_t *)h264_buf, h264_buf_node_len);
+	sys_dcache_invalid_range((uint32_t *)h264_buf, h264_buf_node_len);
 	put_node(&h264_free_tab,(struct list_head*)get_f);
 	
 	return 0;	
@@ -910,7 +919,8 @@ void dec_pic(struct str_info *str, struct h264_header *head)
 	syn_sign  = dec_glb(str, 0);    //first_mb_in_slice
 
 	syn_sign  = dec_glb(str, 0);    //slice_type
-	slice_type  = syn_sign;
+	//slice_type  = syn_sign;
+	slice_type = syn_sign % 5;
 	head->pic_slice_type = slice_type;
 
 	syn_sign  = dec_glb(str, 0);    //pps_id
@@ -1283,7 +1293,6 @@ void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, 
   }
   addr = get_addr(h264_module_p);
   h264_set_buf_addr(p_h264,addr);
-  //sys_dcache_clean_invalid_range((uint32_t *)addr, H264_NODE_LEN);
   h264_module_p = get_node(h264_module_p,&h264_free_tab);
   if(h264_module_p == NULL){
 	  _os_printf("need more node for new h264 frame start2\r\n");
@@ -1291,7 +1300,6 @@ void h264_start_enc_frm(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, 
   }  
   addr = get_addr(h264_module_p);   
   h264_set_buf_addr(p_h264,addr);
-  //sys_dcache_clean_invalid_range((uint32_t *)addr, H264_NODE_LEN);
 
   hf = list_entry((struct list_head *)h264_f_p,h264_frame,list);
   //hf->h264_num = frm_num;
@@ -1530,16 +1538,9 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 			}
 		}
 	}	
-	#if 0
-	if(penc_cfg->frm_height == 1088){
-		h264_set_wrap_img_size(p_h264,penc_cfg->frm_width,(penc_cfg->frm_height-8));
-	}else{
-		h264_set_wrap_img_size(p_h264,penc_cfg->frm_width,penc_cfg->frm_height);
-	}
-	#else
+
 	h264_set_wrap_img_size(p_h264,penc_cfg->wrap_width,penc_cfg->wrap_height);
-	#endif
-	h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+	
 	enc_ctl.bs_buf_id = 0;	
 	if(penc_cfg->src_from == GEN420_DATA)
 	{
@@ -1548,6 +1549,7 @@ void h264_frame_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 		wake_up_gen420_queue(1,get_vpp_psram_buf());
 	}else{
 		h264_cfg_srcdat(p_h264,penc_cfg->src_from);
+		h264_start_enc_frm(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
 	}	
 	_os_printf(KERN_DEBUG"Z%d",penc_cfg->src_from);
 
@@ -1602,6 +1604,7 @@ void h264_frame_done_norekick_isr(uint32 irq_flags, uint32 irq_data, uint32 para
 
 	if(h264_is_running(p_h264) == 0){
 		del_264_frame(h264_f_p);
+		h264_sema_up();
 		return;
 	}
 
@@ -1618,6 +1621,12 @@ void h264_frame_done_norekick_isr(uint32 irq_flags, uint32 irq_data, uint32 para
 			recfg_h264_new_grop[0] = 1; 	  //重新配置成I帧
 		}
 	}
+
+	if(recfg_h264_new_grop[0] == 1){
+		recfg_h264_new_grop[0] = 0;
+		penc_ctl->gop_frm_cnt = 0;
+	}
+	
 	penc_cfg->enc_runing = 0;
 	os_printf(KERN_DEBUG"Z%d",penc_cfg->src_from);
 	h264_sema_up();
@@ -1672,7 +1681,6 @@ void h264_buf0_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	}
 	addr = get_addr(h264_module_p);
 	h264_set_buf_addr(p_h264,addr);
-	//sys_dcache_clean_invalid_range((uint32_t *)addr, H264_NODE_LEN);
 	//_os_printf("B0");
 	enc_ctl.bs_buf_id = (penc_ctl->bs_buf_id + 1) & 0x01;	
 }
@@ -1689,7 +1697,6 @@ void h264_buf1_done_isr(uint32 irq_flags, uint32 irq_data, uint32 param){
 	}
 	addr = get_addr(h264_module_p);
 	h264_set_buf_addr(p_h264,addr);
-	//sys_dcache_clean_invalid_range((uint32_t *)addr, H264_NODE_LEN);
 	//_os_printf("B1");
 	enc_ctl.bs_buf_id = (penc_ctl->bs_buf_id + 1) & 0x01;	
 }
@@ -1747,7 +1754,7 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	enc_cfg.wrap_width      = w;
 	enc_cfg.wrap_height     = h;
 	enc_cfg.src_from        = src_from;
-	enc_cfg.enc_bps 		= 1500; //Kbit pre second
+	enc_cfg.enc_bps 		= 4000; //Kbit pre second
 	enc_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY 
 	enc_cfg.frm_gop 		= 1;	//IPPPP frame number of a gop
@@ -1857,8 +1864,8 @@ int h264_mem_init(uint8_t init,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_w,u
 			}
 			else
 			{
-				sys_dcache_clean_invalid_range((uint32_t *) h264_ref_lu_base_psram, lu_base_buf_size);
-				sys_dcache_clean_invalid_range((uint32_t *) h264_ref_ch_base_psram, ch_base_size);
+				sys_dcache_invalid_range((uint32_t *) h264_ref_lu_base_psram, lu_base_buf_size);
+				sys_dcache_invalid_range((uint32_t *) h264_ref_ch_base_psram, ch_base_size);
 			}
 		}
 
@@ -1885,8 +1892,8 @@ int h264_mem_init(uint8_t init,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_w,u
 			}
 			else
 			{
-				sys_dcache_clean_invalid_range((uint32_t *) h264_ref_lu_base_psram2, lu_base_buf_size);
-				sys_dcache_clean_invalid_range((uint32_t *) h264_ref_ch_base_psram2, ch_base_size);
+				sys_dcache_invalid_range((uint32_t *) h264_ref_lu_base_psram2, lu_base_buf_size);
+				sys_dcache_invalid_range((uint32_t *) h264_ref_ch_base_psram2, ch_base_size);
 			}
 		}
 
@@ -1899,7 +1906,7 @@ int h264_mem_init(uint8_t init,uint32_t drv1_w,uint32_t drv1_h,uint32_t drv2_w,u
 		}
 		else
 		{
-			sys_dcache_clean_invalid_range((uint32_t *) h264_room_psram, h264_room_size);
+			sys_dcache_invalid_range((uint32_t *) h264_room_psram, h264_room_size);
 		}
 	}
 	else
@@ -2032,7 +2039,7 @@ void h264_dec_intr_status(struct h264_device *p_h264,struct h264_ctl_t *dec_ctl)
 	//decoder used bitstream length check
 	hw_byte = h264_get_frame_len(p_h264);
 	hw_byte += h264_get_dec_del(p_h264);
-	if((hw_byte < (dec_ctl->bs_byte_limit -8)) || (hw_byte > dec_ctl->bs_byte_limit)) {
+	if((hw_byte < (dec_ctl->bs_byte_limit - 0x10)) || (hw_byte > dec_ctl->bs_byte_limit)) {
 		_os_printf("decoder stream length error.:%d  %d\n\r",hw_byte,dec_ctl->bs_byte_limit);
 	}		
 
@@ -2057,7 +2064,6 @@ void h264_dec_refbuf_set(struct h264_device *p_h264,uint32_t      buf_base, stru
   dec_ctl->ref_ch_end = ((dec_ctl->ref_ch_base + (max_luma_size>>1) + (24*dec_cfg->frm_width) + 4095) >> 12) << 12;  //4KB align
   dec_ctl->last_lpf_lu_base = dec_ctl->ref_lu_base;
   dec_ctl->last_lpf_ch_base = dec_ctl->ref_ch_base;
-
   //p_h264->REF_LU_ST_ADDR   = dec_ctl->ref_lu_base >> 12;
   //p_h264->REF_LU_ED_ADDR   = dec_ctl->ref_lu_end  >> 12;
   //p_h264->REF_CHRO_ST_ADDR = dec_ctl->ref_ch_base >> 12;
@@ -2077,7 +2083,7 @@ void h264_dec_src_room_set(struct h264_device *p_h264,uint32_t       buf_base, s
 	dec_ctl->ref_lu_end = ((buf_base + max_luma_size + (48*dec_cfg->frm_width) + 4095) >> 12) << 12;  //4KB align
 	dec_ctl->ref_ch_base= dec_ctl->ref_lu_end;
 	dec_ctl->ref_ch_end = ((dec_ctl->ref_ch_base + (max_luma_size>>1) + (24*dec_cfg->frm_width) + 4095) >> 12) << 12;  //4KB align
-	
+//	_os_printf("[%08x]h264_lu:%08x-%08x  ch:%08x-%08x\r\n",dec_cfg,dec_ctl->ref_lu_base,dec_ctl->ref_lu_end,dec_ctl->ref_ch_base,dec_ctl->ref_ch_end);
 	h264_set_ref_lu_addr(p_h264,dec_ctl->ref_lu_base,dec_ctl->ref_lu_end);
 	h264_set_ref_chro_addr(p_h264,dec_ctl->ref_ch_base,dec_ctl->ref_ch_end);
 }
@@ -2135,56 +2141,102 @@ struct	h264_header h264_head[3];
 struct	h264_cfg_t	dec_cfg[3];  
 struct	h264_ctl_t	dec_ctl[3];
 
-__psram_data uint8_t h264_1_room[100*1024] __aligned(4096);
-
+//__psram_data uint8_t h264_1_room[100*1024] __aligned(4096);
+uint8_t *h264_1_room;
 
 void h264_dec_room_init(uint8_t devnum,uint16_t drv2_w,uint16_t drv2_h){
 	uint8_t i = 0;
 	for(i = 0;i < devnum;i++){
-		h264_ref_memory_base[i] = H264_MALLOC((drv2_w*(drv2_h+48))+(drv2_w*(drv2_h+48))/2 + 4096 + 4096);
-		h264_ref_memory_base[i] = ((uint32_t)h264_ref_memory_base[i] + 0xfff) & (~0xfff); 
+		h264_ref_memory_base[i] = H264_MALLOC((drv2_w*(drv2_h+48))+(drv2_w*(drv2_h+48))/2 + 3*4096);
+		h264_ref_memory_base[i] = (uint8_t*)(((uint32_t)h264_ref_memory_base[i] + 0xfff) & (~0xfff)); 
+		//h264_ref_memory_base[i] = 0X40000000;
 	}
 }
 
+void get_h264_stream_w_h(uint16_t* w,uint16_t* h,uint8_t *h264data){
+	struct	str_info	h264_str; 
+	struct	h264_header h264_head;
 
+	h264_str.ptr = (uint8_t *)h264data;
+	nal_parse(&h264_str, &h264_head);	
+	*w = h264_head.sps_pic_width;
+	*h = h264_head.sps_pic_height;
+	return;
+}
 
+extern uint8_t h264_dec_sps_src_param(uint32 w, uint32 h, uint8_t *buf);
 void h264_dec_src_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_t devid){
 	//--- platform initial 
+	uint8_t spsbuf[20];
+	uint8_t spslen;
+	uint8_t onlysps = 0;
 	int32 ret;
+	uint8_t *psram_room;
 	uint8_t* 	mbs_ptr; //main bs ptr
+	
 	struct h264_device *p_h264;
 	p_h264 = (struct h264_device *)dev_get(HG_H264_DEVID);
 
+	//file_size = file_size-4;
+	//_os_printf("fs(%d)",file_size);
     mbs_ptr = src_file;   //文件地址	
 	//decoder reference frame addr setting
 
 	dec_cfg[devid].enc_mode  = 0;	  //0:dec, 1:enc  
 	dec_cfg[devid].frm_width = w; //maximal support x-pixel
 	dec_cfg[devid].frm_height= h;  //maximal support y-pixel
-	
+
+	if(src_file[4] == 0x67){
+		if(file_size > 50){      //单sps不可能大于50字节的,此时肯定是带上sps+pps+I帧的数据帧
+			onlysps = 0;
+		}else{
+			onlysps = 1;
+		}
+	}
+	psram_room = (uint8_t*)H264_MALLOC(file_size + 4096);
+	h264_1_room = (uint8_t*)(((uint32_t)psram_room + 0xfff) & (~0xfff)); 
 	h264_request_irq(p_h264,H264_FRAME_DONE,(h264_irq_hdl )&h264_frame_dec_done_isr,(uint32)p_h264);
 	while(1){
+		
 	    uint8_t      nal_type  ;
 	    uint32_t     nal_start   ; //nal bitstream start addr
 	    uint32_t     nal_length  ; //nal byte length
 	    
-
-
-	    mbs_ptr   = find_start_code(mbs_ptr); //find first 0x0000_0001    
-	    nal_start = (uint32_t) mbs_ptr - 4;        //return the 4byte "00000001"
-	    mbs_ptr   = find_start_code(mbs_ptr); //find second 0x0000_0001
-	    mbs_ptr   -= 4; 
-	    
-	    nal_length  = (uint32_t) mbs_ptr - nal_start;
+		
+		if(onlysps == 0){
+			if((mbs_ptr[4] == 0x67) ||(mbs_ptr[4] == 0x68)){                   //SPS
+				mbs_ptr   = find_start_code(mbs_ptr); //find first 0x0000_0001	  
+				nal_start = (uint32_t) mbs_ptr - 4; 	   //return the 4byte "00000001"
+				mbs_ptr   = find_start_code(mbs_ptr); //find second 0x0000_0001
+				mbs_ptr   -= 4;
+				nal_length = (uint32_t) mbs_ptr - nal_start;
+				//file_size = file_size-nal_length;
+			}else{
+				mbs_ptr   = find_start_code(mbs_ptr); 
+				nal_start = (uint32_t) mbs_ptr - 4;
+				nal_length = file_size;
+				
+			}
+		}else{
+			nal_start   = (uint32_t)src_file;
+			nal_length	= file_size;
+		}
+		
 //		if((mbs_ptr - src_file) > file_size-30000){
 //			break;
 //		}
 		
 	    //--- copy bitstream to BS buffer for decode
-
+	    //_os_printf("%08x  %08x  %d\r\n",h264_1_room,nal_start,nal_length);
 		hw_memcpy((void*) h264_1_room,(const void*) nal_start,nal_length);
 		sys_dcache_clean_range((uint32_t*)h264_1_room,nal_length);
-		
+#if VIDEO_YUV_RANGE_TYPE		
+		if(h264_1_room[4] == 0x67){
+			spslen = h264_dec_sps_src_param( w, h,(uint8_t*)spsbuf);
+			memcpy((void*) h264_1_room,(const void*)spsbuf,spslen);
+		}
+#endif	
+	
 		h264_str[devid].ptr = (uint8_t *)h264_1_room;
 		
 	    //decoder nal header
@@ -2240,7 +2292,11 @@ void h264_dec_src_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_
 		file_size -= nal_length;
 		
 		if(file_size == 0)   //sps+pps
+		{
+			H264_FREE(psram_room); 
 			return;
+		}
+			
 	}
 }
 
@@ -2253,16 +2309,22 @@ void h264_dec_nal_264(uint8 *src_file,uint32 file_size,uint32 w,uint32 h,uint32_
 	dec_cfg[devid].frm_height= h;  //maximal support y-pixel
 }
 
-void h264_frame_gen420_kick_run(struct h264_device *p_h264,uint32 addr){
+void h264_frame_gen420_kick_run(struct h264_device *p_h264,uint32 addr,uint16_t w,uint16_t h){
 	if(recfg_h264_new_grop[0] == 1){
 		recfg_h264_new_grop[0] = 0;
 		penc_ctl->gop_frm_cnt = 0;
 	}
+	//os_printf("w:%d   h:%d\r\n",w,h);
+	penc_cfg->wrap_width  = w;
+	penc_cfg->wrap_height = h;
+	penc_cfg->frm_width	  = (w+0xf)&(~0xf);
+	penc_cfg->frm_height  = (h+0xf)&(~0xf);	
 	h264_init(p_h264,H264_HARDWARE_CLK);
 	
 	if(penc_ctl->gop_frm_cnt == 0){
 		if(h264_cfg_modify((struct h264_cfg_t *)penc_cfg,1)){
 			h264_ini_recfg((struct h264_cfg_t *)penc_cfg,(struct h264_ctl_t *)penc_ctl,(struct h264_rc_ctl_t *)prc_ctl);
+			h264_ini_seting_cfg(p_h264,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl,1);
 		}
 	}
 
@@ -2284,7 +2346,8 @@ void h264_frame_gen420_kick_run(struct h264_device *p_h264,uint32 addr){
 	enc_ctl.bs_buf_id = 0;	
 	h264_open(p_h264);
 
-	wake_up_gen420_queue(1,addr);
+	wake_up_gen420_queue(1,(uint8_t*)addr);
+	
 
 }
 
@@ -2331,7 +2394,7 @@ int put_h264msg_to_queue(uint8_t type,uint32_t w,uint32_t h,uint32 data,uint32 l
 	enable_irq(flags);
 	
 	h264wq_sema_up();
-	return &wq->list;
+	return (int)&wq->list;
 }
 
 uint8_t h264msg_queue_done(uint32 list){
@@ -2340,7 +2403,7 @@ uint8_t h264msg_queue_done(uint32 list){
 	flags = disable_irq();
 	dlist = (struct list_head *)&h264_queue_head;
 	while(dlist->next != &h264_queue_head){
-		if(dlist->next == list){
+		if(dlist->next == (struct list_head *)list){
 			enable_irq(flags);
 			return 0;
 		}
@@ -2350,12 +2413,16 @@ uint8_t h264msg_queue_done(uint32 list){
 	return 1;
 }
 
+
+extern int scale2_cfg_run(uint8_t streamfrom,uint8_t id);
+extern volatile uint8_t scaler2_dev_id;
 void h264_wq_thread(){
 	int32 ret;
-	uint32_t flags;	
+	uint32_t flags;
 	struct list_head *dlist;
 	struct h264_msg_s* h264dev;	
 	struct h264_device *p_h264;
+
 	p_h264 = (struct h264_device *)dev_get(HG_H264_DEVID);	
 	while(1){
 		h264wq_sema_down(-1);
@@ -2374,15 +2441,21 @@ void h264_wq_thread(){
 					h264dev = list_entry((struct list_head *)dlist,struct h264_msg_s,list);
 					enable_irq(flags);
 					if(h264dev->type == 0){				//h264 enc
-						//os_printf("Enc\r\n");
-						h264_frame_gen420_kick_run(p_h264,h264dev->data);
+						h264_frame_gen420_kick_run(p_h264,h264dev->data,h264dev->w,h264dev->h);
 						ret = h264_sema_down(100);
 						if(ret == 0){
 							os_printf("enc error..\r\n");
 						}
 					}else{	
-						//_os_printf("Dec\r\n");              //h264 dec
-						h264_dec_src_264(h264dev->data,h264dev->len,h264dev->w,16*((h264dev->h + 15)/16) ,0);
+						//_os_printf("%s	%d\r\n",__func__,__LINE__);
+						scale2_cfg_run(H264_DEC,scaler2_dev_id);
+						h264_dec_src_264((uint8_t*)h264dev->data,h264dev->len,h264dev->w,16*((h264dev->h + 15)/16) ,0);
+
+						
+						//scale2_cfg_run(MJPEG_DEC,scaler2_dev_id);
+						//void jpg_decode_run(uint32_t addr);						
+						//jpg_decode_run(h264_1_room);
+						
 					}
 					flags = disable_irq();
 					list_del(&h264dev->list);
@@ -2397,7 +2470,7 @@ void h264_wq_thread(){
 	}
 }
 
-
+extern struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint16_t drv1_w, uint16_t drv1_h);
 void h264wq_queue_init(uint16_t w,uint16_t h){
 	//h264_drv_init();
 	h264wq_sema_init();
@@ -2407,3 +2480,74 @@ void h264wq_queue_init(uint16_t w,uint16_t h){
 	os_task_create("h264_thread", h264_wq_thread, NULL, OS_TASK_PRIORITY_HIGH, 0, NULL, 1024);
 }
 
+
+
+
+
+//gen420编码的接口
+int32_t h264_gen420_kick()
+{
+	struct h264_device *h264_dev;
+	h264_dev = (struct h264_device *)dev_get(HG_H264_DEVID);
+	extern void h264_cfg_srcdat(struct h264_device *p_h264,uint8_t mode);	
+	h264_cfg_srcdat(h264_dev,GEN420_DATA);
+	h264_start_enc_frm(h264_dev,(struct h264_cfg_t *)penc_cfg, (struct h264_ctl_t *)penc_ctl, (struct h264_rc_ctl_t *)prc_ctl);
+	return 0;
+}
+
+
+
+//解码封装的接口
+void sps_setting(struct str_info *str, struct h264_header *head, uint32_t w, uint32_t h)
+{
+    uint8_t spsbuf[20];
+    uint8_t spslen;
+    spslen   = h264_dec_sps_src_param(w, h, spsbuf);
+    str->ptr = spsbuf;
+    nal_parse(str, head);
+}
+
+void pps_setting(struct str_info *str, struct h264_header *head, uint8_t *pps, uint8_t len)
+{
+    uint8_t ppsbuf[20];
+    ppsbuf[0] = 0x00;
+    ppsbuf[1] = 0x00;
+    ppsbuf[2] = 0x00;
+    ppsbuf[3] = 0x01;
+    memcpy((void *) ppsbuf + 4, (const void *) pps, len);
+    str->ptr = ppsbuf;
+    nal_parse(str, head);
+}
+
+void cfg_setting(struct h264_device *p_h264, struct h264_header *head, struct h264_cfg_t *cfg, struct h264_ctl_t *ctl)
+{
+    if ((head->sps_pic_width > cfg->frm_width) || (head->sps_pic_height > cfg->frm_height))
+    {
+        _os_printf("frame x/y pixel size is too big.(%d  %d  === > %d  %d)\n\r", head->sps_pic_width, head->sps_pic_height, cfg->frm_width, cfg->frm_height);
+    }
+    ctl->frm_width     = head->sps_pic_width;  // should be 16*N
+    ctl->frm_height    = head->sps_pic_height; // should be 16*N
+    ctl->frm_luma_size = ctl->frm_width * ctl->frm_height;
+
+    ctl->timeout_limit = (ctl->frm_luma_size >> 8) * 512 * 2;
+    h264_dec_clr_enc_funcs(p_h264);
+    h264_set_mb_pipe(p_h264, ((502 - 2) << 16) | 502);
+
+    h264_set_timeout_limit(p_h264, (ctl->timeout_limit) >> 10);
+}
+
+void h264_decode_I_P_setting(struct str_info *str, struct h264_header *head, uint8_t *rom_ptr)
+{
+    str->ptr = rom_ptr;
+    nal_parse(str, head);
+}
+
+void h264_rom_memcpy(uint8_t *rom_ptr, uint8_t *data, uint32_t len)
+{
+    rom_ptr[0] = 0x00;
+    rom_ptr[1] = 0x00;
+    rom_ptr[2] = 0x00;
+    rom_ptr[3] = 0x01;
+    hw_memcpy((void *) rom_ptr + 4, (const void *) data, len);
+    sys_dcache_clean_range((uint32_t *) rom_ptr, len + 4);
+}

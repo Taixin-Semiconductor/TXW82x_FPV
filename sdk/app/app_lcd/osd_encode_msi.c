@@ -43,13 +43,11 @@ struct osd_encode_msi_s
 
 static int32 osd_enc_isr_msi(uint32 irq_flag, uint32 irq_data, uint32 param1)
 {
-    // struct lcdc_device *p_lcd = (struct lcdc_device *)irq_data;
     struct osd_encode_msi_s *osd_enc = (struct osd_encode_msi_s *)irq_data;
     struct osdenc_device *osd_enc_dev;
-    // stream *s = (stream*)lcd_s->encode_osd_s;
     struct msi *osd_enc_msi = (struct msi *)osd_enc->msi;
     osd_enc_dev = osd_enc->osd_enc_dev;
-    _os_printf("=");
+    // _os_printf("=");
     msi_do_cmd(osd_enc_msi, MSI_CMD_OSD_ENCODE, MSI_OSD_HARDWARE_ENCODE_SET_LEN, osd_enc_dlen(osd_enc_dev));
     msi_do_cmd(osd_enc_msi, MSI_CMD_OSD_ENCODE, MSI_OSD_HARDWARE_REAY_CMD, 1);
     return 0;
@@ -81,12 +79,13 @@ static int32 osd_encode_work(struct os_work *work)
                 if (data_s->data)
                 {
                     // 先清除cache
-                    sys_dcache_clean_invalid_range((uint32_t *)data_s->data, osd_encode->data_len);
+                    sys_dcache_invalid_range((uint32_t *)data_s->data, osd_encode->data_len);
                     // 拷贝数据
                     hw_memcpy_no_cache(data_s->data, (const void *)msi_do_cmd(osd_encode->msi, MSI_CMD_OSD_ENCODE, MSI_OSD_HARDWARE_ENCODE_BUF, 0), (uint32_t)osd_encode->data_len);
                     //sys_dcache_clean_range((uint32_t *)data_s->data, osd_encode->data_len);
                     // 数据类型保持一致
                     data_s->len = osd_encode->data_len;
+                    data_s->time = os_jiffies();
                     // os_printf("osd encode after len:%d\n",data_s->len);
                     // os_printf("encode spend time:%d\n",(uint32_t)os_jiffies()-osd_encode->start_time);
                     msi_output_fb(osd_encode->msi, data_s);
@@ -133,16 +132,14 @@ static int32 osd_encode_work(struct os_work *work)
                     }
                     osd_encode->osd_tmp_buf_size = osd_encode->parent_data_s->len;
                     // 先清除cache
-                    sys_dcache_clean_invalid_range((uint32_t *)osd_encode->osd_tmp_buf, osd_encode->osd_tmp_buf_size);
+                    sys_dcache_invalid_range((uint32_t *)osd_encode->osd_tmp_buf, osd_encode->osd_tmp_buf_size);
                 }
 
                 // 硬件模块开始被使用,标志置一下
                 msi_do_cmd(osd_encode->msi, MSI_CMD_OSD_ENCODE, MSI_OSD_HARDWARE_REAY_CMD, 0);
-                // stream_self_cmd_func(osd_encode->s,OSD_HARDWARE_REAY_CMD,0);
                 // 去压缩
                 osd_enc_addr(osd_encode->osd_enc_dev, (uint32)osd_encode->parent_data_s->data, (uint32)msi_do_cmd(osd_encode->msi, MSI_CMD_OSD_ENCODE, MSI_OSD_HARDWARE_ENCODE_BUF, 0));
                 osd_enc_src_len(osd_encode->osd_enc_dev, osd_encode->osd_tmp_buf_size);
-                // gpio_set_val(PA_15,1);
                 osd_encode->start_time = os_jiffies();
                 osd_enc_run(osd_encode->osd_enc_dev);
             }
@@ -209,7 +206,7 @@ static int32 osd_encode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1
         case MSI_CMD_TRANS_FB:
         {
             struct framebuff *fb = (struct framebuff *)param1;
-            if(fb->mtype != F_RGB)
+            if(fb->mtype != F_RGB || fb->srcID != FRAMEBUFF_SOURCE_OSD_ENC)
             {
                 ret = RET_ERR;
             }
@@ -267,6 +264,10 @@ static int32 osd_encode_msi_action(struct msi *msi, uint32 cmd_id, uint32 param1
                     // lcdc_osd_enc_start_run(osd_encode->osd_enc_dev, 0);
                     // workqueue停止
                     os_work_cancle2(&osd_encode->work, 1);
+                    break;
+
+                case MSI_OSD_ENC_MSI_ENABLE:
+                    osd_encode->msi->enable = arg;
                     break;
             }
         }

@@ -566,6 +566,19 @@ void lv_disp_set_rotation(lv_disp_t * disp, lv_disp_rot_t rotation)
     lv_disp_drv_update(disp, disp->driver);
 }
 
+
+void lv_disp_set_full_screen_rotation(lv_disp_t * disp, lv_disp_rot_t rotation, lv_coord_t hor_res, lv_coord_t ver_res)
+{
+    if(disp == NULL) disp = lv_disp_get_default();
+    if(disp == NULL) return;
+
+    disp->driver->rotated = rotation;
+    disp->driver->hor_res = hor_res;
+    disp->driver->ver_res = ver_res;
+
+    lv_disp_drv_update(disp, disp->driver);
+}
+
 /**
  * Get the current rotation of this display.
  * @param disp pointer to a display (NULL to use the default display)

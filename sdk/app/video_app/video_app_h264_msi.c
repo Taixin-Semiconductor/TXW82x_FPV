@@ -22,14 +22,14 @@ extern uint32  get_h264_w_h(void *d, uint16_t *w, uint16_t *h);
 #define SAVE_COUNT 4
 #endif
 
-#define USE_WORK   1
+#define USE_WORK  1
 #define MAX_BYTES 0
 
 #if VIDEO_YUV_RANGE_TYPE
 
 #undef MAX_BYTES
-#define MAX_BITS       160
-#define MAX_BYTES      (MAX_BITS / 8)
+#define MAX_BITS  160
+#define MAX_BYTES (MAX_BITS / 8)
 
 // 位缓冲区结构体
 typedef struct
@@ -62,13 +62,13 @@ int bit_buffer_append(BitBuffer *buffer, uint16_t bits, int bit_count, int paddi
 {
     if (bit_count < 1 || bit_count > 16)
     {
-        os_printf(KERN_ERR"err:bit_count must 1-16\n");
+        os_printf(KERN_ERR "err:bit_count must 1-16\n");
         return 0;
     }
 
     if (buffer->current_bit_pos + bit_count > MAX_BITS)
     {
-        printf(KERN_ERR"warning:buff full\n");
+        printf(KERN_ERR "warning:buff full\n");
         bit_count = MAX_BITS - buffer->current_bit_pos;
         if (bit_count <= 0)
         {
@@ -111,7 +111,7 @@ int bit_buffer_append(BitBuffer *buffer, uint16_t bits, int bit_count, int paddi
 
             if (buffer->current_bit_pos + bits_to_pad > MAX_BITS)
             {
-                //printf("warning:buff full when fill zero\n");
+                // printf("warning:buff full when fill zero\n");
                 bits_to_pad = MAX_BITS - buffer->current_bit_pos;
             }
 
@@ -125,7 +125,7 @@ int bit_buffer_append(BitBuffer *buffer, uint16_t bits, int bit_count, int paddi
                 buffer->current_bit_pos++;
             }
 
-            //printf("fill zero %d bit,make byte align\n", bits_to_pad);
+            // printf("fill zero %d bit,make byte align\n", bits_to_pad);
         }
     }
 
@@ -226,14 +226,14 @@ void    ue_se_enc(uint16 in_data)
     exp_out = (in_data & 0x1ff);
 }
 // main  1920 1080
-void h264_sps_gen_test(BitBuffer *buffer, uint16_t wrap_w, uint16_t wrap_h)
+void h264_sps_gen_test(BitBuffer *buffer, uint16_t wrap_w, uint16_t wrap_h, uint8_t fr)
 {
     uint8_t level_idc  = 52; // h264 0x50
     uint16  img_x      = wrap_w / 16;
     uint16  img_y      = (wrap_h + 0xf) / 16;
     uint8_t crop_en    = 0;
-    uint8_t crop_y     = (img_y*16 - wrap_h) / 2;
-    uint8_t full_range = 1;
+    uint8_t crop_y     = (img_y * 16 - wrap_h) / 2;
+    uint8_t full_range = fr;
 
     if (crop_y)
     {
@@ -771,8 +771,8 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint32_t drv1_
             if (drv1_from == GEN420_DATA)
             {
                 extern int32_t h264_gen420_kick();
-                uint32_t       gen_w = drv1_w ;
-                uint32_t       gen_h = drv1_h ;
+                uint32_t       gen_w = drv1_w;
+                uint32_t       gen_h = drv1_h;
                 ret                  = register_gen420_queue(GEN420_QUEUE_H264, gen_w, gen_h, h264_gen420_kick, NULL, (uint32) NULL);
                 if (!ret)
                 {
@@ -788,7 +788,6 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint32_t drv1_
                         drv1_w    = 0;
                         drv1_h    = 0;
                     }
-
                 }
             }
 
@@ -797,14 +796,14 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint32_t drv1_
             {
                 get_vpp_w_h(&drv1_w, &drv1_h);
             }
-            else if(drv1_from == VPP_DATA1)
+            else if (drv1_from == VPP_DATA1)
             {
                 get_vpp1_w_h(&drv1_w, &drv1_h);
             }
 
             h264_set_oe_select(video_h264->h264_dev, 0, 0);
             h264_enc(drv1_from, drv1_w, drv1_h, -1, 0, 0);
-            //h264_open(video_h264->h264_dev);
+            // h264_open(video_h264->h264_dev);
         }
         // 启动workqueue
         // 创建一个任务去做h264的工作
@@ -826,6 +825,17 @@ struct video_h264_msi_s
     struct fbpool       tx_pool;
 };
 
+#if VIDEO_YUV_RANGE_TYPE
+uint8_t h264_dec_sps_src_param(uint32 w, uint32 h, uint8_t *buf)
+{
+    BitBuffer buffer;
+    //uint32    itk;
+    buffer.current_bit_pos = 0;
+    h264_sps_gen_test(&buffer, w, h, 0);
+    memcpy(buf, buffer.data, buffer.current_bit_pos / 8);
+    return buffer.current_bit_pos / 8;
+}
+#endif
 /********************************************************************************************
  * I帧和P帧对应的位置图,主要通过寻找nal,定位pps和sps的起始位置并且记录
  * 实际内容也会记录,到终端可以采取是否直接读取结构体的pps和sps(尽量从结构体读取)
@@ -854,8 +864,8 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
     uint32_t timestamp;
     uint8_t  which;
     uint8_t  srcID;
-
-    uint8_t h264_type_frame;
+    uint16_t w, h;
+    uint8_t  h264_type_frame;
     node_len                = get_h264_node_len_new((void *) get_f);
     h264_len                = get_h264_len(get_f);
     timestamp               = get_h264_timestamp(get_f);
@@ -863,7 +873,8 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
     which                   = get_h264_which(get_f);
     srcID                   = get_h264_srcID(get_f);
     uint8_t           count = get_h264_loop_num(get_f);
-    struct framebuff *fb = NULL;
+    struct framebuff *fb    = NULL;
+    get_h264_w_h((void *) get_f, &w, &h);
 
     // 新的sps和pps的buf
 
@@ -872,15 +883,14 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
         goto h264_output_msi_end;
     }
 #if VIDEO_YUV_RANGE_TYPE == 1
-	uint16_t          w, h;
+
     BitBuffer buffer;
     // os_printf("h264_type_frame:%d\n", h264_type_frame);
     //  如果是I帧,就重新生成一下对应的sps和pps
     if (h264_type_frame == 1)
     {
-        get_h264_w_h((void *) get_f, &w, &h);
         buffer.current_bit_pos = 0;
-        h264_sps_gen_test(&buffer, w, h);
+        h264_sps_gen_test(&buffer, w, h, 1);
     }
 #endif
     fb = fbpool_get(&video_h264->tx_pool, 0, video_h264->msi);
@@ -895,13 +905,13 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
             goto h264_output_msi_end;
         }
         uint32_t reserve_len = 0;
-        
+
 #if VIDEO_YUV_RANGE_TYPE == 1
-		uint32_t skip_size;
+        uint32_t skip_size;
         if (h264_type_frame == 1)
         {
             uint8_t *new_sps_pps_buf = get_h264_first_buf(get_f);
-            
+
             skip_sps(new_sps_pps_buf, 128, &skip_size);
             if (skip_size)
             {
@@ -937,7 +947,7 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
         }
 
 #if VIDEO_YUV_RANGE_TYPE == 1
-        //skip_size代表找到sps,替换新的sps
+        // skip_size代表找到sps,替换新的sps
         if (h264_type_frame == 1 && skip_size)
         {
             os_memcpy(h264_buf, buffer.data, bit_buffer_get_used_bytes(&buffer));
@@ -947,8 +957,8 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
         // 264末尾加一个序号
         if (SAVE_COUNT > 0)
         {
-            os_sprintf((char *) h264_buf + h264_len, "%03d", count & 0xff);
-            h264_buf[h264_len + 3] = '#';
+            os_sprintf((char *) h264_buf + h264_len + reserve_len, "%03d", count & 0xff);
+            h264_buf[h264_len + reserve_len + 3] = '#';
         }
         sys_dcache_clean_range((uint32_t *) h264_buf, h264_len + SAVE_COUNT + reserve_len);
 
@@ -1011,6 +1021,8 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
             priv->type      = 1;
             priv->count     = count;
             priv->start_len = next_nal_buf - fb->data + pos + h264_nal_size;
+            priv->w         = w;
+            priv->h         = h;
             // os_printf("priv->start_len:%d\ttype:%d\n",priv->start_len,fb->data[priv->start_len]&0x1f);
             // os_printf("pps:%d\tsps:%d\n",pps_buf[0]&0x1f,sps_buf[0]&0x1f);
         }
@@ -1023,6 +1035,8 @@ static int8_t h264_output_msi(struct list_head *get_f, struct video_h264_msi_s *
             fb->priv                        = (void *) priv;
             priv->count                     = count;
             priv->start_len                 = pos + h264_nal_size;
+            priv->w                         = w;
+            priv->h                         = h;
         }
         //_os_printf("H%d", h264_type_frame);
         // 在msi_output_fb后,不要继续调用其他和msi有关的东西,因为有可能在这个之后,会释放对应的内存
@@ -1208,12 +1222,12 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint16_t drv1_
 {
     int                      ret = 0;
     uint8_t                  isnew;
-    struct msi              *msi        = msi_new(S_H264, 0, &isnew);
+    struct msi              *msi = msi_new(S_H264, 0, &isnew);
     struct video_h264_msi_s *video_h264;
 
     if (isnew)
     {
-        video_h264  = (struct video_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct video_h264_msi_s));
+        video_h264 = (struct video_h264_msi_s *) STREAM_LIBC_ZALLOC(sizeof(struct video_h264_msi_s));
         ASSERT(video_h264);
         msi->priv   = (void *) video_h264;
         msi->enable = 1;
@@ -1224,8 +1238,8 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint16_t drv1_
             if (drv1_from == GEN420_DATA)
             {
                 extern int32_t h264_gen420_kick();
-                uint32_t       gen_w = drv1_w ;
-                uint32_t       gen_h = drv1_h ;
+                uint32_t       gen_w = drv1_w;
+                uint32_t       gen_h = drv1_h;
                 ret                  = register_gen420_queue(GEN420_QUEUE_H264, gen_w, gen_h, h264_gen420_kick, NULL, (uint32) NULL);
                 if (!ret)
                 {
@@ -1241,7 +1255,6 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint16_t drv1_
                         drv1_w    = 0;
                         drv1_h    = 0;
                     }
-                    
                 }
             }
 
@@ -1250,18 +1263,17 @@ struct msi *h264_msi_init_with_mode_for_264wq(uint32_t drv1_from, uint16_t drv1_
             {
                 get_vpp_w_h(&drv1_w, &drv1_h);
             }
-            else if(drv1_from == VPP_DATA1)
+            else if (drv1_from == VPP_DATA1)
             {
                 get_vpp1_w_h(&drv1_w, &drv1_h);
             }
-
 
             h264_set_oe_select(video_h264->h264_dev, 0, 0);
             ret = h264_enc(drv1_from, drv1_w, drv1_h, -1, 0, 0);
 
             if (ret)
             {
-                if(video_h264)
+                if (video_h264)
                 {
                     STREAM_LIBC_FREE(video_h264);
                 }
@@ -1288,4 +1300,3 @@ h264_msi_init_with_mode_end:
     return msi;
 }
 #endif
-

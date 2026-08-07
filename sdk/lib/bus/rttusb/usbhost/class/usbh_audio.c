@@ -789,7 +789,7 @@ static rt_err_t rt_usbh_class_driver_audio_enable(void *arg)
 
     usbh_audio_list_module(audio_class);
 
-    audio_class->rx_buff = (rt_uint8_t *)rt_malloc(AUDIO_RX_PACKET_SIZE);
+    audio_class->rx_buff = (rt_uint8_t *)rt_malloc(AUDIO_RX_PACKET_SIZE + USB_RX_BUFF_RESERVE_SIZE);
     if(audio_class->rx_buff == RT_NULL) {
         os_printf("malloc rx_buff fail\n");
         return RT_ENOMEM;

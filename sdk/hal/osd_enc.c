@@ -5,6 +5,22 @@
 #include "devid.h"
 #include "hal/osd_enc.h"
 
+int32 osd_enc_suspend(struct osdenc_device *p_osd)
+{
+    if (p_osd && ((const struct osdenc_hal_ops *)p_osd->dev.ops)->suspend) {
+		return ((const struct osdenc_hal_ops *)p_osd->dev.ops)->suspend(p_osd);
+    }
+    return RET_ERR;
+}
+
+int32 osd_enc_resume(struct osdenc_device *p_osd)
+{
+    if (p_osd && ((const struct osdenc_hal_ops *)p_osd->dev.ops)->resume) {
+        return ((const struct osdenc_hal_ops *)p_osd->dev.ops)->resume(p_osd);
+    }
+    return RET_ERR;
+}
+
 int32 osd_enc_open(struct osdenc_device *p_osd)
 {
     if (p_osd && ((const struct osdenc_hal_ops *)p_osd->dev.ops)->open) {

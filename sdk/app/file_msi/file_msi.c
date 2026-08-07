@@ -42,7 +42,7 @@ static void file_thread(void *d)
             file_msg = (struct file_msg_s *) fb->priv;
             os_printf(KERN_INFO "file_msg->path:%s\tlen:%d\tishid:%d\n", file_msg->path,fb->len,file_msg->ishid);
             // 暂时没有考虑不存在是否需要创建文件夹
-            fp = osal_fopen_auto((const char*)file_msg->path, "wb", file_msg->ishid);
+            fp = osal_fopen_auto((const char*)file_msg->path, "w+", file_msg->ishid);
             if (fp)
             {
                 tmp_fb = fb;
@@ -120,7 +120,7 @@ struct msi *file_msi_init(const char *msi_name)
         file_s->msi = msi;
         msi->action = file_msi_action;
         msi->enable = 1;
-        OS_TASK_INIT("file_s_task", &file_s->task, file_thread, file_s, OS_TASK_PRIORITY_ABOVE_NORMAL, NULL, 1500);
+        OS_TASK_INIT("file_s_task", &file_s->task, file_thread, file_s, OS_TASK_PRIORITY_HIGH-1, NULL, 1500);
     }
 
     return msi;

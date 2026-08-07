@@ -165,11 +165,6 @@ void *_os_calloc_psram_t(int nmemb, int size, const char *func, int line);
 #define os_zalloc_psram(s)        _os_zalloc_psram_t(s, __FUNCTION__, __LINE__)
 #define os_realloc_psram(p,s)     _os_realloc_psram_t(p, s, __FUNCTION__, __LINE__)
 #define os_calloc_psram(p,s)      _os_calloc_psram_t(p, s, __FUNCTION__, __LINE__)
-#define av_malloc(s)              av_malloc_t(s, __FUNCTION__, __LINE__)
-#define av_free(p)                do{ av_free_t((void *)p, __FUNCTION__, __LINE__); (p)=NULL;}while(0)
-#define av_zalloc(s)              av_zalloc_t(s, __FUNCTION__, __LINE__)
-#define av_realloc(p,s)           av_realloc_t(p, s, __FUNCTION__, __LINE__)
-#define av_calloc(p,s)            av_calloc_t(p, s, __FUNCTION__, __LINE__)
 
 #define os_strcpy(d,s)            _os_strcpy((char *)(d), (const char *)(s))
 #define os_strncpy(d,s,n)         _os_strncpy((char *)(d), (const char *)(s), n)

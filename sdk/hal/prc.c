@@ -16,6 +16,24 @@ int32 prc_set_width(struct prc_device *p_prc, uint32 width)
     return RET_ERR;
 }
 
+int32 prc_suspend(struct prc_device *p_prc)
+{
+    if (p_prc && ((const struct prc_hal_ops *)p_prc->dev.ops)->suspend) {
+		return ((const struct prc_hal_ops *)p_prc->dev.ops)->suspend(p_prc);
+    }
+    return RET_ERR;
+}
+
+int32 prc_resume(struct prc_device *p_prc)
+{
+    if (p_prc && ((const struct prc_hal_ops *)p_prc->dev.ops)->resume) {
+        return ((const struct prc_hal_ops *)p_prc->dev.ops)->resume(p_prc);
+    }
+    return RET_ERR;
+}
+
+
+
 int32 prc_set_yuv_mode(struct prc_device *p_prc, uint32 mode)
 {
     if (p_prc && ((const struct prc_hal_ops *)p_prc->dev.ops)->ioctl) {

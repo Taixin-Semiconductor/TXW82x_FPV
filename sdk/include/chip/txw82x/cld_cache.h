@@ -75,7 +75,7 @@ typedef struct
 } DCACHE_CTRL_TypeDef;
 #define DCACHE_CTRL_BASE2        ((uint32_t)0x50000000)
 #define DCACHE_CTRL             ((DCACHE_CTRL_TypeDef *) DCACHE_CTRL_BASE2)
-
+/* THE memory is forced non-sec */
 #define DCACHE_MAINT_NO_SEC       ((uint32_t)0x00000004)
 
 
@@ -89,22 +89,29 @@ static inline uint32_t cld_cache_get_status(void)
     return DCACHE_CTRL->MAINT_STATUS;
 }
 
-/* TXW82x S_NS ONLY */
-#define CLD_INTR_NEST_MAINT_SUPPORT     0
-#if CLD_INTR_NEST_MAINT_SUPPORT
-#define CLD_CACHE_MAINT_OPT(opt)     do { uint32 __disable_irq(void); void __enable_irq(void); uint32 flag = __disable_irq(); do { DCACHE_CTRL->SECIRQSCLR = 0x8; opt; } while (DCACHE_CTRL->SECIRQSTAT & 0x8); if(!flag) __enable_irq(); } while(0)
-#else
-#define CLD_CACHE_MAINT_OPT(opt)     do { DCACHE_CTRL->SECIRQSCLR = 0x8; opt; } while(DCACHE_CTRL->SECIRQSTAT & 0x8)
-#endif
-#define CLD_CACHE_MAINT_OPT_WAIT()   do { while (cld_cache_is_ongoing_maint()); } while (0)
-
 static inline uint32_t cld_cache_is_maint_done(void)
 {
-    return (DCACHE_CTRL->SECIRQSTAT & 0x4);
+    return (0x4 == (DCACHE_CTRL->SECIRQSTAT & 0xC));
 }
+
+static inline uint32_t cld_cache_is_maint_ignore(void)
+{
+    return (DCACHE_CTRL->SECIRQSTAT & 0x8);
+}
+
 static inline void cld_cache_clr_maint_done(void)
 {
     DCACHE_CTRL->SECIRQSCLR = 0x4;
+}
+
+static inline void cld_cache_clr_maint_ignore(void)
+{
+    DCACHE_CTRL->SECIRQSCLR = 0x8;
+}
+
+static inline void cld_cache_clr_all_pending(void)
+{
+    DCACHE_CTRL->SECIRQSCLR = 0xFF;
 }
 
 static inline uint32_t cld_cache_is_enable(void)
@@ -132,49 +139,90 @@ static inline uint32_t cld_cache_is_ongoing_pwr_maint(void)
     return DCACHE_CTRL->MAINT_STATUS & DCACHE_STA_ONGOING_PWR_MAINT;
 }
 
+static inline uint32_t cld_cache_is_ongoing(void)
+{
+    return DCACHE_CTRL->MAINT_STATUS & (DCACHE_STA_ONGOING_PWR_MAINT | DCACHE_STA_ONGOING_MAINT | DCACHE_STA_ONGOING_EN);
+}
+
 static inline void cld_cache_force_write_through(void)
 {
     DCACHE_CTRL->CTRL |= 1UL << 1; 
 }
 
-static inline void cld_cache_enable(void)
-{
-    DCACHE_CTRL->CTRL |= 1UL << 0;// | 0x70000; 
-    while (cld_cache_is_ongoing_enable());
-}
+/* TXW82x S_NS ONLY */
+#define CLD_CACHE_MAINT_OPT_ATOMIC(opt)\
+    do {\
+        uint32 __disable_irq(void);\
+        void __enable_irq(void);\
+        uint32 flag = __disable_irq();\
+        cld_cache_clr_all_pending();\
+        opt;\
+        while (!cld_cache_is_maint_done());\
+        if(!flag) __enable_irq();\
+    } while (0);
 
-static inline void cld_cache_irq_enable(void)
-{
-    DCACHE_CTRL->SECIRQEN = 0x90;
-}
+#define CLD_CACHE_MAINT_OPT(opt)\
+    do {\
+        cld_cache_clr_all_pending();\
+        opt;\
+        while (!cld_cache_is_maint_done());\
+    } while (0);
+            
+#define CLD_CACHE_MAINT_OPT_WAIT()   //do { while (cld_cache_is_ongoing_maint()); } while (0)
 
-static inline void cld_cache_invalidate_all(void)
-{
-    DCACHE_CTRL->MAINT_CTRL_ALL = 0x2;
-    while (cld_cache_is_ongoing_maint());
-}
-
-static inline void cld_cache_disable(void)
-{
-    cld_cache_invalidate_all();
-
-    DCACHE_CTRL->CTRL &= ~(1UL << 0);
-    while (cld_cache_is_ongoing_enable());
-}
+#define CLD_CACHE_MAINT_FB_KICKOFF()\
+    do {\
+        extern uint32 psram_rsv_addr;\
+        CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_LINES = (psram_rsv_addr & 0xFFFFFFE0) | 0x2 | DCACHE_MAINT_NO_SEC;);\
+        *(uint32 volatile*)((uint32_t)psram_rsv_addr);\
+    } while(0)
 
 
 static inline void cld_cache_clean_all(void)
 {
-    DCACHE_CTRL->MAINT_CTRL_ALL = 0x1;
+    CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_ALL = 1;);
+}
+
+static inline void cld_cache_invalidate_all(void)
+{
+    CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_ALL = 2;);
+}
+
+static inline void cld_cache_clean_invalidate_all(void)
+{
+    CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_ALL = 3;);
+}
+
+static inline void cld_cache_disable(void)
+{
+    __DSB();
+
+    cld_cache_invalidate_all();
+
+    DCACHE_CTRL->CTRL &= ~(1UL << 0);
+    while (cld_cache_is_enable());
     while (cld_cache_is_ongoing_maint());
 }
 
+static inline void cld_cache_enable(void)
+{
+    cld_cache_disable();
+    /* deny powerdown \ enable nsec stat、 maintain lines */
+    DCACHE_CTRL->CTRL |= 1UL << 0 | 0x10 | 0x70000; 
+    while (!cld_cache_is_enable());
+
+}
+
+static inline void cld_cache_irq_enable(void)
+{
+    /* ONLY ERROR : XOM_ERR(not support) & TR_ERR */
+    DCACHE_CTRL->SECIRQEN = 0x90;
+}
 
 static inline void cld_cache_clean_line(uint32_t addr)
 {
-    CLD_CACHE_MAINT_OPT(DCACHE_CTRL->MAINT_CTRL_LINES = ((uint32_t)addr & (0xFFFFFFFF << 5)) | 0x1 | DCACHE_MAINT_NO_SEC;);
+    CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_LINES = ((uint32_t)addr & (0xFFFFFFFF << 5)) | 0x1 | DCACHE_MAINT_NO_SEC;);
     CLD_CACHE_MAINT_OPT_WAIT();
-     
 }
 
 
@@ -191,14 +239,13 @@ static inline void cld_cache_clean_range (uint32_t *addr, int32_t dsize)
     int32_t linesize = 32;
 
     op_addr |= 0x1 | DCACHE_MAINT_NO_SEC;
-    if (op_size < 32) op_size = 32;
 
     while (op_size > 0) {
-        CLD_CACHE_MAINT_OPT(DCACHE_CTRL->MAINT_CTRL_LINES = op_addr;);
-        op_addr += linesize;
-        op_size -= linesize;
+        CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_LINES = op_addr; op_addr += linesize; op_size -= linesize;);
         CLD_CACHE_MAINT_OPT_WAIT();
     }
+    __DSB();
+
 }
 
 
@@ -215,14 +262,13 @@ static inline void cld_cache_clean_invalid_range (uint32_t *addr, int32_t dsize)
     int32_t linesize = 32;
 
     op_addr |= 0x3 | DCACHE_MAINT_NO_SEC;
-    if (op_size < 32) op_size = 32;
 
     while (op_size > 0) {
-        CLD_CACHE_MAINT_OPT(DCACHE_CTRL->MAINT_CTRL_LINES = op_addr;);
-        op_addr += linesize;
-        op_size -= linesize;
+        CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_LINES = op_addr; op_addr += linesize; op_size -= linesize;);
         CLD_CACHE_MAINT_OPT_WAIT();
     }
+    __DSB();
+
 }
 
 /**
@@ -237,16 +283,17 @@ static inline void cld_cache_invalid_range (uint32_t *addr, int32_t dsize)
     uint32_t op_addr = (uint32_t)addr & (0xFFFFFFFF << 5);
     int32_t linesize = 32;
 
-    //!!! It also cannot start invalidate-only maintenance by S_NS
-    op_addr |= 0x2;
-    if (op_size < 32) op_size = 32;
+    op_addr |= 0x2 | DCACHE_MAINT_NO_SEC;
+
+    CLD_CACHE_MAINT_FB_KICKOFF();
 
     while (op_size > 0) {
-        CLD_CACHE_MAINT_OPT(DCACHE_CTRL->MAINT_CTRL_LINES = op_addr;);
-        op_addr += linesize;
-        op_size -= linesize;
+        CLD_CACHE_MAINT_OPT_ATOMIC(DCACHE_CTRL->MAINT_CTRL_LINES = op_addr; op_addr += linesize; op_size -= linesize;);
         CLD_CACHE_MAINT_OPT_WAIT();
     }
+    __DSB();
+
+    
 }
 
 static inline uint32_t cld_cache_get_nsec_hits(void)
@@ -260,19 +307,21 @@ static inline uint32_t cld_cache_get_nsec_miss(void)
 static inline void cld_cache_reset_profile(void)
 {
     DCACHE_CTRL->NSECSTATCTRL |= 0x2;
-//    DCACHE_CTRL->SECSTATCTRL |= 0x2;
+
 }
 
 static inline void cld_cache_enable_profile(void)
 {
+    while (cld_cache_is_ongoing());
+
     DCACHE_CTRL->NSECSTATCTRL |= 0x1;
-//    DCACHE_CTRL->SECSTATCTRL |= 0x1;
+
 }
 
 static inline void cld_cache_disable_profile(void)
 {
     DCACHE_CTRL->NSECSTATCTRL &= ~ 0x1;
-//    DCACHE_CTRL->SECSTATCTRL &= ~ 0x1;
+
 }
 
 

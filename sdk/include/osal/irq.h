@@ -17,10 +17,10 @@ struct sys_hwirq {
 };
 
 #ifdef CONFIG_SLEEP
-__dsleeptext void irq_enable(uint32 irq);
-__dsleeptext void irq_disable(uint32 irq);
-__dsleeptext uint32 disable_irq(void);
-__dsleeptext void enable_irq(uint32 flag);
+__dsleep_text void irq_enable(uint32 irq);
+__dsleep_text void irq_disable(uint32 irq);
+__dsleep_text uint32 disable_irq(void);
+__dsleep_text void enable_irq(uint32 flag);
 #else
 void irq_enable(uint32 irq);
 void irq_disable(uint32 irq);

@@ -8,20 +8,28 @@
 
 /* lens & sensor config information:
 - sensor      : gc2083
-- fstop       : 1.6
+- fstop       : 2.0
 - mclk        : 24MHz
-- max FPS     : 25
-- frame length: 1456
-- usage       : TEST
+- max FPS     : TBD
+- frame length: TBD
+- usage       : DRI
 - interface   : mipi 2 lane
 */
 
 #if DEV_SENSOR_GC2083
 
+#define GC2083_SENSOR_MIRROR_FLIP 0//
 
 SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
 {
-    #if 1// 2 LANE
+
+    //window size:1920x1080
+    //mclk=24mhz,mipi_rate=594Mbps/lane   PCLK=118.8M
+    //rowtime=29.62963us
+    //frame rate:25.00fps,
+    //hb=1100,vts=1323, hts=3520
+    //bayer mode:RGGB
+    /****system****/
     0x03, 0xfe, 0xf0,
     0x03, 0xfe, 0xf0,
     0x03, 0xfe, 0xf0,
@@ -30,13 +38,14 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x03, 0xf3, 0x00,
     0x03, 0xf4, 0x36,
     0x03, 0xf5, 0xc0,
-    0x03, 0xf6, 0x26, 
-    0x03, 0xf7, 0x01,
-    0x03, 0xf8, 0x3b, 
-    0x03, 0xf9, 0x43, 
-    0x03, 0xfc, 0x8e, 
-    0x03, 0x81, 0x07, 
-    0x00, 0xd7, 0x29, 
+    0x03, 0xf6, 0x44,  //24
+    0x03, 0xf7, 0x01, 
+    0x03, 0xf8, 0x63,  //34
+    0x03, 0xf9, 0x41,  //43
+    0x03, 0xfc, 0x8e,
+    0x03, 0x81, 0x07,
+    0x00, 0xd7, 0x29,
+    /****CISCTL & ANALOG****/
     0x0d, 0x6d, 0x18, 
     0x00, 0xd5, 0x03, 
     0x00, 0x82, 0x01, 
@@ -45,27 +54,28 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x0d, 0xb5, 0x96, 
     0x0d, 0x03, 0x02,
     0x0d, 0x04, 0x02,
-    0x0d, 0x05, 0x05,       // line length[13:8]
-    0x0d, 0x06, 0xb0,       // line length[07:0]
+    0x0d, 0x05, 0x05, 
+    0x0d, 0x06, 0x28,  //hb=1541 //1320
     0x0d, 0x07, 0x00,
-    0x0d, 0x08, 0x11,
+    0x0d, 0x08, 0x11,  //17
     0x0d, 0x09, 0x00, 
     0x0d, 0x0a, 0x02, 
     0x00, 0x0b, 0x00, 
     0x00, 0x0c, 0x02, 
     0x0d, 0x0d, 0x04, 
-    0x0d, 0x0e, 0x40, 
+    0x0d, 0x0e, 0x40,  //1088
     0x00, 0x0f, 0x07,
-    0x00, 0x10, 0x90,
+    0x00, 0x10, 0x90,  //1936
     0x00, 0x17, 0x0c, 
     0x0d, 0x73, 0x92, 
-    0x00, 0x76, 0x00,
     0x0d, 0x76, 0x00,
+    0x00, 0x76, 0x00,
+
     0x0d, 0x41, 0x04, 
-    0x0d, 0x42, 0x65,
+    0x0d, 0x42, 0x65,  //frame length 1125
     0x0d, 0x7a, 0x10, 
     0x0d, 0x19, 0x31, 
-    0x0d, 0x25, 0xcb,
+    0x0d, 0x25, 0xcb, 
     0x0d, 0x20, 0x60,
     0x0d, 0x27, 0x03,
     0x0d, 0x29, 0x60, 
@@ -81,11 +91,15 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x0d, 0xb6, 0x3d, 
     0x00, 0xd2, 0xbc, 
     0x0d, 0x66, 0x42,
-    0x00, 0x8c, 0x07, 
-    0x00, 0x8d, 0xff, 
-    0x00, 0x7a, 0x50, //global gain
+    0x00, 0x8c, 0x05,  //07
+    0x00, 0x8d, 0xa8, 
+
+    /*gain*/
+    0x00, 0x7a, 0x68, //global gain
     0x00, 0xd0, 0x00, 
     0x0d, 0xc1, 0x00, 
+
+    /*isp*/
     0x01, 0x02, 0xa9, //89
     0x01, 0x58, 0x00,
     0x01, 0x07, 0xa6,
@@ -118,6 +132,8 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x04, 0x3d, 0x62,
     0x04, 0x3e, 0x62,
     0x04, 0x3f, 0x62,
+
+    /*dark sun*/
     0x00, 0x77, 0x01,
     0x00, 0x78, 0x65,
     0x00, 0x79, 0x04,
@@ -128,6 +144,8 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x00, 0x57, 0x04,
     0x00, 0x5a, 0xff,
     0x00, 0x5b, 0x07,
+
+    /*blk*/
     0x00, 0x26, 0x01,
     0x01, 0x52, 0x02,
     0x01, 0x53, 0x50,
@@ -141,12 +159,16 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x04, 0x16, 0x6f,
     0x04, 0x17, 0x6f,
     0x04, 0xe0, 0x18,
+
+    /*window*/
     0x01, 0x92, 0x04,
-    0x01, 0x94, 0x04, 
+    0x01, 0x94, 0x04,
     0x01, 0x95, 0x04,
-    0x01, 0x96, 0x38, 
+    0x01, 0x96, 0x38,
     0x01, 0x97, 0x07,
-    0x01, 0x98, 0x80, 
+    0x01, 0x98, 0x80,
+
+    /****DVP & MIPI****/
     0x02, 0x01, 0x27, 
     0x02, 0x02, 0x53, //0x50 
     0x02, 0x03, 0xce, //0xb6//0x8e
@@ -156,214 +178,129 @@ SENSOR_INIT_SECTION const unsigned char GC2083InitTable[CMOS_INIT_LEN]=
     0x02, 0x15, 0x12,
     0x02, 0x29, 0x05, 
     0x02, 0x37, 0x03,
-    0x02, 0x3e, 0x9b, 
-    #else
-    0x03, 0xfe, 0xf0,
-    0x03, 0xfe, 0xf0,
-    0x03, 0xfe, 0xf0,
-    0x03, 0xfe, 0x00,
-    0x03, 0xf2, 0x00,
-    0x03, 0xf3, 0x00,
-    0x03, 0xf4, 0x36,
-    0x03, 0xf5, 0xc0,
-    0x03, 0xf6, 0x24, 
-    0x03, 0xf7, 0x01, 
-    0x03, 0xf8, 0x31, 
-    0x03, 0xf9, 0x43, 
-    0x03, 0xfc, 0xae, 
-    0x03, 0x81, 0x07, 
-    0x00, 0xd7, 0x17, 
-    0x0d, 0x6d, 0x18, 
-    0x00, 0xd5, 0x03, 
-    0x00, 0x82, 0x01, 
-    0x0d, 0xb3, 0xd4, 
-    0x0d, 0xb0, 0x0d, 
-    0x0d, 0xb5, 0x96, 
-    0x0d, 0x03, 0x02,
-    0x0d, 0x04, 0x02,
-    0x0d, 0x05, 0x06, 
-    0x0d, 0x06, 0xab, 
-    0x0d, 0x07, 0x00,
-    0x0d, 0x08, 0x11,
-    0x0d, 0x09, 0x00, 
-    0x0d, 0x0a, 0x02, 
-    0x00, 0x0b, 0x00, 
-    0x00, 0x0c, 0x02, 
-    0x0d, 0x0d, 0x04, 
-    0x0d, 0x0e, 0x40, 
-    0x00, 0x0f, 0x07,
-    0x00, 0x10, 0x90,
-    0x00, 0x17, 0x0c, 
-    0x0d, 0x73, 0x92, 
-    0x00, 0x76, 0x00,
-    0x0d, 0x76, 0x00,
-    0x0d, 0x41, 0x04, 
-    0x0d, 0x42, 0x65,
-    0x0d, 0x7a, 0x10, 
-    0x0d, 0x19, 0x31, 
-    0x0d, 0x25, 0xcb,
-    0x0d, 0x20, 0x60,
-    0x0d, 0x27, 0x03,
-    0x0d, 0x29, 0x60, 
-    0x0d, 0x43, 0x10, 
-    0x0d, 0x49, 0x10, 
-    0x0d, 0x55, 0x18,
-    0x0d, 0xc2, 0x44, 
-    0x00, 0x58, 0x3c, 
-    0x00, 0xd8, 0x68, 
-    0x00, 0xd9, 0x14, 
-    0x00, 0xda, 0xc1, 
-    0x00, 0x50, 0x18, 
-    0x0d, 0xb6, 0x3d, 
-    0x00, 0xd2, 0xbc, 
-    0x0d, 0x66, 0x42,
-    0x00, 0x8c, 0x05, 
-    0x00, 0x8d, 0xa8, 
-    0x00, 0x7a, 0x58, //global gain
-    0x00, 0xd0, 0x00, 
-    0x0d, 0xc1, 0x00, 
-    0x01, 0x02, 0xa9, //89
-    0x01, 0x58, 0x00,
-    0x01, 0x07, 0xa6,
-    0x01, 0x08, 0xa9,
-    0x01, 0x09, 0xa8,
-    0x01, 0x0a, 0xa7,
-    0x01, 0x0b, 0xff,
-    0x01, 0x0c, 0xff,
-    0x04, 0x28, 0x86,
-    0x04, 0x29, 0x86,
-    0x04, 0x2a, 0x86,
-    0x04, 0x2b, 0x68,
-    0x04, 0x2c, 0x68,
-    0x04, 0x2d, 0x68,
-    0x04, 0x2e, 0x68,
-    0x04, 0x2f, 0x68,
-    0x04, 0x30, 0x4f,
-    0x04, 0x31, 0x68,
-    0x04, 0x32, 0x67,
-    0x04, 0x33, 0x66,
-    0x04, 0x34, 0x66,
-    0x04, 0x35, 0x66,
-    0x04, 0x36, 0x66,
-    0x04, 0x37, 0x66,
-    0x04, 0x38, 0x62,
-    0x04, 0x39, 0x62,
-    0x04, 0x3a, 0x62,
-    0x04, 0x3b, 0x62,
-    0x04, 0x3c, 0x62,
-    0x04, 0x3d, 0x62,
-    0x04, 0x3e, 0x62,
-    0x04, 0x3f, 0x62,
-    0x00, 0x77, 0x01,
-    0x00, 0x78, 0x65,
-    0x00, 0x79, 0x04,
-    0x00, 0x67, 0xa0,
-    0x00, 0x54, 0xff,
-    0x00, 0x55, 0x02,
-    0x00, 0x56, 0x00,
-    0x00, 0x57, 0x04,
-    0x00, 0x5a, 0xff,
-    0x00, 0x5b, 0x07,
-    0x00, 0x26, 0x01,
-    0x01, 0x52, 0x02,
-    0x01, 0x53, 0x50,
-    0x01, 0x55, 0x93,
-    0x04, 0x10, 0x16,
-    0x04, 0x11, 0x16,
-    0x04, 0x12, 0x16,
-    0x04, 0x13, 0x16,
-    0x04, 0x14, 0x6f,
-    0x04, 0x15, 0x6f,
-    0x04, 0x16, 0x6f,
-    0x04, 0x17, 0x6f,
-    0x04, 0xe0, 0x18,
-    0x01, 0x92, 0x04,
-    0x01, 0x94, 0x04, 
-    0x01, 0x95, 0x04,
-    0x01, 0x96, 0x38, 
-    0x01, 0x97, 0x07,
-    0x01, 0x98, 0x80, 
-    0x02, 0x01, 0x27, 
-    0x02, 0x02, 0x53, //0x50 
-    0x02, 0x03, 0xce, //0xb6//0x8e
-    0x02, 0x04, 0x40,
-    0x02, 0x12, 0x07,
-    0x02, 0x13, 0x80, 
-    0x02, 0x15, 0x12,
-    0x02, 0x3e, 0x9a, //bit1 line_sync 
-    #endif
+    0x02, 0x3e, 0x99, 
+    //mirror flip
+    #if GC2083_SENSOR_MIRROR_FLIP
+    // 0x01, 0x99, 0x00,
+    0x00, 0x15, 0x03,
+    0x0d, 0x15, 0x03,
+	#endif
+
     0xff, 0xff, 0xff,
 };
 
 const _Sensor_CCM gc2083_ccm_init = {
-    // 5500k, gamma2p2
-    0x206,  0xf65,  0xfdc,
-    0xf2c,  0x211,  0xf32,
-    0xfcb,  0xfba,  0x20c,
-    0x001,  0x000,  0xfff,    
+
+	 272, -39, -17,
+	 7  , 331, -12,
+	-24, -36, 286,
+	 0  , 0  , 0  ,
 };
 
 const _Sensor_BLC gc2083_blc_init =
 {
-    16*16, 16*16, 16*16, 16*16,
+    // 251, 251, 251, 251,
+    62<<2, 62<<2, 62<<2, 62<<2,
 };
 
 const _Sensor_AWB gc2083_awb_init = 
 {
-    .default_gain   = {484, 256, 256, 432},
-    .awb_min_gain   = {328, 256, 256, 432},
-    .awb_max_gain   = {999, 256, 256, 999},
+    .default_gain   = {383, 256, 256, 478},
+    .awb_min_gain   = {305, 256, 256, 350},
+    .awb_max_gain   = {528, 256, 256, 650},
+
+    .coarse_constraint = {
+        .coarse_min_bg =  70,
+        .coarse_lb_bg  = 100,
+        .coarse_rt_bg  = 120,
+        .coarse_max_bg = 210,
+        .coarse_min_rg = 100,
+        .coarse_lb_rg  = 150,
+        .coarse_rt_rg  = 145,
+        .coarse_max_rg = 270,
+    },
 
     .constraint = {
-        .section_num = 5,      
-        .color_temp = { 7500, 6500, 5000, 4000, 2856, 0, 0, 0},
-        .sec_line_slope = {0.13043478,0.57894737,1.33333333,1.44897959,1.47058824, 0, 0, 0},
-        .sec_line_offset = {163.17391304,80.57894737,-59.33333333,-122.22448980,-233.47058824, 0, 0, 0},
-        .sec_line_sqrtk2add1 = {0.99160041,0.86542629,0.60000000,0.56800381,0.56231002, 0, 0, 0},
-        .center_line_slope = {-7.66666667,-0.78947368,-0.71428571,-0.68000000, 0, 0, 0},
-        .center_line_offset = {1169.00000000,261.21052632,249.85714286,243.96000000, 0, 0, 0},
-        .lower_line_slope = {14.39078405,-2.25188242,-0.71452001,-0.28621527, 0, 0, 0},
-        .lower_line_offset = {-1563.28659702,417.50036139,213.03116117,146.66110778, 0, 0, 0},
-        .upper_line_slope = {-2.76616134,-0.70016780,-0.71416035,-0.80835805, 0, 0, 0},
-        .upper_line_offset = {565.55747149,266.02684729,268.26565555,285.27022947, 0, 0, 0},
-        .corner_limit = {121.06719671,178.96528653,138.91600411,181.29339184,216.37689979,84.73073498,227.62310021,101.26926502},
+        .section_num = 4,
+        .color_temp = { 6500, 5000, 4000, 2856, 0, 0, 0, 0},
+        .sec_line_slope = {1.05882353, 1.28571429, 1.63157895, 1.62962963, 0, 0, 0, 0},
+        .sec_line_offset = {22.05882353, -48.71428571, -142.00000000, -240.37037037, 0, 0, 0, 0},
+        .sec_line_sqrtk2add1 = {0.68662353, 0.61394061, 0.52256206, 0.52301622, 0, 0, 0, 0},
+        .center_line_slope = {-0.94444444, -0.61111111, -0.61363636, 0, 0, 0, 0},
+        .center_line_offset = {292.50000000, 241.50000000, 241.93181818, 0, 0, 0, 0},
+        .lower_line_slope = {-4.95081397, -0.62333997, -0.18264122, 0, 0, 0, 0},
+        .lower_line_offset = {771.46450775, 202.34940780, 135.05015736, 0, 0, 0, 0},
+        .upper_line_slope = {-0.95003818, -0.60443022, -0.61363631, 0, 0, 0, 0},
+        .upper_line_offset = {313.94513029, 257.88437005, 259.53077303, 0, 0, 0, 0},
+        .corner_limit = {124.70064701, 154.09480271, 145.29935299, 175.90519729, 207.15475670, 97.21515907, 222.84524330, 122.78484093},
     },
+
+
 };
 
 const _Sensor_AE gc2083_ae_init = 
 {
-    .max_frame_length      = 1456,
+    .max_frame_length      = 1125,//1323,//
     .min_frame_vb          = 1,
-    .max_analog_gain       = 64<<8,
+    .max_analog_gain       = 24<<8,
     .min_analog_gain       = 1<<8,
-    .default_exposure_line = 1455,
-    .max_exposure_line     = 1455,
+    .default_exposure_line = 1124,//1322,//
+    .max_exposure_line     = 1124,//1322,//
     .min_exposure_line     = 1,
     .row_time_us           = 28,
     .expo_frame_interval   = 2,
+    .curr_fps              = 20 * 256,
     .to_day_bv             = 962,       // 10lux
     .to_night_bv           = 465,
-    .dark_scene_target_lut = {39, 58},
-    .dark_scene_bv_lut     = {156, 3877},
-    .hs_scene_limit_lut    = {59, 63},
-    .hs_scene_bv_lut       = {3877, 62422},
-    .lowlight_lsb_bv_lut   = {47, 94, 195, 381, 781, 1636, 3225, 1e30},
-    .lowlight_lsb_gain_lut = {16, 16,  16,  16,  16,   16,   16,   16},  // u7.4
+    .dark_scene_target_lut = {35, 55},
+    .dark_scene_bv_lut     = {34, 280},
+    .hs_scene_limit_lut    = {55, 58},
+    .hs_scene_bv_lut       = {280, 3534},
+    .lowlight_lsb_bv_lut   = {34, 115, 222, 400, 791, 1599, 3534,  1e30},
+    .lowlight_lsb_gain_lut = {64, 52,  46,   35,  25,  20,   16,   16},  // u7.4
 };
 
-const _Sensor_BV2NR gc2083_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
-    //           ev, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx
-    {      31355,                     14,           511,                      45,         0,         0},    // 320lux
-    {       3877,                     14,           407,                      45,         0,         0},    // 40lux
-    {       1958,                     14,           407,                      45,         0,         0},    // 20lux
-    {        962,                     14,           244,                      45,         0,         0},    // 10lux
-    {        465,                     16,           244,                      45,         1,         0},    // 5p03lux
-    {        228,                     16,           122,                      35,         2,         1},    // 2p5lux
-    {        156,                     16,            81,                      35,         2,         1},    // 1p25lux
-    {         78,                     18,            48,                      35,         3,         1},    // 0p62lux
-    {         39,                     18,            48,                      35,         3,         1},    // 0p31lux
-    {         10,                     18,            48,                      35,         4,         1},    // 0p1lux
-    {          2,                     31,            40,                      35,         5,         1},    // 0p01lux
+const _Sensor_DPC gc2083_dpc_init = 
+{
+    .static_psram_addr      = (uint32)0,
+    .white_threshold        = 115,
+    .black_threshold        = 115,
+    .white_threshold_min    = 30,
+    .black_threshold_min    = 30,
+    .sensitivity_value      = 128,
+    .dynamic_white_strength = 4,
+    .dynamic_black_strength = 4,
+};
+
+
+const _Sensor_GAMMA_BV gc2083_gamma_map = 
+{
+    .bv 		= { 15000,  8000,  3000, 1200,  600,  300, 200, 100, },
+    .y_alpha 	= {	  255,   255,   255,  192,  160,  128,  64,  32, },
+    .rgb_alpha 	= {   255,   255,   255,  192,  160,  128,  64,  32, },
+};
+
+const _Sensor_CSC gc2083_csc_init = 
+{
+    .rgb2yuv_gamut         = ISP_YUV_GAMUT_BT709,
+    .rgb2yuv_range         = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_in_gamut      = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_in_range      = ISP_YUV_RANGE_NARROW,
+    .yuv2rgb_out_gamut     = ISP_YUV_GAMUT_BT709,
+    .yuv2rgb_out_range     = ISP_YUV_RANGE_NARROW,
+    .y_gamma_alpha         = 0xff,
+    .rgb_gamma_alpha       = 0xff,
+    .gamma_alpha_map       = (void *)&gc2083_gamma_map,
+};
+
+
+const _Sensor_GIC gc2083_gic_init = 
+{
+    .w_thres  = 14,
+    .w_slope  = 16,
+    .w_str    = 127,
+    .mu_thres = 5,
+    .mu_slope = 16,
 };
 
 const _Sensor_CSUPP gc2083_csupp_init = {
@@ -380,63 +317,105 @@ const _Sensor_CSUPP gc2083_csupp_init = {
 };
 
 const _Sensor_SHARP gc2083_sharp_init = {
-    .filt_alpha      = 128,
-    .shrink_thr      = 0  ,
-    .filt_clip_hi    = 127,
-    .filt_clip_lo    = 127,
-    .sp_thr2 		 = 10 ,
-    .sp_thr1 	 	 = 5  ,
-    .enha_clip_hi 	 = 127,
-    .enha_clip_lo	 = 127, 
-    .e1				 = 5 ,
-	.e2				 = 10,
-	.e3				 = 15,	
-    .k0				 = 0,
-	.k1				 = 128,
-	.k2				 = 128,
-	.k3				 = 128,
-    .y1				 = 0,
-	.y2				 = 20,
-	.y3				 = 40,
-    .filt_w11		 = 7,
-	.filt_w12        = 9,
-	.filt_w13        = 10,
-    .filt_w21        = 9,
-	.filt_w22        = 12,
-	.filt_w23        = 13,
-    .filt_w31        = 10,
-	.filt_w32        = 13,
-	.filt_w33        = 16,
-    .filt_type       = 1,
-    .filt_sbit       = 8,
-    .lpf_scale		 = 1,
-    .strength_lut    = { 64, 128},
-    .strength_bv_lut = {369,1528},
+    .filt_alpha      = 128 ,
+    .shrink_thr      = 5   ,
+    .filt_clip_hi    = 127 ,
+    .filt_clip_lo    = 127 ,
+    
+    .sp_thr2 		 = 20  ,    
+    .sp_thr1 	 	 = 10  ,
+    .enha_clip_hi 	 = 127 ,
+    .enha_clip_lo	 = 127 ,
+    
+    .e1 = 8,  .e2 = 28, .e3 = 40,
+    .k0 = 96, .k1 = 32, .k2 = 32, .k3 = 16,
+    .y1 = 24,              // y1 = k0*e1
+    .y2 = 44,              // y2 = k1*e2 + (y1 - k1*e1) = k1 * (e2 - e1) + y1
+    .y3 = 56,              // y3 = k2*e3 + (y2 - k2*e2) = k2 * (e3 - e2) + y2
+
+    // --- Unsharp Mask ---
+    .filt_w11 = 7,  .filt_w12 = 9,  .filt_w13 = 10,
+    .filt_w21 = 9,  .filt_w22 = 11, .filt_w23 = 12,
+    .filt_w31 = 10, .filt_w32 = 12, .filt_w33 = 24,
+    .filt_type = 1,
+    .filt_sbit = 8,
+    .lpf_scale = 2,
+
+    // --- Sharpen Mask --- 
+    // .filt_w11 = -2,  .filt_w12 = -12, .filt_w13 = -19,
+    // .filt_w21 = -12, .filt_w22 = -24, .filt_w23 =  20,
+    // .filt_w31 = -19, .filt_w32 =  20, .filt_w33 = 196,
+    // .filt_type = 0,
+    // .filt_sbit = 8,
+    // .lpf_scale = 0,
+
+    // .filt_w11 = 0,  .filt_w12 = 0,  .filt_w13 = -1,
+    // .filt_w21 = 0,  .filt_w22 = -1, .filt_w23 = -2,
+    // .filt_w31 = -1, .filt_w32 = -2, .filt_w33 = 16,
+    // .filt_type = 0,
+    // .filt_sbit = 4,
+    // .lpf_scale = 0,
+
+    .strength_lut    = {32,  255},
+    .strength_bv_lut = {791, 9930},
 };
 
 const _Sensor_YUVNR gc2083_yuvnr_init = {
-    20,20,20,20,20,20,20,20,
-    205,255,0,
+    .y_thr_tal0 = 20,
+	.y_thr_tal1 = 20,
+	.y_thr_tal2 = 20,
+	.y_thr_tal3 = 20,
+	.y_thr_tal4 = 20,
+	.y_thr_tal5 = 20,
+	.y_thr_tal6 = 20,
+	.y_thr_tal7 = 20,
+	.y_alfa     = 205,
+	.c_alfa     = 255,
+	.y_win_size = 0,
+};
+
+const _Sensor_COLENH_BV gc2083_ce_map[BV2COLENH_ARRAY_NUM] = {
+    {.bv =    28000, .hue = 0, .luma = 50, .contrast = 60, .saturation = 150},
+    {.bv =    14000, .hue = 0, .luma = 50, .contrast = 59, .saturation = 140},
+    {.bv =    10000, .hue = 0, .luma = 50, .contrast = 58, .saturation = 130},
+    {.bv =     7000, .hue = 0, .luma = 50, .contrast = 57, .saturation = 120},
+    {.bv =     3534, .hue = 0, .luma = 50, .contrast = 55, .saturation = 110},
+    {.bv =     1599, .hue = 0, .luma = 50, .contrast = 53, .saturation = 100},
+    {.bv =      791, .hue = 0, .luma = 50, .contrast = 52, .saturation = 95},
+    {.bv =      115, .hue = 0, .luma = 50, .contrast = 50, .saturation = 90},
 };
 
 const _Sensor_COLENH gc2083_colenh_init = {
-    .yuv_range  = 1,
+    .yuv_range  = 0,
     .luma       = 50, // range: 0 ~ 100
     .contrast   = 50, // range: 0 ~ 100
     .saturation = 70, // range: 0 ~ 100
     .hue        = 0, // range: -180 ~ 180
-    .ce_in_ofs_y   = 128,
+    .ce_in_ofs_y   = 200,
     .ce_in_ofs_cb  = 128,
     .ce_in_ofs_cr  = 128, // range: -128 ~ 128
-    .ce_out_ofs_y  = 128, 
+    .ce_out_ofs_y  = 200, 
     .ce_out_ofs_cb = 128, 
     .ce_out_ofs_cr = 128, // range: -128 ~ 128
-    .adj_sat_by_bv = 1,
-    .hi_sat     = 70,
-    .lo_sat     = 50,
-    .hi_sat_bv  = 465, // high brightness for saturation
-    .lo_sat_bv  = 228, // low brightness for saturation
+    .adj_by_bv_en  = 1,
+    .bv2colenh_map = (void *)gc2083_ce_map,
 };
+// 1.0 - 0.01lux TBD
+const _Sensor_BV2NR gc2083_bv2nr_init[BV2RAWNR_ARRAY_NUM] = {
+    //        bv, bnr_range_weight_index, bnr_invksigma, bnr_intensity_threshold, yuvnr_idx, csupp_idx,  h264_3dnr_lev, h264_3dnr_en
+    {      29491,                     6 ,           511,                      63,         0,         0,         0,              0},    // 320lux
+    {       3534,                     8 ,           407,                      63,         0,         0,         1,              1},    // 40lux
+    {       1599,                     8 ,           271,                      63,         1,         0,         1,              1},    // 20lux
+    {        791,                     16,           271,                      63,         1,         1,         2,              1},    // 10lux
+    {        222,                     16,           135,                      48,         2,         1,         2,              1},    // 5p03lux
+    {        115,                     16,           135,                      48,         2,         1,         2,              1},    // 2p5lux
+    {         57,                     20,           101,                      32,         3,         1,         2,              1},    // 1p25lux
+    {         34,                     24,            62,                      32,         4,         1,         2,              1},    // 0p62lux
+    {         26,                     26,            50,                      32,         4,         1,         2,              1},    // 0p31lux
+    {         21,                     28,            40,                      32,         5,         2,         2,              1},    // 0p1lux
+    {         16,                     31,            25,                      32,         5,         2,         2,              1},    // 0p01lux
+};
+
 
 const uint32 gc2083_lsc_tbl[] = {
 //R channel
@@ -487,6 +466,87 @@ const uint32 gc2083_lsc_tbl[] = {
 
 const _Sensor_LSC          gc2083_lsc_init = {
     .p_lsc_tbl = (uint32 *)gc2083_lsc_tbl,
+};
+
+const _Sensor_LHS gc2083_lhs_map[] = {
+    // region defination: lower -> center -> upper(direction: anticlockwise)
+    // region_lower, region_center, region_upper, hue adjust value, saturation adjust value
+    //   (9 bits)      (9 bits)       (9 bits)          (9 bits)           (8 bits)
+    {            24,            52,           80,                0,                       0},  // magenta,          range: 28
+    {            80,           109,          138,                0,                       0},  // red,              range: 29
+    {           140,           171,          202,                0,                       0},  // yellow,           range: 31
+    {           204,           232,          260,                0,                       0},  // green,            range: 28
+    {           261,           289,          317,                0,                       0},  // cyan,             range: 28
+    {           320,           351,           22,                0,                       0},  // blue,             range: 31
+    {           109,           132,          156,                0,                       0},  // skin enhance,     range:
+    {           160,           203,          247,                0,                       0},  // green enhance(plants),    range:
+    {           296,           318,          340,                0,                       0}   // blue enhance,     range:
+};
+
+// 预设的Gamma曲线和对应的BV值
+const _Sensor_YGAMMA gc2083_ygamma_tbl[NUM_CURVES] = {
+    {// gamma2.4，BV=100
+     .bv = 200,
+     .packed_lut = {
+        0x08715C00, 0x0C62A887, 0x0F537CC6, 0x11C424F5, 0x13D4B51C, 0x15A5313D, 0x1755A15A, 0x18E60575, 
+        0x1A46658E, 0x1BA6BDA4, 0x1CE711BA, 0x1E1761CE, 0x1F37A9E1, 0x2057F1F3, 0x21583605, 0x22587615, 
+        0x2358B625, 0x2448F235, 0x25292E44, 0x26096652, 0x26E99E60, 0x27B9D66E, 0x288A0A7B, 0x295A3E88, 
+        0x2A1A6E95, 0x2ADA9EA1, 0x2B9ACEAD, 0x2C5AFEB9, 0x2D0B2AC5, 0x2DBB56D0, 0x2E6B82DB, 0x2F0BAEE6, 
+        0x2FBBDAF0, 0x305C02FB, 0x30FC2B05, 0x319C530F, 0x323C7B19, 0x32CCA323, 0x336CC72C, 0x33FCEB36, 
+        0x348D133F, 0x351D3748, 0x35AD5B51, 0x363D7F5A, 0x36CD9F63, 0x374DC36C, 0x37DDE774, 0x385E077D, 
+        0x38DE2785, 0x396E478D, 0x39EE6B96, 0x3A6E8B9E, 0x3ADEABA6, 0x3B5EC7AD, 0x3BDEE7B5, 0x3C5F07BD, 
+        0x3CCF23C5, 0x3D4F43CC, 0x3DBF5FD4, 0x3E2F7FDB, 0x3EAF9BE2, 0x3F1FB7EA, 0x3F8FD3F1, 0x3FFFEFF8, 
+}},
+    {// Gamma 2.2，BV=200
+     .bv = 500,
+     .packed_lut = {
+        0x04809000, 0x0871A848, 0x0B628087, 0x0DD32CB6, 0x1003BCDD, 0x11E43D00, 0x13A4B11E, 0x15451D3A, 
+        0x16C58154, 0x1825DD6C, 0x19863582, 0x1AC68998, 0x1BF6D9AC, 0x1D2725BF, 0x1E476DD2, 0x1F57B5E4, 
+        0x2067F9F5, 0x21683A06, 0x22687A16, 0x2358B626, 0x2448F235, 0x25292E44, 0x26096652, 0x26E99E60, 
+        0x27B9D26E, 0x288A0A7B, 0x295A3E88, 0x2A2A6E95, 0x2AEAA2A2, 0x2BAAD2AE, 0x2C6B02BA, 0x2D2B32C6, 
+        0x2DDB5ED2, 0x2E8B8EDD, 0x2F4BBAE8, 0x2FFBE6F4, 0x309C12FF, 0x314C3F09, 0x31EC6714, 0x329C931E, 
+        0x333CBB29, 0x33DCE333, 0x347D0B3D, 0x351D3347, 0x35AD5751, 0x364D7F5A, 0x36DDA364, 0x376DCB6D, 
+        0x380DEF76, 0x389E1380, 0x392E3789, 0x39BE5B92, 0x3A4E7F9B, 0x3ACEA3A4, 0x3B5EC7AC, 0x3BDEE7B5, 
+        0x3C6F0BBD, 0x3CEF2BC6, 0x3D7F4BCE, 0x3DFF6FD7, 0x3E7F8FDF, 0x3EFFAFE7, 0x3F7FCFEF, 0x3FFFEFF7, }},
+    {// Gamma 1.8，BV=300
+     .bv = 1000,
+     .packed_lut = {
+        0x06511400, 0x0951FC65, 0x0BB2A495, 0x0DB330BB, 0x0F83A8DB, 0x113418F8, 0x12B47D13, 0x1424DD2B, 
+        0x15853542, 0x16D58D58, 0x1815DD6D, 0x19462981, 0x1A667594, 0x1B86BDA6, 0x1C9701B8, 0x1DA745C9, 
+        0x1EA789DA, 0x1FA7C9EA, 0x209805FA, 0x21884609, 0x22787E18, 0x2358BA27, 0x2438F235, 0x25192A43, 
+        0x25F96251, 0x26C99A5F, 0x2799CE6C, 0x286A0279, 0x293A3686, 0x2A0A6693, 0x2ACA9AA0, 0x2B8ACAAC, 
+        0x2C4AFAB8, 0x2D0B2AC4, 0x2DCB5AD0, 0x2E7B86DC, 0x2F3BB6E7, 0x2FEBE2F3, 0x309C0EFE, 0x314C3B09, 
+        0x31FC6714, 0x32AC931F, 0x334CBF2A, 0x33FCE734, 0x349D133F, 0x354D3B49, 0x35ED6754, 0x368D8F5E, 
+        0x372DB768, 0x37CDDF72, 0x386E077C, 0x390E2F86, 0x399E5390, 0x3A3E7B99, 0x3ACEA3A3, 0x3B6EC7AC, 
+        0x3BFEEFB6, 0x3C9F13BF, 0x3D2F37C9, 0x3DBF5BD2, 0x3E4F83DB, 0x3EDFA7E4, 0x3F6FCBED, 0x3FFFEFF6, }},
+    {// Gamma 1.4，BV=400
+     .bv = 1500,
+     .packed_lut = {
+        0x02604C00, 0x04B0E426, 0x06E1744B, 0x08E1FC6E, 0x0AC2748E, 0x0C72E8AC, 0x0E2354C7, 0x0FB3BCE2, 
+        0x114420FB, 0x12C48114, 0x1434E12C, 0x15A53943, 0x16F5915A, 0x1835E56F, 0x19763583, 0x1AA68197, 
+        0x1BD6D1AA, 0x1D071DBD, 0x1E3769D0, 0x1F67B1E3, 0x2087FDF6, 0x21984608, 0x22B88A19, 0x23C8CE2B, 
+        0x24C9123C, 0x25C9524C, 0x26B98E5C, 0x27A9CA6B, 0x288A067A, 0x296A3E88, 0x2A3A7296, 0x2B0AAAA3, 
+        0x2BDADEB0, 0x2C9B0EBD, 0x2D6B42C9, 0x2E1B72D6, 0x2EDB9EE1, 0x2F8BCEED, 0x304BFAF8, 0x30EC2704, 
+        0x319C530E, 0x324C7F19, 0x32FCA724, 0x339CD32F, 0x344CFF39, 0x34ED2744, 0x358D4F4E, 0x363D7B58, 
+        0x36DDA363, 0x377DCB6D, 0x381DF377, 0x38BE1B81, 0x395E438B, 0x39FE6B95, 0x3A9E939F, 0x3B2EB7A9, 
+        0x3BCEDFB2, 0x3C6F07BC, 0x3CFF2FC6, 0x3D9F53CF, 0x3E3F7BD9, 0x3ECFA3E3, 0x3F6FC7EC, 0x3FFFEFF6, }},
+    {// 线性曲线，BV=500
+     .bv = 2000,
+     .packed_lut = {
+        0x01002000, 0x02006010, 0x0300A020, 0x0400E030, 0x05012040, 0x06016050, 0x0701A060, 0x0801E070, 
+        0x09022080, 0x0A026090, 0x0B02A0A0, 0x0C02E0B0, 0x0D0320C0, 0x0E0360D0, 0x0F03A0E0, 0x1003E0F0, 
+        0x11042100, 0x12046110, 0x1304A120, 0x1404E130, 0x15052140, 0x16056150, 0x1705A160, 0x1805E170, 
+        0x19062180, 0x1A066190, 0x1B06A1A0, 0x1C06E1B0, 0x1D0721C0, 0x1E0761D0, 0x1F07A1E0, 0x2007E1F0, 
+        0x21082200, 0x22086210, 0x2308A220, 0x2408E230, 0x25092240, 0x26096250, 0x2709A260, 0x2809E270, 
+        0x290A2280, 0x2A0A6290, 0x2B0AA2A0, 0x2C0AE2B0, 0x2D0B22C0, 0x2E0B62D0, 0x2F0BA2E0, 0x300BE2F0, 
+        0x310C2300, 0x320C6310, 0x330CA320, 0x340CE330, 0x350D2340, 0x360D6350, 0x370DA360, 0x380DE370, 
+        0x390E2380, 0x3A0E6390, 0x3B0EA3A0, 0x3C0EE3B0, 0x3D0F23C0, 0x3E0F63D0, 0x3F0FA3E0, 0x3FFFE3F0,}}
+};
+
+const _Sensor_WDR gc2083_wdr_init = {
+    .wdr_bv           = {791, 1599, 3534,  7000, 10000, 14000, 28000, 56000},
+    .max_ns_slope     = {1.0,  1.0,  1.0,   1.0,  1.25,   1.5,   2.0,   2.5},
+    .max_shadow_slope = {1.0,  1.0,  1.0,   1.0,   1.0,  1.25,   1.5,   1.5},
 };
 
 uint8 gc2083_regValTable[29][13] = {
@@ -555,7 +615,7 @@ uint32 gc2083_gainLevelTable[30] = {
     0xffffffff
 };
 
-void GC2083_ae_adjust(struct isp_ae_func_cfg *p_cfg)
+void GC2083_ae_adjust(struct isp_exposure_opt *p_cfg)
 {
     uint8 i;
     uint8 index         = 0;
@@ -645,12 +705,20 @@ const _Sensor_ISP_Init gc2083_isp_init =
     .p_ccm        = (_Sensor_CCM    *)&gc2083_ccm_init,
     .p_awb        = (_Sensor_AWB    *)&gc2083_awb_init,
     .p_ae         = (_Sensor_AE     *)&gc2083_ae_init,
+    .p_dpc        = (_Sensor_DPC    *)&gc2083_dpc_init,
+	.p_csc        = (_Sensor_CSC    *)&gc2083_csc_init,
+	.p_gic        = (_Sensor_GIC    *)&gc2083_gic_init,
     .p_csupp      = (_Sensor_CSUPP  *)&gc2083_csupp_init,
     .p_sharp      = (_Sensor_SHARP  *)&gc2083_sharp_init,
     .p_yuvnr      = (_Sensor_YUVNR  *)&gc2083_yuvnr_init,    
     .p_colenh     = (_Sensor_COLENH *)&gc2083_colenh_init,
     .p_bv2nr      = (_Sensor_BV2NR  *)gc2083_bv2nr_init,    
     .p_lsc        = (_Sensor_LSC    *)&gc2083_lsc_init,
+    .p_lhs        = (_Sensor_LHS    *)gc2083_lhs_map,
+    .p_ygamma     = (_Sensor_YGAMMA *)gc2083_ygamma_tbl,
+    .p_wdr        = (_Sensor_WDR    *)&gc2083_wdr_init,
+
+
 };
 
 SENSOR_OP_SECTION const _Sensor_Adpt_ gc2083_cmd = 

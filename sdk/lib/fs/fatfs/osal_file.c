@@ -30,7 +30,7 @@ uint32_t file_mode(const char *mode)
             flags |= FA_READ;
             break;
         case 'w':
-            flags |= FA_WRITE | FA_OPEN_ALWAYS;
+            flags |= FA_WRITE | FA_CREATE_ALWAYS;
             break;
         case 'a':
             flags |= FA_WRITE | FA_OPEN_APPEND;
@@ -40,13 +40,9 @@ uint32_t file_mode(const char *mode)
     }
 
     for (const char *p = mode + 1; *p; p++) {
-        switch (*p) {
-            case '+':
-                flags |= FA_READ | FA_WRITE;
-                break;
-            case 'x':
-                flags |= FA_CREATE_NEW;
-                break;
+        if(*p == '+')
+        {
+            flags |= FA_READ | FA_WRITE;
         }
     }
 
@@ -467,56 +463,79 @@ FRESULT osal_auto_create_dirs(const char *filepath, char *path,uint8_t ishid)
 
 FRESULT delete_directory_recursive(const TCHAR *path)
 {
-    FRESULT res;
-    DIR     dir;
-    FILINFO fno;
-
-    res = f_opendir(&dir, path);
-    if (res != FR_OK)
+    FRESULT res = 0;
+    uint8_t *dir_buf = (uint8_t *)(FILE_MALLOC(sizeof(DIR) + sizeof(FILINFO) + 256));
+    if (!dir_buf)
     {
-        return res;
+        res = FR_DENIED;
+        goto delete_directory_end;
     }
 
+    DIR *dir = (DIR *)dir_buf;
+    FILINFO *fno = (FILINFO *)(dir_buf + sizeof(DIR));
+    TCHAR *full_path = (TCHAR *)(dir_buf + sizeof(DIR) + sizeof(FILINFO));
+    
+    res = f_opendir(dir, path);
+    if (res != FR_OK)
+    {
+        goto delete_directory_end;
+    }
+    
     while (1)
     {
-        res = f_readdir(&dir, &fno);
-        if (res != FR_OK || fno.fname[0] == 0)
+        res = f_readdir(dir, fno);
+        if (res != FR_OK || fno->fname[0] == 0)
         {
             break;
         }
 
-        if (fno.fname[0] == '.')
-        {
+        // 检查是否是 "." (当前目录) 或 ".." (上级目录)
+        if ((fno->fname[0] == '.' && fno->fname[1] == '\0') || (fno->fname[0] == '.' && fno->fname[1] == '.' && fno->fname[2] == '\0')) {
             continue;
         }
 
-        TCHAR full_path[256];
-        sprintf(full_path, "%s/%s", path, fno.fname);
+        snprintf(full_path, 256, "%s/%s", path, fno->fname);
 
-        if (fno.fattrib & AM_DIR)
+        if (fno->fattrib & AM_DIR)
         {
             res = delete_directory_recursive(full_path);
             if (res != FR_OK)
             {
-                f_closedir(&dir);
-                return res;
+                f_closedir(dir);
+                goto delete_directory_end;
+            }
+            else
+            {
+                _os_printf("delete dir %s\r\n", full_path);
             }
         }
         else
         {
             res = f_unlink(full_path);
-            os_printf("delete file %s res = %d\r\n", full_path, res);
             if (res != FR_OK)
             {
-                f_closedir(&dir);
-                return res;
+                _os_printf("delete file %s, res: %d\r\n", full_path, res);
+                f_closedir(dir);
+                goto delete_directory_end;
+            }
+            else
+            {
+                _os_printf("delete file %s\r\n", full_path);
             }
         }
     }
 
-    f_closedir(&dir);
+    f_closedir(dir);
+    res = f_unlink(path);
 
-    return f_unlink(path);
+delete_directory_end:
+
+    if(dir_buf)
+    {
+        FILE_FREE(dir_buf);
+    }
+
+    return res;
 }
 
 FRESULT osal_unlink_dir(const TCHAR *path, uint8_t force)

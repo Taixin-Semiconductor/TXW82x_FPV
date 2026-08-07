@@ -7,6 +7,7 @@
 #include "stream_define.h"
 #include "user_work/user_work.h"
 #include "lib/video/dvp/jpeg/jpg_common.h"
+#include "lib/video/vpp/vpp_dev.h"
 
 // data申请空间函数
 #define STREAM_MALLOC av_psram_malloc
@@ -23,14 +24,7 @@
 #else
 #define AUTO_JPG_COUNT 10
 #endif
-
-#ifndef SCALE_W
-#define SCALE_W 1280
-#endif
-
-#ifndef SCALE_H
-#define SCALE_H 720
-#endif
+extern uint8_t get_vpp_scale_w_h(uint16_t *w, uint16_t *h);
 
 struct auto_jpg_msi_s
 {
@@ -38,9 +32,7 @@ struct auto_jpg_msi_s
     struct msi    *msi;
     struct msi    *register_jpg_msi; // 注册的jpg的msi
     uint16_t       w, h;
-    uint8_t        src_from;
-    uint8_t        stop;
-    uint8_t        which_jpg;
+    uint8_t        src_from : 3, stop : 1, which_jpg : 1, rev : 3;
 };
 
 static int32 auto_jpg_work(struct os_work *work)
@@ -48,6 +40,7 @@ static int32 auto_jpg_work(struct os_work *work)
     uint8_t                last_value;
     int32_t                ret;
     uint8_t                delay_time = 40;
+    uint8_t                stop       = 0;
     struct auto_jpg_msi_s *auto_jpg   = (struct auto_jpg_msi_s *) work;
     // 这里尝试发送数据?检查一下是否有接收的msi,如果有接收的msi,则启动mjpeg,如果没有,则将硬件停下来?
     uint32_t               send_count = msi_output_fb(auto_jpg->msi, NULL);
@@ -64,19 +57,38 @@ static int32 auto_jpg_work(struct os_work *work)
             if (last_value != JPG_LOCK_ENCODE || auto_jpg->stop == 1)
             {
                 // 关闭mjpeg
-                msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 0);
-                msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_NODE_COUNT, AUTO_JPG_COUNT);
+
                 if (auto_jpg->src_from == SCALER_DATA)
                 {
-                    msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_SET_SCALE1_TYPE, 0);
-                    msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_MSG, auto_jpg->w << 16 | auto_jpg->h);
-                }
 
-                // 切回到默认源头
-                msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_FROM, auto_jpg->src_from);
-                // 重新启动mjpg
-                msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 1);
-                auto_jpg->stop = 0;
+                    ret = get_vpp_scale_w_h(&auto_jpg->w, &auto_jpg->h);
+                    if (!ret)
+                    {
+                        msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 0);
+                        msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_NODE_COUNT, AUTO_JPG_COUNT);
+                        set_vpp_scale_w_h(1, auto_jpg->w, auto_jpg->h);
+                        msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_SET_SCALE1_TYPE, 0);
+                        msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_SET_SCALE1_AUTO_FLAG, 1);
+                        msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_MSG, auto_jpg->w << 16 | auto_jpg->h);
+                    }
+                    else
+                    {
+                        stop = 1;
+                    }
+                }
+                else
+                {
+                    msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 0);
+                    msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_NODE_COUNT, AUTO_JPG_COUNT);
+                }
+                if (!stop)
+                {
+                    // 切回到默认源头
+                    msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_FROM, auto_jpg->src_from);
+                    // 重新启动mjpg
+                    msi_do_cmd(auto_jpg->register_jpg_msi, MSI_CMD_JPEG_CONCAT, MSI_JPEG_START, 1);
+                    auto_jpg->stop = 0;
+                }
             }
             // 解锁,可以被其他线程打断使用,因为这个是从VPP_DATA0,可以被其他线程打断使用完再恢复，
             // 这样只是丢部分帧,但是可以复用mjpg
@@ -178,23 +190,11 @@ static int32_t auto_jpg_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t pa
     }
     return ret;
 }
-extern uint8_t get_vpp_scale_w_h(uint16_t *w, uint16_t *h);
-struct msi    *auto_jpg_msi_init(const char *auto_jpg_name, uint8_t which_jpg, uint8_t src_from)
+
+struct msi *auto_jpg_msi_init(const char *auto_jpg_name, uint8_t which_jpg, uint8_t src_from)
 {
     uint8_t     isnew;
-    uint16_t    w, h;
-    int         ret = 0;
-    struct msi *msi = NULL;
-    // 绑定jpg的msi,这个size不重要(除非是scale的size)
-    if (src_from == SCALER_DATA)
-    {
-        ret = get_vpp_scale_w_h(&w, &h);
-    }
-    if (ret)
-    {
-        os_printf(KERN_ERR "%s src_from err ret:%d\n", __FUNCTION__, ret);
-        goto auto_jpg_msi_init_end;
-    }
+    struct msi *msi                 = NULL;
     msi                             = msi_new(auto_jpg_name, 0, &isnew);
     struct auto_jpg_msi_s *auto_jpg = (struct auto_jpg_msi_s *) msi->priv;
     if (isnew)
@@ -206,10 +206,10 @@ struct msi    *auto_jpg_msi_init(const char *auto_jpg_name, uint8_t which_jpg, u
         auto_jpg->src_from         = src_from;
         auto_jpg->stop             = 1;
         auto_jpg->which_jpg        = which_jpg;
-        auto_jpg->w                = w;
-        auto_jpg->h                = h;
+        auto_jpg->w                = 0;
+        auto_jpg->h                = 0;
         // w和h在vpp_data0和vpp_data1的时候是没有作用的
-        auto_jpg->register_jpg_msi = jpg_concat_msi_init_start(auto_jpg->which_jpg, w, h, NULL, auto_jpg->src_from, 0);
+        auto_jpg->register_jpg_msi = jpg_concat_msi_init_start(auto_jpg->which_jpg, 0, 0, NULL, auto_jpg->src_from, 0);
         if (auto_jpg->register_jpg_msi)
         {
             msi_add_output(auto_jpg->register_jpg_msi, NULL, msi->name);

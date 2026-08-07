@@ -10,7 +10,7 @@
 static ucdc_data_t cdc_d;
 static rt_event_t cdc_data_event;
 uint8_t buff_out[64] __attribute__((aligned(4)));
-uint8_t buff_in[64] __attribute__((aligned(4)));
+uint8_t buff_in[64 + USB_RX_BUFF_RESERVE_SIZE] __attribute__((aligned(4)));
 #endif
 
 static struct uclass_driver cdc_driver;
@@ -201,7 +201,6 @@ static rt_err_t rt_usbh_get_CDC_interface_descriptor(ucfg_desc_t cfg_desc, int n
 
 int32 demo_atcmd_cdc_trans_ctrl(const char *cmd, char *argv[], uint32 argc)
 {
-    int indx = 0;
     if(*argv[0] == '1') {
         rt_usbh_cdc_trans_init();
     } else if(*argv[0] == '2') {
@@ -226,20 +225,24 @@ void rt_usbh_cdc_trans_deinit()
 }
 
 
-static rt_err_t rt_usbh_cdc_communication_thread(void* arg)
+static void rt_usbh_cdc_communication_thread(void* arg)
 {
     int i;
     struct uhintf **intf = arg;
-    uhcd_t hcd = NULL;
-    uintf_desc_t intf_desc;
+    // uhcd_t hcd = NULL;
+    // uintf_desc_t intf_desc;
     int timeout = USB_TIMEOUT_BASIC;
     rt_uint32_t e;
-    struct usb_cdc_line_coding line_coding;
-
+    struct usb_cdc_line_coding *line_coding = (struct usb_cdc_line_coding *)rt_malloc(sizeof(struct usb_cdc_line_coding) + USB_RX_BUFF_RESERVE_SIZE);
+    if(line_coding == RT_NULL)
+    {
+        rt_kprintf("rt_usbh_cdc_communication_thread malloc line_coding failed\n");
+        goto __exit;
+    }
     os_printf("rt_usbh_cdc_communication_thread arg:%x\n",arg);
 
     cdc_d->thread_state = 1;
-    cdc_d->line_coding = &line_coding;
+    cdc_d->line_coding = line_coding;
 
     while(1)
     {
@@ -263,23 +266,23 @@ static rt_err_t rt_usbh_cdc_communication_thread(void* arg)
 
         os_printf("cdc translate strat\n");
 
-        memset(&line_coding, 0, sizeof(struct usb_cdc_line_coding));
-        rt_usbh_cdc_get_line_coding(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, &line_coding);
-        analysis_cdc_line_coding(&line_coding);
+        memset(line_coding, 0, sizeof(struct usb_cdc_line_coding));
+        rt_usbh_cdc_get_line_coding(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, line_coding);
+        analysis_cdc_line_coding(line_coding);
 
-        line_coding.dwDTERate = BAUD_RATE_2000000;
-        line_coding.bCharFormat = STOP_BITS_1;
-        line_coding.bParityType = PARITY_NONE;
-        line_coding.bDataBits = DATA_BITS_8;
+        line_coding->dwDTERate = BAUD_RATE_2000000;
+        line_coding->bCharFormat = STOP_BITS_1;
+        line_coding->bParityType = PARITY_NONE;
+        line_coding->bDataBits = DATA_BITS_8;
 
-        rt_usbh_cdc_set_line_coding(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, &line_coding);
-        analysis_cdc_line_coding(&line_coding);
+        rt_usbh_cdc_set_line_coding(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, line_coding);
+        analysis_cdc_line_coding(line_coding);
 
-        memset(&line_coding, 0, sizeof(struct usb_cdc_line_coding));
-        rt_usbh_cdc_get_line_coding(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, &line_coding);
+        memset(line_coding, 0, sizeof(struct usb_cdc_line_coding));
+        rt_usbh_cdc_get_line_coding(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, line_coding);
 
         rt_usbh_cdc_set_control_line_state(intf[0]->device, intf[0]->intf_desc->bInterfaceNumber, RT_NULL, 0);
-        analysis_cdc_line_coding(&line_coding);
+        analysis_cdc_line_coding(line_coding);
 
         if(cdc_d->pipe_in == RT_NULL && cdc_d->pipe_out == RT_NULL)
         {
@@ -291,7 +294,7 @@ static rt_err_t rt_usbh_cdc_communication_thread(void* arg)
                 if(ep_desc == RT_NULL)
                 {
                     rt_kprintf("rt_usb_get_endpoint_descriptor error\n");
-                    return -RT_ERROR;
+                    return ;
                 }
                 analysis_usb_ep_desc(ep_desc); //获取端点描述符 打印端点描述符信息
                 /* the endpoint type of mass storage class should be BULK */
@@ -300,7 +303,7 @@ static rt_err_t rt_usbh_cdc_communication_thread(void* arg)
                 
                 if (rt_usb_hcd_alloc_pipe(intf[0]->device->hcd, &pipe, intf[0]->device, ep_desc) != RT_EOK) {
                     rt_kprintf("alloc pipe failed\n");
-                    return -RT_ERROR;
+                    return ;
                 }
     
                 rt_usb_instance_add_pipe(intf[0]->device, pipe);
@@ -344,10 +347,16 @@ static rt_err_t rt_usbh_cdc_communication_thread(void* arg)
 
 __exit:
 
+    if (cdc_d->line_coding != RT_NULL)
+    {
+        rt_free(cdc_d->line_coding);
+        cdc_d->line_coding = RT_NULL;
+    }
+
     rt_thread_suspend(cdc_d->thread);
     cdc_d->thread_state = 0;
 
-    return RT_EOK;
+    return ;
 
 }
 
@@ -409,7 +418,7 @@ static rt_err_t rt_usbh_cdc_disable(void *arg)
     while(!cdc_d->thread_state)
     {
         rt_thread_delay(1);
-    };
+    }
 
     if(cdc_d->thread != RT_NULL)
     {

@@ -656,8 +656,10 @@ static int32 hgspi_v3_open(struct spi_device *p_spi, uint32 clk_freq, uint32 wor
      */
     if (SPI0_BASE == (uint32)hw) {
         sysctrl_spi0_clk_open();
+        sysctrl_display_clk_open();
     } else if (SPI1_BASE == (uint32)hw) {
         sysctrl_spi1_clk_open();
+        sysctrl_display_clk_open();
     } else if (SPI2_BASE == (uint32)hw) {
         sysctrl_spi2_clk_open();
     }
@@ -1058,7 +1060,7 @@ static int32 hgspi_v3_suspend(struct dev_obj *obj)
     hw->CON1 &= ~ BIT(0);
 
 
-    pin_func(dev->dev.dev.dev_id, 0);
+    // pin_func(dev->dev.dev.dev_id, 0);
 
 
     /*
@@ -1124,17 +1126,19 @@ static int32 hgspi_v3_resume(struct dev_obj *obj)
     }
 
     /* pin config */
-    if (pin_func(dev->dev.dev.dev_id , 1) != RET_OK) {
-        return RET_ERR;
-    }
+    // if (pin_func(dev->dev.dev.dev_id , 1) != RET_OK) {
+    //     return RET_ERR;
+    // }
 
     /* 
      * recovery the SPI clk
      */
     if (SPI0_BASE == (uint32)hw) {
         sysctrl_spi0_clk_open();
+        sysctrl_display_clk_open();
     } else if (SPI1_BASE == (uint32)hw) {
         sysctrl_spi1_clk_open();
+        sysctrl_display_clk_open();
     } else if (SPI2_BASE == (uint32)hw) {
         sysctrl_spi2_clk_open();
     }

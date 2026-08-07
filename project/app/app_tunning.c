@@ -41,6 +41,7 @@
 #include "keyWork.h"
 //#include "video_app/video_msi.h"
 #include "lib/lvgl_rotate_rpc/lvgl_rotate_msi.h"
+#include "fpv_mem.h"
 
 int32 atcmd_recv(uint8 *data, int32 len);
 void user_workqueue_init(uint16 pri,void *stack,uint16 stack_size);
@@ -53,27 +54,7 @@ extern uint32 srampool_end;
 
 extern struct msi *auto_h264_msi_init(const char *auto_h264_name, uint8_t src_from0, uint16_t w0, uint16_t h0, uint8_t src_from1, uint16_t w1, uint16_t h1);
 extern struct msi *auto_jpg_msi_init(const char *auto_jpg_name, uint8_t which_jpg, uint8_t src_from);
-// 用户自定义内存池初始化
-static void user_heap_init()
-{
-#if defined(MPOOL_ALLOC) && defined(AV_PSRAM_HEAP) && defined(PSRAM_HEAP)
-    {
-        uint32 flags = SYSHEAP_FLAGS_MEM_LEAK_TRACE | SYSHEAP_FLAGS_MEM_ALIGN_32;
-        os_printf("CONFIG_PSRAM_AVHEAP_START:%X\n", CONFIG_PSRAM_AVHEAP_START);
-        os_printf("CONFIG_PSRAM_AVHEAP_SIZE:%X\n", CONFIG_PSRAM_AVHEAP_SIZE);
-        av_psram_heap_init((void *)CONFIG_PSRAM_AVHEAP_START, CONFIG_PSRAM_AVHEAP_SIZE, flags);
-    }
-#endif
 
-#if defined(MPOOL_ALLOC) && defined(AV_HEAP)
-    {
-        uint32 flags = SYSHEAP_FLAGS_MEM_ALIGN_32;
-        os_printf("CONFIG_AVHEAP_START:%X\n", CONFIG_AVHEAP_START);
-        os_printf("CONFIG_AVHEAP_SIZE:%X\n", CONFIG_AVHEAP_SIZE);
-        av_heap_init((void *)CONFIG_AVHEAP_START, CONFIG_AVHEAP_SIZE, flags);
-    }
-#endif
-}
 
 __weak void user_protocol()
 {
@@ -210,8 +191,6 @@ static void hardware_init(uint8_t vcam)
 #endif
 #if VPP_EN
 {
-	extern void vpp_evt_init();
-    vpp_evt_init();
     uint16_t w = 0,h = 0;
     get_single_mipi(HG_MIPI_CSI_DEVID,&w,&h);
     os_printf(KERN_INFO"vpp_cfg w:%d h:%d\n",w,h);
@@ -237,7 +216,7 @@ static void hardware_init(uint8_t vcam)
 	reg_wsola_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
     reg_aucoder_alloc(av_psram_malloc, av_psram_zalloc, av_psram_calloc, av_psram_realloc, av_psram_free);
     aucode_mutex_init();
-    audio_adc_init();
+    audio_adc_init(AUSYS_AUAD, 8000, 1, 4, 0);
     audio_dac_init();
 #endif
 

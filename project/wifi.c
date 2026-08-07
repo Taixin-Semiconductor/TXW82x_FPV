@@ -64,11 +64,11 @@ __init static void sys_wifi_parameter_init(void)
 
     txq_max.aifs   = 0xFF;                  //不限制aifs
     txq_max.txop   = 0xFFFF;                //不限制txop
-    txq_max.cw_min = 1;                     //cwmin最大值。如果觉得冲突太厉害，可以改成3
-    txq_max.cw_max = 3;                     //cwmax最大值。如果觉得冲突太厉害，可以改成7
+    txq_max.cw_min = 3;                     //cwmin最大值。如果觉得冲突太厉害，可以改大
+    txq_max.cw_max = 511;                   //cwmax最大值。如果觉得冲突太厉害，可以改大
     lmac_set_edca_max(ops, &txq_max);
     lmac_set_tx_edca_slot_time(ops, 6);     //6us是其他客户推荐的值
-    lmac_set_nav_max(ops, 0);               //完全关闭NAV功能
+    lmac_set_nav_max(ops, 10*1000);         //NAV最大限制为10ms
 
     txq_min.aifs   = 0;
     txq_min.txop   = 100;                   //txop最小值限制为100
@@ -77,8 +77,12 @@ __init static void sys_wifi_parameter_init(void)
     lmac_set_edca_min(ops, &txq_min);
 #endif
 
+#if WIFI_TX_AGG_EN == 0
     lmac_set_aggcnt(ops, 0);
+#endif
+#if WIFI_RX_AGG_EN == 0
     lmac_set_rx_aggcnt(ops, 0);
+#endif
 
 #ifdef CONFIG_SLEEP
     void *bgn_dsleep_init(void *ops);
@@ -89,14 +93,15 @@ __init static void sys_wifi_parameter_init(void)
 __init void sys_wifi_test_mode_init(void)
 {
     uint8 default_gain_table[] = {          //gain默认值
-        64, 64, 64, 64, 64, 64, 64, 64,     //OFDM
-        64, 64, 64, 64, 64, 64, 64, 64,     //HT
-        64, 64, 64, 64,                     //DSSS
+        56, 56, 56, 56, 56, 56, 56, 56,     //OFDM
+        56, 56, 56, 56, 56, 56, 56, 56,     //HT
+        56, 56, 56, 56,                     //DSSS
     };
 
     lmac_set_mac_addr(NULL, 0, sys_cfgs.mac);
     lmac_set_tx_modulation_gain(NULL, default_gain_table, sizeof(default_gain_table));
 #if WIFI_FEM_CHIP != LMAC_FEM_NONE
+    lmac_fem_pin_func(1);
     lmac_set_fem(NULL, WIFI_FEM_CHIP);   //初始化FEM之后，不能进行RF档位选择！
 #endif
 }

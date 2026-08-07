@@ -264,10 +264,10 @@ int32_t at_set_mp3_seek(const char *cmd, char *argv[], uint32_t argc)
 	
     if(!cur_mp3_info)
         return 0;
-    if(get_mp3_decode_status() == AUDIO_STOP) {
-		MP3_INFO("mp3 stop\n");
-        return 0;
-	}	
+//    if(get_mp3_decode_status() == AUCODEC_EXIT) {
+//		MP3_INFO("mp3 stop\n");
+//        return 0;
+//	}	
 	if(argc < 1) {
         MP3_INFO("%s %d,enter the seek\n",__FUNCTION__,argc);
         return 0;

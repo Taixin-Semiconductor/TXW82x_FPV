@@ -48,6 +48,7 @@ struct sim_video_more_msi_s
     uint32_t subwindow_cnt[10]; 	   //本地buf所记录的cnt
     uint32_t dispwindow_cnt[10];	   //显示的buf所记录的cnt
     struct window_msg dsp_window_msg[10];
+	uint8_t video_display_mask[10];	   //记录哪个界面打开了独显，正常只可能有一个设备配置上，或者没人配置上
     uint8_t lcd_fb_updata;
 };
 
@@ -139,10 +140,11 @@ static int32 sim_video_more_work_more(struct os_work *work)
     struct framebuff *fb;
     struct framebuff *output_fb;
 
-	
+	static uint16_t oldbigx,oldbigy;
 	uint32_t dispbuf;
 	uint32_t *cache_buf[10];
 	uint8_t push_lcd_updata=0;
+	uint8_t display_only = 0;
 	uint16_t p_w, p_h;
 	uint16_t max_w;
 	uint16_t tmp = 0;
@@ -189,7 +191,7 @@ static int32 sim_video_more_work_more(struct os_work *work)
             fb = NULL;
             goto sim_video_work_end;
         }
-		
+
 		if(sim_video->lcd_fb_updata){								
 			sim_video->lcd_fb_updata = 0;
 			sim_video->last_input_fb = fb;
@@ -223,7 +225,7 @@ static int32 sim_video_more_work_more(struct os_work *work)
 		sim_video->dsp_window_msg[match_count].h = yuv_msg->out_h;
 		sim_video->dsp_window_msg[match_count].x = yuv_msg->x;
 		sim_video->dsp_window_msg[match_count].y = yuv_msg->y;
-
+		sim_video->video_display_mask[match_count] = yuv_msg->video_only;
 
 		if((uint32_t)output_fb->data == sim_video->bufadr[0]){
 			dispbuf = sim_video->bufadr[1];								//提取当前正在显示的buf地址,用来拷数据
@@ -231,7 +233,23 @@ static int32 sim_video_more_work_more(struct os_work *work)
 			dispbuf = sim_video->bufadr[0];
 		}	
 
+		display_only = 0;
+		tmp = 0;
+		while (tmp < sim_video->screen_num) {						    //选出是否配置独显了
+			if(sim_video->video_display_mask[tmp] != 0){
+				if(yuv_msg->video_only){								//当前数据流是否就是要显示的数据流
+					display_only |= BIT(7);
+				}
+				display_only++;											
+			}
+			tmp++;
+		}		
 
+		if((display_only&0x7f) > 1){
+			_os_printf("too much stream set display only mode\r\n");
+		}
+		
+		
 		max_w = 0;
 		tmp = 0;
 		while (tmp < sim_video->screen_num) {						    //选出最大的图片
@@ -245,53 +263,67 @@ static int32 sim_video_more_work_more(struct os_work *work)
         p_w = yuv_msg->out_w;
         p_h = yuv_msg->out_h;	
 
-		if(max_w != yuv_msg->out_w){           																					//如果并非大图
-			yuv_blk_cpy((uint8_t*)output_fb->data, fb->data, sim_video->w, sim_video->h, p_w, p_h, yuv_msg->x, yuv_msg->y); 	//拷到对应的位置上
-			
-		}else{																													//如果是大图
-			tmp = 0;
-			while(tmp < sim_video->screen_num){
-				cache_buf[tmp] = NULL;
-				if( (match_count != tmp) && (sim_video->dsp_window_msg[tmp].w != 0)){
-					if(sim_video->subwindow_cnt[tmp] > sim_video->dispwindow_cnt[tmp]){																//如果备用区数值是更新的，那就拷出来
-						cache_buf[tmp] = (uint32_t *)STREAM_MALLOC(sim_video->dsp_window_msg[tmp].w * sim_video->dsp_window_msg[tmp].h * 3 / 2);					//申请小图空间
-						if(cache_buf[tmp] != NULL){
-							yuv_blk_reduce((uint8_t*)cache_buf[tmp],(uint8_t*)output_fb->data,sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h,sim_video->w,sim_video->h,sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);
-						}else{
-							_os_printf("malloc psram for sim video error1\r\n");
-						}
-					}
-				}
-				tmp++;
-			}
-			
-			yuv_blk_cpy((uint8_t*)output_fb->data, fb->data, sim_video->w, sim_video->h, p_w, p_h, yuv_msg->x, yuv_msg->y);         //把大图拷好
-			
-			tmp = 0;
-			while(tmp < sim_video->screen_num){
-				if( (match_count != tmp) && (sim_video->dsp_window_msg[tmp].w != 0)){
-					if(cache_buf[tmp]){	 																			//图片是从之前的备用区提取出来的，在缓存中
-						yuv_blk_cpy((uint8_t*)output_fb->data, (uint8_t*)cache_buf[tmp], sim_video->w, sim_video->h, sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h, sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);  //拷到对应的psram块中
-						STREAM_FREE((uint8_t*)cache_buf[tmp]);						
-					}
-					else{																							//图片得从刷新区那里提取
-						cache_buf[tmp] = (uint32_t *)STREAM_MALLOC(sim_video->dsp_window_msg[tmp].w * sim_video->dsp_window_msg[tmp].h * 3 / 2);
-						if(cache_buf[tmp] != NULL){
-							yuv_blk_reduce((uint8_t*)cache_buf[tmp],(uint8_t*)dispbuf,sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h,sim_video->w,sim_video->h,sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);
-							yuv_blk_cpy((uint8_t*)output_fb->data, (uint8_t*)cache_buf[tmp], sim_video->w, sim_video->h, sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h, sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);
-							STREAM_FREE((uint8_t*)cache_buf[tmp]);
-						}else{
-							_os_printf("malloc psram for sim video error2\r\n");
-						}					
-						
-					}
-				}
-				tmp++;
+		if(display_only){												//有设备打开了独显
+			if((display_only&BIT(7)) == BIT(7)){
+				hw_memset((uint8_t*)output_fb->data, 0, sim_video->w * sim_video->h);												//清黑屏
+				hw_memset((uint8_t*)output_fb->data + sim_video->w * sim_video->h, 0x80, sim_video->w * sim_video->h / 2);			
+				yuv_blk_cpy((uint8_t*)output_fb->data, fb->data, sim_video->w, sim_video->h, p_w, p_h, yuv_msg->x, yuv_msg->y); 	//把大图拷好
 			}
 		}
-
-	
-		
+		else
+		{
+			if(max_w != yuv_msg->out_w){																							//如果并非大图
+				yuv_blk_cpy((uint8_t*)output_fb->data, fb->data, sim_video->w, sim_video->h, p_w, p_h, yuv_msg->x, yuv_msg->y); 	//拷到对应的位置上
+			}else{																													//如果是大图
+				tmp = 0;
+				while(tmp < sim_video->screen_num){
+					cache_buf[tmp] = NULL;
+					if( (match_count != tmp) && (sim_video->dsp_window_msg[tmp].w != 0)){
+						if(sim_video->subwindow_cnt[tmp] > sim_video->dispwindow_cnt[tmp]){ 															//如果备用区数值是更新的，那就拷出来
+							cache_buf[tmp] = (uint32_t *)STREAM_MALLOC(sim_video->dsp_window_msg[tmp].w * sim_video->dsp_window_msg[tmp].h * 3 / 2);					//申请小图空间
+                            sys_dcache_invalid_range(cache_buf[tmp], sim_video->dsp_window_msg[tmp].w * sim_video->dsp_window_msg[tmp].h * 3 / 2);
+							if(cache_buf[tmp] != NULL){
+								yuv_blk_reduce((uint8_t*)cache_buf[tmp],(uint8_t*)output_fb->data,sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h,sim_video->w,sim_video->h,sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);
+							}else{
+								_os_printf("malloc psram for sim video error1\r\n");
+							}
+						}
+					}
+					tmp++;
+				}
+			
+				if((oldbigx != yuv_msg->x) || (oldbigy != yuv_msg->y)){
+					hw_memset((uint8_t*)output_fb->data, 0, sim_video->w * sim_video->h);												//大图产生偏移,清黑屏
+					hw_memset((uint8_t*)output_fb->data + sim_video->w * sim_video->h, 0x80, sim_video->w * sim_video->h / 2);
+				}
+				
+				yuv_blk_cpy((uint8_t*)output_fb->data, fb->data, sim_video->w, sim_video->h, p_w, p_h, yuv_msg->x, yuv_msg->y); 		//把大图拷好
+				oldbigx = yuv_msg->x;
+				oldbigy = yuv_msg->y;
+				
+				tmp = 0;
+				while(tmp < sim_video->screen_num){
+					if( (match_count != tmp) && (sim_video->dsp_window_msg[tmp].w != 0)){
+						if(cache_buf[tmp]){ 																			//图片是从之前的备用区提取出来的，在缓存中
+							yuv_blk_cpy((uint8_t*)output_fb->data, (uint8_t*)cache_buf[tmp], sim_video->w, sim_video->h, sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h, sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);  //拷到对应的psram块中
+							STREAM_FREE((uint8_t*)cache_buf[tmp]);						
+						}
+						else{																							//图片得从刷新区那里提取
+							cache_buf[tmp] = (uint32_t *)STREAM_MALLOC(sim_video->dsp_window_msg[tmp].w * sim_video->dsp_window_msg[tmp].h * 3 / 2);
+                            sys_dcache_invalid_range(cache_buf[tmp],sim_video->dsp_window_msg[tmp].w * sim_video->dsp_window_msg[tmp].h * 3 / 2);
+							if(cache_buf[tmp] != NULL){
+								yuv_blk_reduce((uint8_t*)cache_buf[tmp],(uint8_t*)dispbuf,sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h,sim_video->w,sim_video->h,sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);
+								yuv_blk_cpy((uint8_t*)output_fb->data, (uint8_t*)cache_buf[tmp], sim_video->w, sim_video->h, sim_video->dsp_window_msg[tmp].w,sim_video->dsp_window_msg[tmp].h, sim_video->dsp_window_msg[tmp].x,sim_video->dsp_window_msg[tmp].y);
+								STREAM_FREE((uint8_t*)cache_buf[tmp]);
+							}else{
+								_os_printf("malloc psram for sim video error2\r\n");
+							}					
+						}
+					}
+					tmp++;
+				}
+			}
+		}
 sim_video_push_lcd:		
 		if(push_lcd_updata == 1){	
 			
@@ -493,10 +525,9 @@ struct msi *sim_video_more_msi(const char *name, uint16_t w, uint16_t h, uint16_
             priv = (void *)STREAM_LIBC_ZALLOC(sizeof(struct yuv_arg_s));
             struct yuv_arg_s *yuv_msg = (struct yuv_arg_s *)priv;
 			buf = (uint32_t *)STREAM_MALLOC(sim_video->w * sim_video->h * 3 / 2);
-            memset((uint8_t*)buf, 0, sim_video->w * sim_video->h);												//清空整个空间，将显示背景显示全黑
-            memset((uint8_t*)buf + sim_video->w * sim_video->h, 0x80, sim_video->w * sim_video->h / 2);          
-            sys_dcache_clean_range(buf, sim_video->w * sim_video->h * 3 / 2);									//回写psram
-            sys_dcache_clean_invalid_range(buf, sim_video->w * sim_video->h * 3 / 2);							//清cache
+            hw_memset((uint8_t*)buf, 0, sim_video->w * sim_video->h);												//清空整个空间，将显示背景显示全黑
+            hw_memset((uint8_t*)buf + sim_video->w * sim_video->h, 0x80, sim_video->w * sim_video->h / 2);          
+            sys_dcache_invalid_range(buf, sim_video->w * sim_video->h * 3 / 2);							//清cache
             yuv_msg->out_w = w;
             yuv_msg->out_h = h;
             yuv_msg->y_size = w * h;

@@ -153,6 +153,10 @@ struct Curl_ssl {
   size_t (*version)(char *buffer, size_t size);
   CURLcode (*shut_down)(struct Curl_cfilter *cf, struct Curl_easy *data,
                         bool send_shutdown, bool *done);
+
+  /* data_pending() shall return TRUE when it wants to get called again to
+     drain internal buffers and deliver data instead of waiting for the socket
+     to get readable */
   bool (*data_pending)(struct Curl_cfilter *cf,
                        const struct Curl_easy *data);
 
@@ -166,8 +170,8 @@ struct Curl_ssl {
 
   /* During handshake/shutdown, adjust the pollset to include the socket
    * for POLLOUT or POLLIN as needed. Mandatory. */
-  void (*adjust_pollset)(struct Curl_cfilter *cf, struct Curl_easy *data,
-                          struct easy_pollset *ps);
+  CURLcode (*adjust_pollset)(struct Curl_cfilter *cf, struct Curl_easy *data,
+                             struct easy_pollset *ps);
   void *(*get_internals)(struct ssl_connect_data *connssl, CURLINFO info);
   void (*close)(struct Curl_cfilter *cf, struct Curl_easy *data);
   void (*close_all)(struct Curl_easy *data);
@@ -190,8 +194,9 @@ struct Curl_ssl {
 
 extern const struct Curl_ssl *Curl_ssl;
 
-void Curl_ssl_adjust_pollset(struct Curl_cfilter *cf, struct Curl_easy *data,
-                             struct easy_pollset *ps);
+CURLcode Curl_ssl_adjust_pollset(struct Curl_cfilter *cf,
+                                 struct Curl_easy *data,
+                                 struct easy_pollset *ps);
 
 /**
  * Get the SSL filter below the given one or NULL if there is none.

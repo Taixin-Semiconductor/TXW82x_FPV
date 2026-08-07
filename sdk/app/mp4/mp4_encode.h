@@ -295,6 +295,18 @@ typedef struct __attribute__((packed))
 #endif
 } mp4_avcC;
 
+typedef struct __attribute__((packed))
+{
+    uint32_t size;                      // 盒子大小
+    char boxname[4];                    // 固定为'colr'
+    char colour_type[4];                // 颜色类型: 'nclc', 'prof', 'rICC'
+
+    uint16_t colour_primaries;          // 颜色原色
+    uint16_t transfer_characteristics;  // 传输特性
+    uint16_t matrix_coefficients;       // 矩阵系数
+    uint8_t  full_range_flag;           // 颜色范围标志 (bit 7)
+} mp4_colr;
+
 typedef struct
 {
     uint8_t  numOfSPS;

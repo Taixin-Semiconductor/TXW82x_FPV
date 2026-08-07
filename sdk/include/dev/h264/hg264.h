@@ -26,7 +26,8 @@ struct hg264 {
     uint32              irq_data;
     uint32              irq_num;
 	int32               addr_count;
-    uint32              opened:1, use_dma:1,err:1;
+    volatile uint32              opened:1, use_dma:1,err:1, dsleep:1,h264_clt:1,h264_close_status:1,h264_oe_enable:1,h264_oe_used:1;
+	uint32 *cfg_backup;
 };
 int32 hg264_attach(uint32 dev_id, struct hg264 *lcdc);
 

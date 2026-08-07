@@ -303,7 +303,7 @@ static rt_err_t _ep_in_handler(ufunction_t func, rt_size_t size)
 
     data = (struct vcom*)func->user_data;
     request_size = data->ep_in->request.size;
-    os_printf("cdc _ep_in_handler %d\n", request_size);
+    //os_printf("cdc _ep_in_handler %d\n", request_size);
     rt_sem_release(cdc_sem);
 #if ISP_TUNNING_EN
     os_sema_up(&isp_tunning->usb_write_sema);

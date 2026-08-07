@@ -411,10 +411,7 @@ int mbedtls_internal_sha256_process_a64_crypto(mbedtls_sha256_context *ctx,
 #endif /* MBEDTLS_SHA256_USE_A64_CRYPTO_IF_PRESENT || MBEDTLS_SHA256_USE_A64_CRYPTO_ONLY */
 
 #if !defined(MBEDTLS_SHA256_USE_A64_CRYPTO_IF_PRESENT)
-// #define mbedtls_internal_sha256_process_many_c mbedtls_internal_sha256_process_many
-extern int mbedtls_internal_sha256_process_many(mbedtls_sha256_context *ctx,
-                                    const uint8_t *input,
-                                    uint32_t ilen);
+#define mbedtls_internal_sha256_process_many_c mbedtls_internal_sha256_process_many
 #define mbedtls_internal_sha256_process_c      mbedtls_internal_sha256_process
 #endif
 

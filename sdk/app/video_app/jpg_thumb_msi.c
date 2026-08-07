@@ -1,4 +1,3 @@
-
 #include "basic_include.h"
 #include "lib/multimedia/msi.h"
 #include "osal/string.h"
@@ -34,6 +33,7 @@ struct jpg_thumb_s
     struct msi    *msi;
     struct msi    *gen420_msi;
     char           filepath[64];
+    char           *dirpath;
     uint8_t        filter;
     uint8_t        thumb_stype;
     uint8_t        takephoto_photo;
@@ -56,7 +56,7 @@ jpg_thumb_work_again:
         if (jpg_thumb->takephoto_photo)
         {
             jpg_thumb->takephoto_photo--;
-            if (takephoto_name(IMG_PATH, jpg_thumb->filepath, sizeof(jpg_thumb->filepath)))
+            if (takephoto_name(jpg_thumb->dirpath, jpg_thumb->filepath, sizeof(jpg_thumb->filepath)))
             {
                 _os_printf("%s %d\tget file path err\r\n", __FUNCTION__, __LINE__);
                 msi_delete_fb(NULL, fb);
@@ -120,6 +120,14 @@ static int32_t jpg_thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
                     jpg_thumb->msi->enable = 1;
                 }
                 break;
+                case MSI_JPG_THUMB_TAKEPHOTO_SETPATH:
+                {
+                    if(jpg_thumb->dirpath == NULL)
+                    {
+                        jpg_thumb->dirpath = (char *) arg;
+                    }
+                }
+                break;
             }
         }
         break;
@@ -162,6 +170,7 @@ static int32_t jpg_thumb_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t p
     }
     return ret;
 }
+
 struct msi *jpg_thumb_msi_init(const char *msi_name, uint8_t filter, uint8_t thumb_stype)
 {
     uint8_t             is_new;
@@ -174,6 +183,7 @@ struct msi *jpg_thumb_msi_init(const char *msi_name, uint8_t filter, uint8_t thu
         jpg_thumb->msi         = msi;
         jpg_thumb->filter      = filter;
         jpg_thumb->thumb_stype = thumb_stype;
+        jpg_thumb->dirpath      = NULL;
         msi->action            = jpg_thumb_msi_action;
         msi->enable            = 0;
 

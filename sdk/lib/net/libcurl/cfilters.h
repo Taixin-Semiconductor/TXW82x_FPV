@@ -80,7 +80,7 @@ struct easy_pollset;
  * @param data   the easy handle the pollset is about
  * @param ps     the pollset (inout) for the easy handle
  */
-typedef void     Curl_cft_adjust_pollset(struct Curl_cfilter *cf,
+typedef CURLcode Curl_cft_adjust_pollset(struct Curl_cfilter *cf,
                                          struct Curl_easy *data,
                                          struct easy_pollset *ps);
 
@@ -118,7 +118,7 @@ typedef CURLcode Curl_cft_conn_keep_alive(struct Curl_cfilter *cf,
  */
 /*      data event                          arg1       arg2     return */
 #define CF_CTRL_DATA_SETUP            4  /* 0          NULL     first fail */
-#define CF_CTRL_DATA_IDLE             5  /* 0          NULL     first fail */
+/* unused now                         5  */
 #define CF_CTRL_DATA_PAUSE            6  /* on/off     NULL     first fail */
 #define CF_CTRL_DATA_DONE             7  /* premature  NULL     ignored */
 #define CF_CTRL_DATA_DONE_SEND        8  /* 0          NULL     ignored */
@@ -158,6 +158,10 @@ typedef CURLcode Curl_cft_cntrl(struct Curl_cfilter *cf,
  * - CF_QUERY_SSL_CTX_INFO: same as CF_QUERY_SSL_INFO, but give the SSL_CTX
  *                      when available, or the same internal pointer
  *                      when the TLS stack does not differentiate.
+ * - CF_QUERY_ALPN_NEGOTIATED: The ALPN selected by the server as
+                        null-terminated string or NULL if none
+                        selected/handshake not done. Implemented by filter
+                        types CF_TYPE_SSL or CF_TYPE_IP_CONNECT.
  */
 /*      query                             res1       res2     */
 #define CF_QUERY_MAX_CONCURRENT     1  /* number     -        */
@@ -176,6 +180,7 @@ typedef CURLcode Curl_cft_cntrl(struct Curl_cfilter *cf,
 #define CF_QUERY_SSL_INFO          12  /* -    struct curl_tlssessioninfo * */
 #define CF_QUERY_SSL_CTX_INFO      13  /* -    struct curl_tlssessioninfo * */
 #define CF_QUERY_TRANSPORT         14  /* TRNSPRT_*  - * */
+#define CF_QUERY_ALPN_NEGOTIATED   15  /* -          const char * */
 
 /**
  * Query the cfilter for properties. Filters ignorant of a query will
@@ -239,7 +244,7 @@ void Curl_cf_def_destroy_this(struct Curl_cfilter *cf,
 
 /* Default implementations for the type functions, implementing pass-through
  * the filter chain. */
-void     Curl_cf_def_adjust_pollset(struct Curl_cfilter *cf,
+CURLcode Curl_cf_def_adjust_pollset(struct Curl_cfilter *cf,
                                     struct Curl_easy *data,
                                     struct easy_pollset *ps);
 bool     Curl_cf_def_data_pending(struct Curl_cfilter *cf,
@@ -292,16 +297,12 @@ void Curl_conn_cf_insert_after(struct Curl_cfilter *cf_at,
                                struct Curl_cfilter *cf_new);
 
 /**
- * Discard, e.g. remove and destroy `discard` iff
- * it still is in the filter chain below `cf`. If `discard`
- * is no longer found beneath `cf` return FALSE.
- * if `destroy_always` is TRUE, will call `discard`s destroy
- * function and free it even if not found in the subchain.
+ * Extract filter `*pcf` from its connection filter chain.
+ * Destroy `*pcf`, even if it was not part of the chain and NULL it.
+ * Returns TRUE of cf has been part of chain.
  */
-bool Curl_conn_cf_discard_sub(struct Curl_cfilter *cf,
-                              struct Curl_cfilter *discard,
-                              struct Curl_easy *data,
-                              bool destroy_always);
+bool Curl_conn_cf_discard(struct Curl_cfilter **pcf,
+                          struct Curl_easy *data);
 
 /**
  * Discard all cfilters starting with `*pcf` and clearing it afterwards.
@@ -332,12 +333,6 @@ CURLcode Curl_conn_cf_cntrl(struct Curl_cfilter *cf,
                             int event, int arg1, void *arg2);
 
 /**
- * Determine if the connection filter chain is using SSL to the remote host
- * (or will be once connected).
- */
-bool Curl_conn_cf_is_ssl(struct Curl_cfilter *cf);
-
-/**
  * Get the socket used by the filter chain starting at `cf`.
  * Returns CURL_SOCKET_BAD if not available.
  */
@@ -346,13 +341,16 @@ curl_socket_t Curl_conn_cf_get_socket(struct Curl_cfilter *cf,
 
 CURLcode Curl_conn_cf_get_ip_info(struct Curl_cfilter *cf,
                                   struct Curl_easy *data,
-                                  int *is_ipv6, struct ip_quadruple *ipquad);
+                                  bool *is_ipv6, struct ip_quadruple *ipquad);
 
 bool Curl_conn_cf_needs_flush(struct Curl_cfilter *cf,
                               struct Curl_easy *data);
 
 unsigned char Curl_conn_cf_get_transport(struct Curl_cfilter *cf,
                                          struct Curl_easy *data);
+
+const char *Curl_conn_cf_get_alpn_negotiated(struct Curl_cfilter *cf,
+                                             struct Curl_easy *data);
 
 #define CURL_CF_SSL_DEFAULT  -1
 #define CURL_CF_SSL_DISABLE  0
@@ -402,6 +400,10 @@ bool Curl_conn_get_ssl_info(struct Curl_easy *data,
                             struct connectdata *conn, int sockindex,
                             struct curl_tlssessioninfo *info);
 
+CURLcode Curl_conn_get_ip_info(struct Curl_easy *data,
+                               struct connectdata *conn, int sockindex,
+                               bool *is_ipv6, struct ip_quadruple *ipquad);
+
 /**
  * Connection provides multiplexing of easy handles at `socketindex`.
  */
@@ -417,6 +419,10 @@ unsigned char Curl_conn_http_version(struct Curl_easy *data,
 /* Get the TRNSPRT_* the connection is using */
 unsigned char Curl_conn_get_transport(struct Curl_easy *data,
                                       struct connectdata *conn);
+
+/* Get the negotiated ALPN protocol or NULL if none in play */
+const char *Curl_conn_get_alpn_negotiated(struct Curl_easy *data,
+                                          struct connectdata *conn);
 
 /**
  * Close the filter chain at `sockindex` for connection `data->conn`.
@@ -450,10 +456,11 @@ bool Curl_conn_needs_flush(struct Curl_easy *data, int sockindex);
 CURLcode Curl_conn_flush(struct Curl_easy *data, int sockindex);
 
 /**
- * Return the socket used on data's connection for the index.
+ * Return the socket used on data's connection for FIRSTSOCKET,
+ * querying filters if the whole chain has not connected yet.
  * Returns CURL_SOCKET_BAD if not available.
  */
-curl_socket_t Curl_conn_get_socket(struct Curl_easy *data, int sockindex);
+curl_socket_t Curl_conn_get_first_socket(struct Curl_easy *data);
 
 /* Return a pointer to the connected socket address or NULL. */
 const struct Curl_sockaddr_ex *
@@ -467,16 +474,16 @@ void Curl_conn_forget_socket(struct Curl_easy *data, int sockindex);
 /**
  * Adjust the pollset for the filter chain starting at `cf`.
  */
-void Curl_conn_cf_adjust_pollset(struct Curl_cfilter *cf,
-                                 struct Curl_easy *data,
-                                 struct easy_pollset *ps);
+CURLcode Curl_conn_cf_adjust_pollset(struct Curl_cfilter *cf,
+                                     struct Curl_easy *data,
+                                     struct easy_pollset *ps);
 
 /**
  * Adjust pollset from filters installed at transfer's connection.
  */
-void Curl_conn_adjust_pollset(struct Curl_easy *data,
-                              struct connectdata *conn,
-                              struct easy_pollset *ps);
+CURLcode Curl_conn_adjust_pollset(struct Curl_easy *data,
+                                  struct connectdata *conn,
+                                  struct easy_pollset *ps);
 
 /**
  * Curl_poll() the filter chain at `cf` with timeout `timeout_ms`.
@@ -506,7 +513,7 @@ CURLcode Curl_cf_send(struct Curl_easy *data, int sockindex,
 
 /**
  * Receive bytes from connection filter `cf` into `bufq`.
- * Convenience wrappter around `Curl_bufq_sipn()`,
+ * Convenience wrapper around `Curl_bufq_sipn()`,
  * so users do not have to implement a callback.
  */
 CURLcode Curl_cf_recv_bufq(struct Curl_cfilter *cf,
@@ -531,12 +538,6 @@ CURLcode Curl_cf_send_bufq(struct Curl_cfilter *cf,
  * a transfer.
  */
 CURLcode Curl_conn_ev_data_setup(struct Curl_easy *data);
-
-/**
- * Notify connection filters that now would be a good time to
- * perform any idle, e.g. time related, actions.
- */
-CURLcode Curl_conn_ev_data_idle(struct Curl_easy *data);
 
 /**
  * Notify connection filters that the transfer represented by `data`
@@ -621,56 +622,6 @@ CURLcode Curl_conn_send(struct Curl_easy *data, int sockindex,
                         const void *buf, size_t blen, bool eos,
                         size_t *pnwritten);
 
-
-void Curl_pollset_reset(struct Curl_easy *data,
-                        struct easy_pollset *ps);
-
-/* Change the poll flags (CURL_POLL_IN/CURL_POLL_OUT) to the poll set for
- * socket `sock`. If the socket is not already part of the poll set, it
- * will be added.
- * If the socket is present and all poll flags are cleared, it will be removed.
- */
-void Curl_pollset_change(struct Curl_easy *data,
-                         struct easy_pollset *ps, curl_socket_t sock,
-                         int add_flags, int remove_flags);
-
-void Curl_pollset_set(struct Curl_easy *data,
-                      struct easy_pollset *ps, curl_socket_t sock,
-                      bool do_in, bool do_out);
-
-#define Curl_pollset_add_in(data, ps, sock) \
-          Curl_pollset_change((data), (ps), (sock), CURL_POLL_IN, 0)
-#define Curl_pollset_add_out(data, ps, sock) \
-          Curl_pollset_change((data), (ps), (sock), CURL_POLL_OUT, 0)
-#define Curl_pollset_add_inout(data, ps, sock) \
-          Curl_pollset_change((data), (ps), (sock), \
-                               CURL_POLL_IN|CURL_POLL_OUT, 0)
-#define Curl_pollset_set_in_only(data, ps, sock) \
-          Curl_pollset_change((data), (ps), (sock), \
-                               CURL_POLL_IN, CURL_POLL_OUT)
-#define Curl_pollset_set_out_only(data, ps, sock) \
-          Curl_pollset_change((data), (ps), (sock), \
-                               CURL_POLL_OUT, CURL_POLL_IN)
-
-void Curl_pollset_add_socks(struct Curl_easy *data,
-                            struct easy_pollset *ps,
-                            int (*get_socks_cb)(struct Curl_easy *data,
-                                                curl_socket_t *socks));
-
-/**
- * Check if the pollset, as is, wants to read and/or write regarding
- * the given socket.
- */
-void Curl_pollset_check(struct Curl_easy *data,
-                        struct easy_pollset *ps, curl_socket_t sock,
-                        bool *pwant_read, bool *pwant_write);
-
-/**
- * Return TRUE if the pollset contains socket with CURL_POLL_IN.
- */
-bool Curl_pollset_want_read(struct Curl_easy *data,
-                            struct easy_pollset *ps,
-                            curl_socket_t sock);
 
 /**
  * Types and macros used to keep the current easy handle in filter calls,

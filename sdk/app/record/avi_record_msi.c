@@ -10,6 +10,7 @@
 #include "audio_msi/audio_adc.h"
 #include "avi_record_msi.h"
 #include "lib/video/dvp/jpeg/jpg.h"
+#include "audio_msi/audio_adc.h"
 
 //data申请空间函数
 #define STREAM_MALLOC     av_psram_malloc
@@ -353,7 +354,7 @@ uint32_t* avi_record_msi_init(uint32_t video_width, uint32_t video_height, uint8
         if (priv->avi_record_audio_msi)
         {
             //默认已经打开audio adc msi数据流，此处只做绑定操作
-            auadc_msi_add_output(R_RECORD_AUDIO);
+            auadc_msi_add_output(AUSYS_AUAD, R_RECORD_AUDIO);
             priv->avi_record_audio_msi->priv = priv;
             priv->avi_record_audio_msi->action = avi_record_msi_action;
             priv->avi_record_audio_msi->enable = 1;
@@ -392,7 +393,7 @@ int avi_record_msi_deinit()
         }
     
         if (priv->avi_record_audio_msi) {
-            auadc_msi_del_output(R_RECORD_AUDIO);
+            auadc_msi_del_output(AUSYS_AUAD, R_RECORD_AUDIO);
             msi_destroy(priv->avi_record_audio_msi);
             priv->avi_record_audio_msi = NULL;
         }

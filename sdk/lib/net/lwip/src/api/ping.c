@@ -44,8 +44,9 @@ static int ping_recv(int sockfd, void *buf, int len, int flags, struct sockaddr 
 void lwip_ping(char *ip_domain, int pktsize, unsigned int send_times)
 {
     int isdomain = 0;
-    int seqno = 0;
     int sock = -1;
+    uint16 seqno = 0;
+    uint16 echo_id;
     uint32 send_cnt = 0;
     uint32 recv_cnt = 0;
     uint32 timeout_ms = 3000;
@@ -101,11 +102,13 @@ void lwip_ping(char *ip_domain, int pktsize, unsigned int send_times)
         os_printf("\n\nPinging %s with %d bytes of data:\n", ip_domain, pktsize);
     }
 
+    os_random_bytes((uint8 *)&seqno, 2);
+    os_random_bytes((uint8 *)&echo_id, 2);
     while (send_cnt++ < send_times || send_times == 0) {
         ICMPH_TYPE_SET(echo, ICMP_ECHO);
         ICMPH_CODE_SET(echo, 0);
         echo->chksum = 0;
-        echo->id     = 0xAFAF;
+        echo->id     = echo_id;
         echo->seqno  = htons(++seqno);
         echo->chksum = inet_chksum(echo, buff_len);
         ping_tick = os_jiffies();
@@ -121,7 +124,7 @@ void lwip_ping(char *ip_domain, int pktsize, unsigned int send_times)
                     os_printf("Request timed out.\n");
                     break;
                 }
-                if ((iecho->id == 0xAFAF) && (iecho->seqno == echo->seqno)) {
+                if ((iecho->id == echo_id) && (iecho->seqno == echo->seqno)) {
                     recv_cnt++;
                     os_printf("Reply from %s: bytes=%d time:%dms TTL=255\n",
                               inet_ntoa(from.sin_addr.s_addr), pktsize, recv_tick - ping_tick);

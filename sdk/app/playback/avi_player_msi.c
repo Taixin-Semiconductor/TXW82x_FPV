@@ -16,6 +16,8 @@
 
 #define AVI_PLAYER_MAX_TX_NUM       8
 
+#define AVI_STREAM_NAME             (64)
+
 #define AUDIO_TMP_BUF_SIZE          (1024)
 
 struct player_msg_s
@@ -102,8 +104,6 @@ static void avi_player_thread(void *d)
             msg->data_tmp = fbpool_get(&msg->tx_pool, 0, msi);
             if (!msg->data_tmp)
             {
-                //os_printf("goto avi_player_thread_audio_start:%d\n",__LINE__);
-                // _os_printf("P2");
                 goto avi_player_thread_audio_start;
             }
         }
@@ -288,7 +288,8 @@ static int32_t avi_player_action(struct msi *msi, uint32_t cmd_id, uint32_t para
                 fbpool_destroy(&msg->tx_pool);
 
                 STREAM_LIBC_FREE(msg);
-
+                STREAM_LIBC_FREE((void*)msi->name);
+                msi->name = NULL;
                 msi->priv = NULL;
             }
         }
@@ -371,11 +372,19 @@ struct msi *avi_player_init(const char *stream_name, const char *filename)
 {
     struct avi_msg_s *avi_msg = NULL;
     struct msi *msi = NULL;
+
+    uint8_t * stream_name_buf = (uint8_t *)STREAM_LIBC_ZALLOC(AVI_STREAM_NAME);
+    if (!stream_name_buf)
+    {
+        return NULL;
+    }
+    os_memcpy(stream_name_buf, stream_name, os_strlen(stream_name)+1);
+
     avi_msg = avi_read_init(filename);
     os_printf("avi_msg:%X\n",avi_msg);
     //创建workqueue去不停读取视频数据,然后发送出去
 
-    msi = msi_new(stream_name, 0, NULL);
+    msi = msi_new((char*)stream_name_buf, 0, NULL);
     if (!msi)
     {
         avi_deinit(avi_msg);

@@ -19,7 +19,8 @@ struct hgscale {
     scale_irq_hdl         irq_hdl;
     uint32              irq_data;
     uint32              irq_num;
-    uint32              opened:1, use_dma:1, clk_en:1;
+    volatile uint32_t              opened:1, use_dma:1, clk_en:1, dsleep:1,need_close:1;
+	uint32 *cfg_backup;
 };
 
 

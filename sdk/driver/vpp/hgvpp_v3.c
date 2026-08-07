@@ -592,6 +592,9 @@ static int32 hgvpp_ioctl(struct vpp_device *p_vpp, enum vpp_ioctl_cmd ioctl_cmd,
 				hw->IWM0_CON &= ~BIT(7);
 
 		break;
+		case VPP_IOCTL_CMD_IS_CLOSED:
+			ret_val = vpp_hw->opened?0:1;
+		break;
 		default:
 			os_printf("NO VPP IOCTL:%d\r\n",ioctl_cmd);
             ret_val = -ENOTSUPP;
@@ -675,6 +678,7 @@ int32 vppirq_unregister(struct vpp_device *p_vpp,uint32 irq){
 static int32 hgvpp_open(struct vpp_device *p_vpp){
 	struct hgvpp *vpp_hw = (struct hgvpp*)p_vpp;	
 	struct hgvpp_hw *hw  = (struct hgvpp_hw *)vpp_hw->hw;
+	vpp_hw->opened = 1;
 	hw->CON |= BIT(0);
 	irq_enable(vpp_hw->irq_num);
 	return 0;
@@ -683,11 +687,125 @@ static int32 hgvpp_open(struct vpp_device *p_vpp){
 static int32 hgvpp_close(struct vpp_device *p_vpp){
 	struct hgvpp *vpp_hw = (struct hgvpp*)p_vpp; 	
 	struct hgvpp_hw *hw  = (struct hgvpp_hw *)vpp_hw->hw;
+	vpp_hw->opened = 0;
 	hw->CON &= ~BIT(0);
 	irq_disable(vpp_hw->irq_num);
 	return 0;
 }
 
+
+int32 hgvpp_suspend(struct dev_obj *obj){
+	struct hgvpp *vpp_hw = (struct hgvpp*)obj;
+	struct hgvpp_hw *hw;
+	struct hgvpp_hw *hw_cfg;
+	//确保已经被打开并且休眠过,直接返回
+	if(!vpp_hw->opened || vpp_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	vpp_hw->dsleep = 1;
+	vpp_hw->cfg_backup = (uint32 *)os_malloc(sizeof(struct hgvpp_hw));
+	hw_cfg = (struct hgvpp_hw*)vpp_hw->cfg_backup;
+	hw     = (struct hgvpp_hw*)vpp_hw->hw;
+	
+	hw_cfg->CON = hw->CON;
+	hw_cfg->CON1 = hw->CON1;
+	hw_cfg->SIZE = hw->SIZE;  
+	hw_cfg->DLT = hw->DLT;	
+	hw_cfg->DHT = hw->DHT; 
+	hw_cfg->STA = hw->STA;	
+	hw_cfg->DMA_YADR = hw->DMA_YADR;   
+	hw_cfg->DMA_UADR = hw->DMA_UADR;
+	hw_cfg->DMA_VADR = hw->DMA_VADR;
+	hw_cfg->DMA_YADR1 = hw->DMA_YADR1;	 
+	hw_cfg->DMA_UADR1 = hw->DMA_UADR1;
+	hw_cfg->DMA_VADR1 = hw->DMA_VADR1; 
+	hw_cfg->IWM0_CON = hw->IWM0_CON;
+	hw_cfg->IWM0_CON1 = hw->IWM0_CON1;
+	hw_cfg->IWM0_SIZE = hw->IWM0_SIZE;	  
+	hw_cfg->IWM0_YUV = hw->IWM0_YUV;
+	hw_cfg->IWM0_YUV1 = hw->IWM0_YUV1;
+	hw_cfg->IWM0_LADR = hw->IWM0_LADR;
+	hw_cfg->IWM0_HADR = hw->IWM0_HADR;
+	hw_cfg->IWM0_IDX0 = hw->IWM0_IDX0;	  
+	hw_cfg->IWM0_IDX1 = hw->IWM0_IDX1;
+	hw_cfg->IWM0_IDX2 = hw->IWM0_IDX2;	  
+	hw_cfg->IWM1_CON = hw->IWM1_CON;
+	hw_cfg->IWM1_SIZE = hw->IWM1_SIZE;
+	hw_cfg->IWM1_YUV = hw->IWM1_YUV;
+	hw_cfg->IWM1_LADR = hw->IWM1_LADR;	
+	hw_cfg->IPF_SADR = hw->IPF_SADR;
+	hw_cfg->MD_CON = hw->MD_CON;
+	hw_cfg->MD_WIN_CON0 = hw->MD_WIN_CON0;
+	hw_cfg->MD_WIN_CON1 = hw->MD_WIN_CON1; 
+	hw_cfg->MD_BASE_ADDR = hw->MD_BASE_ADDR;
+	hw_cfg->ITP_PSRAM_YADR = hw->ITP_PSRAM_YADR;
+	hw_cfg->ITP_PSRAM_UADR = hw->ITP_PSRAM_UADR;
+	hw_cfg->ITP_PSRAM_VADR = hw->ITP_PSRAM_VADR; 
+	hw_cfg->FRM_PSRAM_YCNT = hw->FRM_PSRAM_YCNT;
+	hw_cfg->FRM_PSRAM_UVCNT = hw->FRM_PSRAM_UVCNT; 
+	hw_cfg->FRM1_PSRAM_YCNT = hw->FRM1_PSRAM_YCNT;
+	hw_cfg->FRM1_PSRAM_UVCNT = hw->FRM1_PSRAM_UVCNT;
+
+	
+	irq_disable(vpp_hw->irq_num);
+	return 0;
+}
+
+int32 hgvpp_resume(struct dev_obj *obj){
+	struct hgvpp *vpp_hw = (struct hgvpp*)obj;
+	struct hgvpp_hw *hw;
+	struct hgvpp_hw *hw_cfg;
+	//如果已经被打开并且没有休眠过,直接返回
+	if(!vpp_hw->opened || !vpp_hw->dsleep)
+	{
+		return RET_OK;
+	}
+	vpp_hw->dsleep = 0;	
+	hw_cfg = (struct hgvpp_hw*)vpp_hw->cfg_backup;
+	hw     = (struct hgvpp_hw*)vpp_hw->hw;
+	hw->CON = hw_cfg->CON;
+	hw->CON1 = hw_cfg->CON1;
+	hw->SIZE = hw_cfg->SIZE;  
+	hw->DLT = hw_cfg->DLT;  
+	hw->DHT = hw_cfg->DHT; 
+	hw->STA = hw_cfg->STA;  
+	hw->DMA_YADR = hw_cfg->DMA_YADR;   
+	hw->DMA_UADR = hw_cfg->DMA_UADR;
+	hw->DMA_VADR = hw_cfg->DMA_VADR;
+	hw->DMA_YADR1 = hw_cfg->DMA_YADR1;   
+	hw->DMA_UADR1 = hw_cfg->DMA_UADR1;
+	hw->DMA_VADR1 = hw_cfg->DMA_VADR1; 
+	hw->IWM0_CON = hw_cfg->IWM0_CON;
+	hw->IWM0_CON1 = hw_cfg->IWM0_CON1;
+	hw->IWM0_SIZE = hw_cfg->IWM0_SIZE;    
+	hw->IWM0_YUV = hw_cfg->IWM0_YUV;
+	hw->IWM0_YUV1 = hw_cfg->IWM0_YUV1;
+	hw->IWM0_LADR = hw_cfg->IWM0_LADR;
+	hw->IWM0_HADR = hw_cfg->IWM0_HADR;
+	hw->IWM0_IDX0 = hw_cfg->IWM0_IDX0;    
+	hw->IWM0_IDX1 = hw_cfg->IWM0_IDX1;
+	hw->IWM0_IDX2 = hw_cfg->IWM0_IDX2;    
+	hw->IWM1_CON = hw_cfg->IWM1_CON;
+	hw->IWM1_SIZE = hw_cfg->IWM1_SIZE;
+	hw->IWM1_YUV = hw_cfg->IWM1_YUV;
+	hw->IWM1_LADR = hw_cfg->IWM1_LADR;  
+	hw->IPF_SADR = hw_cfg->IPF_SADR;
+	hw->MD_CON = hw_cfg->MD_CON;
+	hw->MD_WIN_CON0 = hw_cfg->MD_WIN_CON0;
+	hw->MD_WIN_CON1 = hw_cfg->MD_WIN_CON1; 
+	hw->MD_BASE_ADDR = hw_cfg->MD_BASE_ADDR;
+	hw->ITP_PSRAM_YADR = hw_cfg->ITP_PSRAM_YADR;
+	hw->ITP_PSRAM_UADR = hw_cfg->ITP_PSRAM_UADR;
+	hw->ITP_PSRAM_VADR = hw_cfg->ITP_PSRAM_VADR; 
+	hw->FRM_PSRAM_YCNT = hw_cfg->FRM_PSRAM_YCNT;
+	hw->FRM_PSRAM_UVCNT = hw_cfg->FRM_PSRAM_UVCNT; 
+	hw->FRM1_PSRAM_YCNT = hw_cfg->FRM1_PSRAM_YCNT;
+	hw->FRM1_PSRAM_UVCNT = hw_cfg->FRM1_PSRAM_UVCNT;  
+	irq_enable(vpp_hw->irq_num);
+	os_free(vpp_hw->cfg_backup);
+	return 0;
+}
 
 static const struct vpp_hal_ops dev_ops = {
     .open        = hgvpp_open,
@@ -695,6 +813,10 @@ static const struct vpp_hal_ops dev_ops = {
     .ioctl       = hgvpp_ioctl,
     .request_irq = vppirq_register,
     .release_irq = vppirq_unregister,
+#ifdef CONFIG_SLEEP	
+	.ops.suspend = hgvpp_suspend,
+	.ops.resume  = hgvpp_resume,
+#endif  
 };
 
 

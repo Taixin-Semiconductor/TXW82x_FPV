@@ -562,6 +562,8 @@ struct lcdc_device {
 struct lcdc_hal_ops {
 	struct devobj_ops ops;
     int32(*init)(struct lcdc_device *lcdc_dev);
+	int32(*suspend)(struct lcdc_device *lcdc_dev);
+	int32(*resume)(struct lcdc_device *lcdc_dev);	
 	int32(*deinit)(struct lcdc_device *lcdc_dev);
     int32(*baudrate)(struct lcdc_device *lcdc_dev, uint32 baudrate);
     int32(*open)(struct lcdc_device *lcdc_dev);
@@ -575,7 +577,8 @@ struct lcdc_hal_ops {
 
 
 
-
+int32 lcdc_suspend(struct lcdc_device *p_lcdc);
+int32 lcdc_resume(struct lcdc_device *p_lcdc);
 int32 lcdc_init(struct lcdc_device *p_lcdc);
 int32 lcdc_deinit(struct lcdc_device *p_lcdc);
 int32 lcdc_open(struct lcdc_device *p_lcdc);

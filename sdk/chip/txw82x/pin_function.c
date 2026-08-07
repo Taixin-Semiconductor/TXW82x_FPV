@@ -627,32 +627,64 @@ static int iis_pin_func(int dev_id, int request)
     int ret = RET_OK;
 
     switch (dev_id) {
-//        case HG_IIS0_DEVID:
-//            if (request) {
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS0_MCLK), GPIO_IOMAP_IN_IIS0_MCLK_IN, GPIO_IOMAP_OUT_IIS0_MCLK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS0_BCLK), GPIO_IOMAP_IN_IIS0_BCLK_IN, GPIO_IOMAP_OUT_IIS0_BCLK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS0_WCLK), GPIO_IOMAP_IN_IIS0_WSCLK_IN, GPIO_IOMAP_OUT_IIS0_WSCLK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS0_DATA), GPIO_IOMAP_IN_IIS0_DI, GPIO_IOMAP_OUT_IIS0_DO);
-//            } else {
-//                gpio_set_dir(MACRO_PIN(PIN_IIS0_MCLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_IIS0_BCLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_IIS0_WCLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_IIS0_DATA), GPIO_DIR_INPUT);
-//            }
-//            break;
-//        case HG_IIS1_DEVID:
-//            if (request) {
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS1_MCLK), GPIO_IOMAP_IN_IIS1_MCLK_IN, GPIO_IOMAP_OUT_IIS1_MCLK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS1_BCLK), GPIO_IOMAP_IN_IIS1_BCLK_IN, GPIO_IOMAP_OUT_IIS1_BCLK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS1_WCLK), GPIO_IOMAP_IN_IIS1_WSCLK_IN, GPIO_IOMAP_OUT_IIS1_WSCLK_OUT);
-//                gpio_iomap_inout(MACRO_PIN(PIN_IIS1_DATA), GPIO_IOMAP_IN_IIS1_DI, GPIO_IOMAP_OUT_IIS1_DO);
-//            } else {
-//                gpio_set_dir(MACRO_PIN(PIN_IIS1_MCLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_IIS1_BCLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_IIS1_WCLK), GPIO_DIR_INPUT);
-//                gpio_set_dir(MACRO_PIN(PIN_IIS1_DATA), GPIO_DIR_INPUT);
-//            }
-//            break;
+       case HG_IIS0_DEVID:
+          if (request) {
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS0_MCLK),
+                GPIO_IOMAP_IN_IIS0_MCLK_IN_LCD_D19_IN_M2_6,
+                GPIO_IOMAP_OUT_IIS0_MCLK_OUT
+            );
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS0_BCLK),
+                GPIO_IOMAP_IN_IIS0_BCLK_IN_LCD_D21_IN_M2_8,
+                GPIO_IOMAP_OUT_IIS0_BCLK_OUT
+            );
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS0_WCLK),
+                GPIO_IOMAP_IN_IIS0_WSCLK_IN_LCD_D20_IN_M2_7,
+                GPIO_IOMAP_OUT_IIS0_WSCLK_OUT
+            );
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS0_DATA),
+                GPIO_IOMAP_IN_IIS0_DAT_IN_UART6_RX_M3_9,
+                GPIO_IOMAP_OUT_IIS0_DO
+            );
+          } else {
+              gpio_set_dir(MACRO_PIN(PIN_IIS0_MCLK), GPIO_DIR_INPUT);
+              gpio_set_dir(MACRO_PIN(PIN_IIS0_BCLK), GPIO_DIR_INPUT);
+              gpio_set_dir(MACRO_PIN(PIN_IIS0_WCLK), GPIO_DIR_INPUT);
+              gpio_set_dir(MACRO_PIN(PIN_IIS0_DATA), GPIO_DIR_INPUT);  
+          }
+          break;
+       case HG_IIS1_DEVID:
+          if (request) {
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS1_MCLK),
+                GPIO_IOMAP_IN_IIS1_MCLK_IN_Uart5_IN_LCD_D22_IN_M2_9,
+                GPIO_IOMAP_OUT_IIS1_MCLK_OUT
+            );
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS1_BCLK),
+                GPIO_IOMAP_IN_SPI1_IO2_IN_IIS1_BCLK_IN,
+                GPIO_IOMAP_OUT_IIS1_BCLK_OUT
+            );
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS1_WCLK),
+                GPIO_IOMAP_IN_IIS1_WSCLK_IN_LCD_D23_IN_M2_10,
+                GPIO_IOMAP_OUT_IIS1_WSCLK_OUT
+            );
+            gpio_iomap_inout(
+                MACRO_PIN(PIN_IIS1_DATA),
+                GPIO_IOMAP_IN_SPI1_IO3_IN_IIS1_DAT_IN_UART6_RX_M3_9,
+                GPIO_IOMAP_OUT_IIS1_DO
+            );
+          } else {
+              gpio_set_dir(MACRO_PIN(PIN_IIS1_MCLK), GPIO_DIR_INPUT);
+              gpio_set_dir(MACRO_PIN(PIN_IIS1_BCLK), GPIO_DIR_INPUT);
+              gpio_set_dir(MACRO_PIN(PIN_IIS1_WCLK), GPIO_DIR_INPUT);
+              gpio_set_dir(MACRO_PIN(PIN_IIS1_DATA), GPIO_DIR_INPUT);  
+          }
+          break;
         default:
             ret = EINVAL;
             break;
@@ -1040,119 +1072,35 @@ static int lcdc_pin_func(int dev_id, int request)
     int ret = RET_OK;
     switch (dev_id) {
         case HG_LCDC_DEVID:
-			if(VS_CS != 255){
-				gpio_iomap_output(VS_CS, GPIO_IOMAP_OUT_LCD_VSYNC_OR_CS0);
-			}			
-
-			if(HS_DC != 255){
-				gpio_iomap_output(HS_DC, GPIO_IOMAP_OUT_LCD_HSYNC_OR_DC);
-			}
-
-			if(DE_ERD != 255){
-				gpio_iomap_output(DE_ERD, GPIO_IOMAP_OUT_LCD_DE_OR_ERD1);
-			}			
-
-			if(DOTCLK_RWR != 255){
-				gpio_iomap_output(DOTCLK_RWR, GPIO_IOMAP_OUT_LCD_DOTCLK_OR_RWR0);
-			}	
-
-			if(LCD_D0 != 255){
-				gpio_iomap_inout(LCD_D0, GPIO_IOMAP_IN_LCD_D0_IN_M1_19 ,GPIO_IOMAP_OUT_LCD_DATA_O_0);
-			}
-
-			if(LCD_D1 != 255){
-				gpio_iomap_output(LCD_D1, GPIO_IOMAP_OUT_LCD_DATA_O_1);
-			}
-
-			if(LCD_D2 != 255){
-				gpio_iomap_output(LCD_D2, GPIO_IOMAP_OUT_LCD_DATA_O_2);
-			}
-
-			if(LCD_D3 != 255){
-				gpio_iomap_output(LCD_D3, GPIO_IOMAP_OUT_LCD_DATA_O_3);
-			}
-
-			if(LCD_D4 != 255){
-				gpio_iomap_output(LCD_D4, GPIO_IOMAP_OUT_LCD_DATA_O_4);
-			}
-
-			if(LCD_D5 != 255){
-				gpio_iomap_output(LCD_D5, GPIO_IOMAP_OUT_LCD_DATA_O_5);
-			}
-
-			if(LCD_D6 != 255){
-				gpio_iomap_output(LCD_D6, GPIO_IOMAP_OUT_LCD_DATA_O_6);
-			}
-
-			if(LCD_D7 != 255){
-				gpio_iomap_output(LCD_D7, GPIO_IOMAP_OUT_LCD_DATA_O_7);
-			}			
-
-			if(LCD_D8 != 255){
-				gpio_iomap_output(LCD_D8, GPIO_IOMAP_OUT_LCD_DATA_O_8);
-			}
-
-			if(LCD_D9 != 255){
-				gpio_iomap_output(LCD_D9, GPIO_IOMAP_OUT_LCD_DATA_O_9);
-			}
-
-			if(LCD_D10 != 255){
-				gpio_iomap_output(LCD_D10, GPIO_IOMAP_OUT_LCD_DATA_O_10);
-			}
-
-			if(LCD_D11 != 255){
-				gpio_iomap_output(LCD_D11, GPIO_IOMAP_OUT_LCD_DATA_O_11);
-			}
-
-			if(LCD_D12 != 255){
-				gpio_iomap_output(LCD_D12, GPIO_IOMAP_OUT_LCD_DATA_O_12);
-			}
-
-			if(LCD_D13 != 255){
-				gpio_iomap_output(LCD_D13, GPIO_IOMAP_OUT_LCD_DATA_O_13);
-			}
-
-			if(LCD_D14 != 255){
-				gpio_iomap_output(LCD_D14, GPIO_IOMAP_OUT_LCD_DATA_O_14);
-			}
-
-			if(LCD_D15 != 255){
-				gpio_iomap_output(LCD_D15, GPIO_IOMAP_OUT_LCD_DATA_O_15);
-			}
-
-			if(LCD_D16 != 255){
-				gpio_iomap_output(LCD_D16, GPIO_IOMAP_OUT_LCD_DATA_O_16);
-			}			
-
-			if(LCD_D17 != 255){
-				gpio_iomap_output(LCD_D17, GPIO_IOMAP_OUT_LCD_DATA_O_17);
-			}
-
-			if(LCD_D18 != 255){
-				gpio_iomap_output(LCD_D18, GPIO_IOMAP_OUT_LCD_DATA_O_18);
-			}
-
-			if(LCD_D19 != 255){
-				gpio_iomap_output(LCD_D19, GPIO_IOMAP_OUT_LCD_DATA_O_19);
-			}
-
-			if(LCD_D20 != 255){
-				gpio_iomap_output(LCD_D20, GPIO_IOMAP_OUT_LCD_DATA_O_20);
-			}
-
-			if(LCD_D21 != 255){
-				gpio_iomap_output(LCD_D21, GPIO_IOMAP_OUT_LCD_DATA_O_21);
-			}
-
-			if(LCD_D22 != 255){
-				gpio_iomap_output(LCD_D22, GPIO_IOMAP_OUT_LCD_DATA_O_22);
-			}
-
-			if(LCD_D23 != 255){
-				gpio_iomap_output(LCD_D23, GPIO_IOMAP_OUT_LCD_DATA_O_23);
-			}
-
-
+            gpio_iomap_output(MACRO_PIN(LCD_VS_CS), GPIO_IOMAP_OUT_LCD_VSYNC_OR_CS0);	
+            gpio_iomap_output(MACRO_PIN(LCD_HS_DC), GPIO_IOMAP_OUT_LCD_HSYNC_OR_DC);
+            gpio_iomap_output(MACRO_PIN(LCD_DE_ERD), GPIO_IOMAP_OUT_LCD_DE_OR_ERD1);
+            gpio_iomap_output(MACRO_PIN(LCD_DOTCLK_RWR), GPIO_IOMAP_OUT_LCD_DOTCLK_OR_RWR1);
+            gpio_iomap_input(MACRO_PIN(LCD_TE), GPIO_IOMAP_IN_PORT_WKUP_IN3_LCD_TE_M0_10);
+            gpio_iomap_inout(MACRO_PIN(LCD_D0), GPIO_IOMAP_IN_LCD_D0_IN_M1_19 ,GPIO_IOMAP_OUT_LCD_DATA_O_0);
+            gpio_iomap_output(MACRO_PIN(LCD_D1), GPIO_IOMAP_OUT_LCD_DATA_O_1);
+            gpio_iomap_output(MACRO_PIN(LCD_D2), GPIO_IOMAP_OUT_LCD_DATA_O_2);
+            gpio_iomap_output(MACRO_PIN(LCD_D3), GPIO_IOMAP_OUT_LCD_DATA_O_3);
+            gpio_iomap_output(MACRO_PIN(LCD_D4), GPIO_IOMAP_OUT_LCD_DATA_O_4);
+            gpio_iomap_output(MACRO_PIN(LCD_D5), GPIO_IOMAP_OUT_LCD_DATA_O_5);
+            gpio_iomap_output(MACRO_PIN(LCD_D6), GPIO_IOMAP_OUT_LCD_DATA_O_6);
+            gpio_iomap_output(MACRO_PIN(LCD_D7), GPIO_IOMAP_OUT_LCD_DATA_O_7);		
+            gpio_iomap_output(MACRO_PIN(LCD_D8), GPIO_IOMAP_OUT_LCD_DATA_O_8);
+            gpio_iomap_output(MACRO_PIN(LCD_D9), GPIO_IOMAP_OUT_LCD_DATA_O_9);
+            gpio_iomap_output(MACRO_PIN(LCD_D10), GPIO_IOMAP_OUT_LCD_DATA_O_10);
+            gpio_iomap_output(MACRO_PIN(LCD_D11), GPIO_IOMAP_OUT_LCD_DATA_O_11);
+            gpio_iomap_output(MACRO_PIN(LCD_D12), GPIO_IOMAP_OUT_LCD_DATA_O_12);
+            gpio_iomap_output(MACRO_PIN(LCD_D13), GPIO_IOMAP_OUT_LCD_DATA_O_13);
+            gpio_iomap_output(MACRO_PIN(LCD_D14), GPIO_IOMAP_OUT_LCD_DATA_O_14);
+            gpio_iomap_output(MACRO_PIN(LCD_D15), GPIO_IOMAP_OUT_LCD_DATA_O_15);
+            gpio_iomap_output(MACRO_PIN(LCD_D16), GPIO_IOMAP_OUT_LCD_DATA_O_16);
+            gpio_iomap_output(MACRO_PIN(LCD_D17), GPIO_IOMAP_OUT_LCD_DATA_O_17);
+            gpio_iomap_output(MACRO_PIN(LCD_D18), GPIO_IOMAP_OUT_LCD_DATA_O_18);
+            gpio_iomap_output(MACRO_PIN(LCD_D19), GPIO_IOMAP_OUT_LCD_DATA_O_19);
+            gpio_iomap_output(MACRO_PIN(LCD_D20), GPIO_IOMAP_OUT_LCD_DATA_O_20);
+            gpio_iomap_output(MACRO_PIN(LCD_D21), GPIO_IOMAP_OUT_LCD_DATA_O_21);
+            gpio_iomap_output(MACRO_PIN(LCD_D22), GPIO_IOMAP_OUT_LCD_DATA_O_22);
+            gpio_iomap_output(MACRO_PIN(LCD_D23), GPIO_IOMAP_OUT_LCD_DATA_O_23);
         break;
         default:
             ret = EINVAL;
@@ -1256,7 +1204,8 @@ int lmac_fem_pin_func(int request)
 
     if (request) {
         gpio_iomap_output(MACRO_PIN(PIN_LMAC_FEM_RF_TX_EN), GPIO_IOMAP_OUT_RF_TX_EN_FEM);
-        gpio_iomap_output(MACRO_PIN(PIN_LMAC_FEM_RF_RX_EN), GPIO_IOMAP_OUT_RF_RX_EN_FEM);
+        gpio_ioctl(MACRO_PIN(PIN_LMAC_FEM_RF_RX_EN), 
+                   GPIO_SET_SMAP, SMAP_OUT_0, SMAP_OUT_RF_RX_EN_FEM);
     } else {
         gpio_iomap_output(MACRO_PIN(PIN_LMAC_FEM_RF_TX_EN), GPIO_IOMAP_OUTPUT);
         gpio_iomap_output(MACRO_PIN(PIN_LMAC_FEM_RF_RX_EN), GPIO_IOMAP_OUTPUT);

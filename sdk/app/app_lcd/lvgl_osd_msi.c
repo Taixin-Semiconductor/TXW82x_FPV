@@ -125,6 +125,7 @@ struct msi *lvgl_osd_msi(const char *name)
         msi->action = lvgl_osd_msi_action;
         msi->enable = 1;
         msi_add_output(lvgl_osd->msi, NULL, R_OSD_ENCODE);
+        msi_add_output(lvgl_osd->msi, NULL, R_CSC_MSI);
     }
 
     return msi;

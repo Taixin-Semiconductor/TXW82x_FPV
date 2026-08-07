@@ -27,19 +27,18 @@ typedef struct osTimespec {
     long    tv_msec;
 } osTimespec_t;
 
-__bobj uint64_t     g_sys_tick_count;
-__bobj uint32_t     g_sys_tick_cycles;
-__bobj uint32_t     g_cpuloading;
-__bobj uint32_t     g_cpuloading_int;
+extern uint64_t g_sys_tick_count;
+extern uint32_t g_cpuloading;
+extern uint32_t g_cpuloading_int;
+extern volatile uint64_t g_sys_time_last;
 
 void systick_handler(void)
 {
     g_cpuloading_int++;
     g_sys_tick_count++;
-    g_sys_tick_cycles = csi_coret_get_value();
     krhino_tick_proc();
-    if(g_cpuloading_int >= 100){
-        g_cpuloading = 100 - g_idle_task[cpu_cur_get()].runtime;
+    if((g_cpuloading_int*OS_MS_PERIOD_TICK) >= 2000){
+        g_cpuloading = 100*(g_cpuloading_int - g_idle_task[cpu_cur_get()].runtime) / g_cpuloading_int;
         g_idle_task[cpu_cur_get()].runtime = 0;
         g_cpuloading_int = 0;
     }
@@ -50,18 +49,24 @@ uint64_t krhino_curr_nanosec(void)
     uint32_t flag;
     uint32_t cycles;
     uint64_t tick;
+    uint64_t now;
 
-    flag   = disable_irq();
+    flag   = __disable_irq();
     tick   = g_sys_tick_count;
     cycles = csi_coret_get_value();
-    if(cycles > g_sys_tick_cycles) { //关中断期间，tick中断被delay
+    if(csi_vic_get_pending_irq(CORET_IRQn)) { //tick中断被delay
         tick++;
     }
-    enable_irq(flag);
+    if (!flag)  __enable_irq();
 
     cycles = csi_coret_get_load() - cycles;
-    return (tick * OS_MS_PERIOD_TICK * 1000000ULL) + 
-           (uint64_t)cycles * 1000000000ULL / DEFAULT_SYS_CLK;
-}
+    now    = (tick * OS_MS_PERIOD_TICK * 1000000ULL) + 
+             (uint64_t)cycles * 1000000000ULL / DEFAULT_SYS_CLK;
 
+    if(now < g_sys_time_last){
+        now += (OS_MS_PERIOD_TICK * 1000000ULL);
+    }
+    g_sys_time_last = now;
+    return now;
+}
 

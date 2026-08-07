@@ -573,6 +573,22 @@ static ip_addr_t _lwip_netif_get_netaddr(struct netif *nif, int8 type)
     return addr;
 }
 
+err_t lwip_netif_set_dhcp_renew(struct netdev *ndev)
+{
+    struct netif *netif = (struct netif *)ndev->stack_data;
+    if(netif){
+       return netifapi_dhcp_renew(netif);
+    }
+    return -ENODEV;
+}
+err_t lwip_netif_set_dhcp_renew2(const char *name)
+{
+    struct netif *netif = netif_find(name);
+    if(netif){
+       return netifapi_dhcp_renew(netif);
+    }
+    return -ENODEV;
+}
 err_t lwip_netif_set_dhcp(struct netdev *ndev, uint8 enable)
 {
     return _lwip_netif_set_dhcp((struct netif *)ndev->stack_data, enable);
@@ -683,5 +699,23 @@ uint8 *lwip_netif_ipaddr6(struct netif* netif)
 err_t lwip_netif_linkoutput(struct netif* netif, struct pbuf *buf)
 {
     return netif->linkoutput(netif, buf);
+}
+
+int32 lwip_netif_dhcp_leasetime(struct netdev *ndev, uint32 *t0, uint32 *t1, uint32 *t2)
+{
+    struct netif *netif = (struct netif *)ndev->stack_data;
+    if(netif){
+       return dhcp_get_leasetime(netif, t0, t1, t2);
+    }
+    return -ENODEV;
+}
+
+int32 lwip_netif_dhcp_leasetime2(const char *name, uint32 *t0, uint32 *t1, uint32 *t2)
+{
+    struct netif *netif = netif_find(name);
+    if(netif){
+       return dhcp_get_leasetime(netif, t0, t1, t2);
+    }
+    return -ENODEV;
 }
 

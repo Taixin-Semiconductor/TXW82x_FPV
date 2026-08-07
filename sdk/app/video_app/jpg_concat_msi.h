@@ -4,13 +4,14 @@
 
 #include "lib/multimedia/msi.h"
 #include "lib/video/dvp/jpeg/jpg.h"
-// 不考虑不带psram的情况
+#ifndef FAST_JPG
 struct jpg_V3_msi_s
 {
     struct os_work     work;
     char               msi_name[16];
     struct msi        *msi;
     struct jpg_device *jpg;
+    struct scale_device *scale_dev;
     struct os_msgqueue msgq;
     struct os_event    evt;
     struct fbpool      pool;
@@ -24,12 +25,49 @@ struct jpg_V3_msi_s
     uint16_t           jpg_node_len;
     uint8_t            jpg_node_count;
     uint8_t            qt;
-    uint8_t            which : 1, running : 1, src_from : 3, rev : 3;
+    uint8_t            which : 1, running : 1, src_from : 3, scale1_flag : 1, vpp_close_flag : 1, rev : 1;
     uint8_t            datatag;
     uint8_t            gen420_type; // 如果是gen420的编码,这里需要配置一下类型,因为gen420来源很多地方,也因为是手动kick的,所以这里可以gen420配置了类型再kick,done的时候配置对应类型
     uint8_t            scale1_type;
+    int32_t            dqtable_index;
+    int32_t            diff_prev;
+    int32_t            diff_sum;
+    int32_t            target_len;
 };
+#else
+// 不考虑不带psram的情况
+struct jpg_V3_msi_s
+{
+    struct os_work       work;
+    char                 msi_name[16];
+    struct msi          *msi;
+    struct jpg_device   *jpg;
+    struct scale_device *scale_dev;
+    struct os_msgqueue   msgq;
+    struct os_event      evt;
 
+    void *now_node;
+    void *use_last_node;
+    void *last_node;
+
+    uint32_t err;
+    uint32_t set_time;
+    uint16_t w, h;
+    uint16_t jpg_node_len;
+    uint8_t  jpg_node_count;
+    uint8_t  qt;
+    uint8_t  which : 1, running : 1, src_from : 3, scale1_flag : 1, vpp_close_flag : 1, rev : 1;
+    uint8_t  datatag;
+    uint8_t  gen420_type; // 如果是gen420的编码,这里需要配置一下类型,因为gen420来源很多地方,也因为是手动kick的,所以这里可以gen420配置了类型再kick,done的时候配置对应类型
+    uint8_t  scale1_type;
+
+    uint32_t count;
+    int32_t  dqtable_index;
+    int32_t  diff_prev;
+    int32_t  diff_sum;
+    int32_t  target_len;
+};
+#endif
 struct jpg_concat_msi_s
 {
     struct os_work work;
@@ -39,8 +77,8 @@ struct jpg_concat_msi_s
     uint16_t      *filter_type;
     uint32_t       set_time;
     uint16_t       w, h;
-    uint8_t        jpg_node_count;                                                   // 支持修改,后续可以代码根据不同情况申请空间
-    uint8_t        jpg_running : 1, which_jpg : 1, auto_free : 1, from : 3, rev : 2; // which_jpg  0:jpg0  1:jpg1   auto_free: 是否自动停止
+    uint8_t        jpg_node_count;                                                                           // 支持修改,后续可以代码根据不同情况申请空间
+    uint8_t        jpg_running : 1, which_jpg : 1, auto_free : 1, from : 3, scale1_flag : 1, force_node : 1; // which_jpg  0:jpg0  1:jpg1   auto_free: 是否自动停止
     uint8_t        datatag;
     uint8_t        gen420_type;
     uint8_t        scale1_type;

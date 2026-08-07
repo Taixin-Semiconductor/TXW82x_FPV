@@ -10,14 +10,18 @@ extern "C" {
 typedef void *(*ispcfg_malloc)(int size);
 typedef void (*ispcfg_free)(void *ptr);
 
-typedef uint32 _Sensor_YGAMMA;
+
+#define NUM_CURVES  5
+#define LUT_SIZE    64
 
 #define ISPCFG_MAGIC  0xb103
 
-#define BV2RAWNR_ARRAY_NUM         11
-#define BV2YUVNR_ARRAY_NUM         6
-#define BV2CSUPP_ARRAY_NUM         3
-#define LOCAL_HUE_SAT_COLOR        9
+#define BV2RAWNR_ARRAY_NUM         (11)
+#define BV2YUVNR_ARRAY_NUM         ( 6)
+#define BV2CSUPP_ARRAY_NUM         ( 3)
+#define LOCAL_HUE_SAT_COLOR        ( 9)
+#define BV2COLENH_ARRAY_NUM        ( 8)
+#define BV2GAMMA_ARRAY_NUM         ( 8)
 
 enum awb_meas_mode{
     AWB_MEAS_MODE_YUV     = 0,
@@ -137,7 +141,10 @@ typedef struct
 }_Sensor_WDR;
 
 typedef struct hgisp_cfg_wdr {
-    uint32 auto_noise_floor_out : 8, wdr_en : 8, reserved : 16;        // auto_noise_floor_out : 打开自动计算噪声抑制输出控制点功能 wdr_en:是否使能wdr
+    uint32 auto_noise_floor_out : 8, // auto_noise_floor_out : 打开自动计算噪声抑制输出控制点功能 wdr_en:是否使能wdr
+           wdr_en               : 8, //WDR使能,isp tuning时需要设0
+           dynamic_gamma_en     : 8, //动态y_gamma使能,isp tuning时需要设0
+           y_gamma_opt          : 8; //0是自动y_gamma,1,2,3,4,5是选择曲线       
     float  temporal_smooth_alpha;                                      // 帧间平滑控制, alpha越小，帧间亮度越稳定，但对场景变化响应越慢。典型值范围:  0.05 ~ 0.2
     uint16 noise_floor;                                                // 噪声抑制输入控制点
     uint16 noise_floor_out;                                            // 噪声抑制输出控制点
@@ -157,7 +164,7 @@ typedef struct
            min_exposure_line       : 16;
     uint32 default_exposure_line   : 16,
            expo_frame_interval     :  8,
-           reserved0               :  8;
+           min_frame_vb 		   :  8;
 	float  to_day_bv;
 	float  to_night_bv;
     uint8  dark_scene_target_lut[2];
@@ -166,13 +173,13 @@ typedef struct
 	float  hs_scene_bv_lut[2];
     float  lowlight_lsb_bv_lut[8];
 	uint8  lowlight_lsb_gain_lut[8];
-    uint32 min_frame_vb : 8, curr_fps : 8,  max_frame_length : 16;
+    uint32 curr_fps : 16,  max_frame_length : 16;
 }_Sensor_AE;
 
 typedef struct hgisp_cfg_ae {
     uint32 luma_target : 16, luma_weight_sum : 16;
     uint8  luma_weight[25];
-    uint8  reserved0, reserved1, reserved2;
+    uint8   exposure_alpha, reserved1, reserved2;
     uint32  ae_lock_cnt                 : 8,
             ae_lock_tolerance           : 8,
             ae_manual_en                : 8,
@@ -243,9 +250,17 @@ typedef struct hgisp_md_param {
            frame_interval :  8;
 }_Sensor_MD;
 
+typedef struct {
+    uint32 adj_by_bv : 8, reversed : 24;
+    float bv[BV2GAMMA_ARRAY_NUM];
+    uint8 y_alpha[BV2GAMMA_ARRAY_NUM];
+    uint8 rgb_alpha[BV2GAMMA_ARRAY_NUM];
+}_Sensor_GAMMA_BV;
+
 typedef struct hgisp_csc_param {
     uint32 rgb2yuv_gamut    : 8, yuv2rgb_in_gamut  : 8, yuv2rgb_out_gamut : 8, rgb2yuv_range   : 8;
     uint32 yuv2rgb_in_range : 8, yuv2rgb_out_range : 8, y_gamma_alpha     : 8, rgb_gamma_alpha : 8;
+    _Sensor_GAMMA_BV *gamma_alpha_map;
 }_Sensor_CSC;
 
 typedef struct hgisp_dpc_param {
@@ -298,23 +313,30 @@ typedef struct
 	uint8 y_alfa, c_alfa, y_win_size, reserved0;
 }_Sensor_YUVNR;
 
+typedef struct {
+    float bv;
+    int16 hue, reserved0;
+    uint8 luma, contrast, saturation, reserved1;
+}_Sensor_COLENH_BV;
+
 typedef struct
 {
-    uint8 yuv_range; // narrow : 0 full : 1
-	uint8 luma; // range: 0 ~ 100
-	uint8 contrast; // range: 0 ~ 100
-	uint8 saturation; // range: 0 ~ 100
-	int16 hue; // range: -180 ~ 180'
-    int16 reserved0;
-	int16 ce_in_ofs_y,  ce_in_ofs_cb,  ce_in_ofs_cr; // range: -128 ~ 128
-	int16 ce_out_ofs_y, ce_out_ofs_cb, ce_out_ofs_cr; // range: -128 ~ 128
-    uint8 adj_sat_by_bv;
-    uint8 hi_sat;
-    uint8 lo_sat;
-    uint8 reserved1;
-    float hi_sat_bv; // high brightness for saturation
-    float lo_sat_bv; // low brightness for saturation
+    uint8  yuv_range;    // narrow : 0 full : 1
+	uint8  luma;         // range: 0 ~ 100
+	uint8  contrast;     // range: 0 ~ 100
+	uint8  saturation;   // range: 0 ~ 100
+	int16  hue;          // range: -180 ~ 180'
+    int16  reserved0;
+	int16  ce_in_ofs_y,  ce_in_ofs_cb,  ce_in_ofs_cr;  // range: -128 ~ 128
+	int16  ce_out_ofs_y, ce_out_ofs_cb, ce_out_ofs_cr; // range: -128 ~ 128
+    uint32 adj_by_bv_en : 1, reserved1 : 31;
+    _Sensor_COLENH_BV *bv2colenh_map;
 }_Sensor_COLENH;
+
+typedef struct {
+    _Sensor_COLENH    sensor_ce;   
+    _Sensor_COLENH_BV bv2colenh_map[BV2COLENH_ARRAY_NUM];
+}_Sensor_BV2COLENH;
 
 typedef struct 
 {
@@ -332,6 +354,14 @@ typedef struct
 {
     uint32  *p_lsc_tbl; 
 }_Sensor_LSC;
+
+
+typedef struct
+{
+    
+    float bv;                         
+    uint32 packed_lut[LUT_SIZE]; 
+} _Sensor_YGAMMA;
 
 
 typedef struct  {
@@ -367,8 +397,9 @@ struct hgisp_param_info {
     _Sensor_BLC              blc_param;
     _Sensor_MD               md_param;
     _Sensor_CSC              csc_param;
+    _Sensor_GAMMA_BV         gamma_param;
     _Sensor_DPC              dpc_param;
-    _Sensor_COLENH           ce_param;
+    _Sensor_BV2COLENH        ce_param;
     _Sensor_SHARP            sharp_param;
     _Sensor_NR               nr_param;
     _Sensor_GIC              gic_param;
@@ -376,7 +407,7 @@ struct hgisp_param_info {
     TYPE_HGISP_CFG_WDR       config_wdr;   
     ispcfg_malloc            malloc;
     ispcfg_free              free;
-    uint32                   *y_gamma;
+    _Sensor_YGAMMA           *y_gamma;
     uint32                   *rgb_gamma;
     uint32                   *lsc_tbl;
 };

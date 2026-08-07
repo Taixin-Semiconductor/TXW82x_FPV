@@ -113,7 +113,7 @@ static DRESULT rt_udisk_read(void *dev, BYTE* buffer, DWORD sector,
     data = (struct ustor_data*)disk->user_data;
     intf = disk->intf;
 
-    os_printf("%s sector:%d count:%d\n",__FUNCTION__,sector,count);
+    //os_printf("%s sector:%d count:%d\n",__FUNCTION__,sector,count);
 
     ret = rt_usbh_storage_read10(intf, (rt_uint8_t*)buffer, sector, count, timeout);
 
@@ -146,7 +146,7 @@ static DRESULT rt_udisk_write (void *dev, BYTE* buffer, DWORD sector,
     data = (struct ustor_data*)disk->user_data;
     intf = disk->intf;
 
-    os_printf("%s write sector:%d count:%d \n",__FUNCTION__,sector,count);
+    //os_printf("%s write sector:%d count:%d \n",__FUNCTION__,sector,count);
 
     ret = rt_usbh_storage_write10(intf, (rt_uint8_t*)buffer, sector, count, timeout);
     if (ret != RT_EOK)
@@ -291,7 +291,10 @@ rt_err_t rt_udisk_run(struct uhintf* intf)
     rt_err_t ret;
     //char dname[8];
     char sname[8];
-    rt_uint8_t max_lun, *sector, sense[18], inquiry[36];
+    rt_align(4) rt_uint8_t max_lun[1 + USB_RX_BUFF_RESERVE_SIZE];
+    rt_uint8_t *sector;
+    rt_align(4) rt_uint8_t sense[18 + USB_RX_BUFF_RESERVE_SIZE];
+    rt_align(4) rt_uint8_t inquiry[36 + USB_RX_BUFF_RESERVE_SIZE];
     ustor_t stor;
 
     /* check parameter */
@@ -309,7 +312,7 @@ rt_err_t rt_udisk_run(struct uhintf* intf)
     stor->dev_cnt = 1;
 
     /* get max logic unit number */
-    ret = rt_usbh_storage_get_max_lun(intf, &max_lun);
+    ret = rt_usbh_storage_get_max_lun(intf, max_lun);
     if(ret != RT_EOK)
         rt_usbh_clear_feature(intf->device, 0, USB_FEATURE_ENDPOINT_HALT);
 
@@ -386,7 +389,7 @@ rt_err_t rt_udisk_run(struct uhintf* intf)
         stor->capicity[0], stor->capicity[1]);
 
     /* get the first sector to read partition table */
-    sector = (rt_uint8_t*) rt_malloc (SECTOR_SIZE);
+    sector = (rt_uint8_t*) rt_malloc (SECTOR_SIZE + USB_RX_BUFF_RESERVE_SIZE);
     if (sector == RT_NULL)
     {
         rt_kprintf("allocate partition sector buffer failed\n");

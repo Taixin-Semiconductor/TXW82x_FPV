@@ -4,22 +4,27 @@
 #define LOG_MALLOC av_psram_malloc
 #define LOG_FREE   av_psram_free
 
-#define LOG_SIZE_UINT     (8 * 1024)
-#define SAVE_RESERVE_SIZE (10 + 1 + 8 + 1)
-#define SAVE_FLAG_FORMAT  "[%08d]:log end\n"
+#define LOG_SIZE_UINT        (100 * 1024)
+#define SAVE_RESERVE_SIZE    (10 + 1 + 8 + 1)
+#define SAVE_FLAG_FORMAT     "[%08d]:log end\n"
+#define WRITE_DROP_DATA_FLAG "[%08d]:interrupt drop\n"
 
 #define LOG_SAVE_PATH "0:log"
-
 static int32 log_save_work(struct os_work *work)
 {
     struct log_save_s *log_s = (struct log_save_s *) work;
     struct framebuff  *get_f;
     struct msi        *s    = log_s->s;
     uint32_t           tell = 0;
-    uint8_t            filename[64];
+    char            filename[64];
     int                ret = 0;
+
     // 尝试接收数据,看看是否有需要写入到sd卡或者缓冲区buf
-    get_f                  = msi_get_fb(s, 0);
+    get_f = msi_get_fb(s, 0);
+    if (get_f && get_f->rev != 0)
+    {
+        log_s->drop_data_flag = 1;
+    }
     if (get_f)
     {
         uint32_t write_cache_size = get_f->len;
@@ -63,16 +68,20 @@ static int32 log_save_work(struct os_work *work)
 
             if (log_s->fp)
             {
-                if (log_s->fp)
+                tell = osal_ftell(log_s->fp);
+                if (log_s->filesize < tell + log_s->offset)
                 {
-                    tell = osal_ftell(log_s->fp);
-                    if (log_s->filesize < tell + log_s->offset)
-                    {
-                        log_s->filesize += LOG_SIZE_UINT;
-                    }
-                    // 预分配文件簇
-                    osal_fseek(log_s->fp, log_s->filesize);
-                    osal_fseek(log_s->fp, tell);
+                    log_s->filesize += LOG_SIZE_UINT;
+                }
+                // 预分配文件簇
+                osal_fseek(log_s->fp, log_s->filesize);
+                osal_fseek(log_s->fp, tell);
+                // 如果有漏数据,则在这里写入一个特殊标志,代表曾经漏过数据,不保证漏数据多少,只是一个标志
+                if (log_s->drop_data_flag)
+                {
+                    os_sprintf(filename, WRITE_DROP_DATA_FLAG, (uint32_t) os_jiffies());
+                    osal_fwrite(filename, strlen(filename), 1, log_s->fp);
+                    log_s->drop_data_flag = 0;
                 }
                 ret  = osal_fwrite(log_s->save_buf + log_s->start_offset, log_s->offset + SAVE_RESERVE_SIZE, 1, log_s->fp);
                 tell = osal_ftell(log_s->fp);
@@ -145,6 +154,13 @@ static int32 log_save_work(struct os_work *work)
     {
         if (log_s->offset)
         {
+            // 如果有漏数据,则在这里写入一个特殊标志,代表曾经漏过数据,不保证漏数据多少,只是一个标志
+            if (log_s->drop_data_flag)
+            {
+                os_sprintf(filename, WRITE_DROP_DATA_FLAG, (uint32_t) os_jiffies());
+                osal_fwrite(filename, strlen(filename), 1, log_s->fp);
+                log_s->drop_data_flag = 0;
+            }
             osal_fwrite(log_s->save_buf + log_s->start_offset, log_s->offset, 1, log_s->fp);
         }
         log_s->last_syn_time        = os_jiffies();
@@ -175,7 +191,15 @@ static int32 log_save_work(struct os_work *work)
                     osal_fseek(log_s->fp, log_s->filesize);
                     osal_fseek(log_s->fp, tell);
                 }
-                ret = osal_fwrite(log_s->save_buf + log_s->start_offset, log_s->offset + SAVE_RESERVE_SIZE, 1, log_s->fp);
+
+                // 如果有漏数据,则在这里写入一个特殊标志,代表曾经漏过数据,不保证漏数据多少,只是一个标志
+                if (log_s->drop_data_flag)
+                {
+                    os_sprintf(filename, WRITE_DROP_DATA_FLAG, (uint32_t) os_jiffies());
+                    osal_fwrite(filename, strlen(filename), 1, log_s->fp);
+                    log_s->drop_data_flag = 0;
+                }
+                ret  = osal_fwrite(log_s->save_buf + log_s->start_offset, log_s->offset + SAVE_RESERVE_SIZE, 1, log_s->fp);
                 tell = osal_ftell(log_s->fp);
                 osal_fseek(log_s->fp, tell - SAVE_RESERVE_SIZE);
                 tell = osal_ftell(log_s->fp);

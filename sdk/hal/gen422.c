@@ -5,6 +5,21 @@
 #include "devid.h"
 #include "hal/gen422.h"
 
+int32 gen422_suspend(struct gen422_device *p_gen)
+{
+    if (p_gen && ((const struct gen422_hal_ops *)p_gen->dev.ops)->suspend) {
+		return ((const struct gen422_hal_ops *)p_gen->dev.ops)->suspend(p_gen);
+    }
+    return RET_ERR;
+}
+
+int32 gen422_resume(struct gen422_device *p_gen)
+{
+    if (p_gen && ((const struct gen422_hal_ops *)p_gen->dev.ops)->resume) {
+        return ((const struct gen422_hal_ops *)p_gen->dev.ops)->resume(p_gen);
+    }
+    return RET_ERR;
+}
 
 int32 gen422_open(struct gen422_device *p_gen)
 {

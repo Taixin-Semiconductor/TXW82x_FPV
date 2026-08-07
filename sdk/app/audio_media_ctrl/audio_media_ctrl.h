@@ -21,9 +21,21 @@ enum {
 
 #define DEFAULT_RECORD_FORMAT     RECORD_AAC
 
-void audio_file_record_stop(void);
+typedef struct {
+    uint8_t filename[30];
+    uint8_t record_format;
+    uint8_t is_running;
+    int32_t record_time;  //seconds 
+    uint32_t sampleRate;  
+} audio_record_struct;
+
+int32_t audio_file_record_pause(void);
+int32_t audio_file_record_continue(void);
+int32_t audio_file_record_stop(void);
 void audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_time);
-void audio_file_play_stop(void);
-void audio_file_play_init(char *filename, uint8_t play_mode);
+int32_t audio_file_play_pause(struct msi *msi);
+int32_t audio_file_play_continue(struct msi *msi);
+int32_t audio_file_play_stop(struct msi *msi);
+struct msi *audio_file_play_init(char *filename, uint8_t play_mode, AUDEC_INIT *audec_init);
 
 #endif

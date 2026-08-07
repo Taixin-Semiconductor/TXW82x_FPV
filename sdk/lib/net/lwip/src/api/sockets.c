@@ -4657,8 +4657,12 @@ fail:
 
 int socket_err(int sockfd)
 {
+#if 0
     struct lwip_sock *sock = get_socket(sockfd);
     return sock ? -sock->sockerr : -EIO;
+#else
+    return get_errno();
+#endif
 }
 int socket_done(int s)
 {

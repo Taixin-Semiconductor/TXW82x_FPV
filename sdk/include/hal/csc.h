@@ -54,12 +54,15 @@ struct csc_device {
 struct csc_hal_ops {
 	struct devobj_ops ops;
     int32(*init)(struct csc_device *csc_dev);
+	int32(*suspend)(struct csc_device *csc_dev);
+	int32(*resume)(struct csc_device *csc_dev);	
     int32(*ioctl)(struct csc_device *csc_dev, enum csc_ioctl_cmd ioctl_cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct csc_device *csc_dev, uint32 irq_flag, csc_irq_hdl irq_hdl, uint32 irq_data);
     int32(*release_irq)(struct csc_device *csc_dev, uint32 irq_flag);
 };
 
-
+int32 csc_suspend(struct csc_device *p_csc);
+int32 csc_resume(struct csc_device *p_csc);
 int32 csc_init(struct csc_device *p_csc);
 int32 csc_request_irq(struct csc_device *p_csc, uint32 irq_flags, csc_irq_hdl irq_hdl, uint32 irq_data);
 int32 csc_release_irq(struct csc_device *p_csc, uint32 irq_flags);

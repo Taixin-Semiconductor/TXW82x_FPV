@@ -182,7 +182,6 @@ static int hgsha_v1_transform(struct sha_dev *dev, struct sha_req *req)
 				break;
 			}			
 		}
-
     }
 
     memcpy(req->state, (void*)&hw->SHA_RESULT0, stas);
@@ -355,6 +354,63 @@ static int32 hgsha_v1_ioctl(struct sha_dev *dev, uint32 cmd, uint32 param1, uint
     return RET_OK;
 }
 
+void hg_sha_test_printf(struct sha_dev *dev)
+{
+    uint8_t src[64];
+    uint32_t rsum = 0;
+    uint32_t state[8] = {
+        0x12345678, 0x66225544, 0x11447788, 0x22441597,
+        0x22441597, 0x11447788, 0x66225544, 0x12345678
+    };
+    for (int i = 0;i<64;i++)
+        src[i] = i;
+    struct sha_req req = {
+        .type = T_SHA256,
+        .input = src,
+        .state = state,
+        .len = 64,
+    };
+    hgsha_v1_transform(dev, &req);
+    for (int i = 0;i<8;i++)
+        rsum += state[i];
+
+    _os_printf("sha test: %x\r\n", rsum);
+    if (rsum != 0x4a635c1c) {
+        _os_printf("sha lp err\r\n");
+    }
+}
+#ifdef CONFIG_SLEEP
+// #define HGSHA_SLEEP_TEST(dev) hg_sha_test_printf(dev)
+#define HGSHA_SLEEP_TEST(dev)
+static int32 hgsha_v1_suspend(struct sha_dev *dev)
+{
+    struct hgsha_v1 *sha        =(struct hgsha_v1 *)dev;
+    struct hgsha_v1_hw *sha_reg = sha->hw;
+    HGSHA_SLEEP_TEST(dev);
+    if(os_mutex_lock(&sha->lock, 80000)) {
+        return RET_ERR;
+    }
+
+    irq_disable(sha->irq_num);
+    sysctrl_sha_clk_close();
+
+    return 0;
+}
+
+static int32 hgsha_v1_resume(struct sha_dev *dev)
+{
+    struct hgsha_v1 *sha        =(struct hgsha_v1 *)dev;
+	struct hgsha_v1_hw *hw = (struct hgsha_v1_hw *)sha->hw;
+    os_mutex_unlock(&sha->lock);
+    sysctrl_sha_clk_open();
+    sysctrl_sha_reset();
+    hw->SHA_PENDING |= 1;
+    irq_enable(sha->irq_num);
+    HGSHA_SLEEP_TEST(dev);
+    return 0;
+}
+#endif
+
 static const struct sha_hal_ops sha_v1_ops = {
     .init              = hgsha_v1_init,
     .update            = hgsha_v1_update,
@@ -363,6 +419,10 @@ static const struct sha_hal_ops sha_v1_ops = {
     .ioctl             = hgsha_v1_ioctl,
     .requset_irq       = hgsha_v1_request_irq,
     .release_irq       = hgsha_v1_release_irq,
+#ifdef CONFIG_SLEEP
+    .ops.suspend = (int32 (*)(struct dev_obj *obj))hgsha_v1_suspend,
+    .ops.resume  = (int32 (*)(struct dev_obj *obj))hgsha_v1_resume,
+#endif
 };
 
 __init int32_t hgsha_v1_attach(uint32_t dev_id, struct hgsha_v1 *sha)

@@ -215,6 +215,8 @@ struct scale_device {
 struct scale_hal_ops{
 	struct devobj_ops ops;
     int32(*open)(struct scale_device *scale_dev);
+	int32(*suspend)(struct scale_device *scale_dev);
+	int32(*resume)(struct scale_device *scale_dev);	
     int32(*close)(struct scale_device *scale_dev);
     int32(*ioctl)(struct scale_device *scale_dev, enum scale_ioctl_cmd ioctl_cmd, uint32 param1, uint32 param2);
     int32(*request_irq)(struct scale_device *scale_dev, uint32 irq_flag, scale_irq_hdl irq_hdl, uint32 irq_data);
@@ -231,7 +233,8 @@ typedef enum {
 	FRAME_RGB888P
 }SCALE2_FORMAT;
 
-
+int32 scale_suspend(struct scale_device *p_scale);
+int32 scale_resume(struct scale_device *p_scale);
 int32 scale_open(struct scale_device *p_scale);
 int32 scale_close(struct scale_device *p_scale);
 int32 scale_request_irq(struct scale_device *p_scale, uint32 irq_flags, scale_irq_hdl irq_hdl, uint32 irq_data);

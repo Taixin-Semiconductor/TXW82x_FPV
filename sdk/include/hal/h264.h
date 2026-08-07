@@ -333,6 +333,8 @@ struct h264_device {
 struct h264_hal_ops {
 	struct devobj_ops ops;
     int32(*init)(struct h264_device *h264_dev,enum h264_module_clk clk_type);
+	int32(*suspend)(struct h264_device *h264_dev);
+	int32(*resume)(struct h264_device *h264_dev);		
     int32(*deinit)(struct h264_device *h264_dev);	
     int32(*open)(struct h264_device *h264_dev);
     int32(*close)(struct h264_device *h264_dev);
@@ -341,7 +343,8 @@ struct h264_hal_ops {
     int32(*request_irq)(struct h264_device *h264_dev, uint32 irq_flag, h264_irq_hdl irq_hdl, uint32 irq_data);
     int32(*release_irq)(struct h264_device *h264_dev, uint32 irq_flag);
 };
-
+int32 h264_suspend(struct h264_device *p_h264);
+int32 h264_resume(struct h264_device *p_h264);
 int32 h264_init(struct h264_device *p_h264,enum h264_module_clk clk_type);
 int32 h264_deinit(struct h264_device *p_h264);
 int32 h264_open(struct h264_device *p_h264);

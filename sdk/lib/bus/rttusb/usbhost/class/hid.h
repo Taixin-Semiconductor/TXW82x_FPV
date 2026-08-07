@@ -16,7 +16,7 @@
 struct uhid
 {
     upipe_t pipe_in;
-    rt_uint8_t buffer[8];
+    rt_uint8_t buffer[8 + USB_RX_BUFF_RESERVE_SIZE];
     uprotocal_t protocal;
 };
 typedef struct uhid uhid_t;

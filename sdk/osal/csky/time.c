@@ -57,6 +57,8 @@ int gettimeofday(struct timeval *ptimeval, struct timezone *ptimezone)
     uint64 diff_ns = krhino_curr_nanosec() - sys_time_base_ns;
     ptimeval->tv_sec  = (sys_time_real_ns + diff_ns) / NANOSECONDS_PER_SECOND;
     ptimeval->tv_usec = ((sys_time_real_ns + diff_ns) % NANOSECONDS_PER_SECOND) / 1000;
+    //加时区
+    //ptimeval->tv_sec += (8*3600); //东八区
     return 0;
 }
 

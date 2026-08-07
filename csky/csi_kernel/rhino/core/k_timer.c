@@ -231,6 +231,8 @@ kstat_t krhino_timer_arg_change_auto(ktimer_t *timer, void *arg)
     return err;
 }
 
+extern uint64_t os_mseconds(void);
+extern void hgprintf(const char *fmt, ...);
 static void timer_cb_proc(void)
 {
     klist_t     *q;
@@ -238,6 +240,7 @@ static void timer_cb_proc(void)
     klist_t     *end;
     ktimer_t    *timer;
     sys_time_i_t delta;
+    uint64_t     tick;
 
     start = end = &g_timer_head;
 
@@ -246,7 +249,12 @@ static void timer_cb_proc(void)
         delta = (sys_time_i_t)timer->match - (sys_time_i_t)g_timer_count;
 
         if (delta <= 0) {
+            tick = os_mseconds();
             timer->cb(timer, timer->timer_cb_arg);
+            if(os_mseconds() - tick > 5){
+                hgprintf("\0011timer:%p, callback:%p use time: %d ms!\r\n", timer, timer->cb, (uint32_t)(os_mseconds() - tick));
+            }
+
             timer_list_rm(timer);
 
             if (timer->round_ticks > 0u) {

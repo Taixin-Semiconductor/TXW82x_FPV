@@ -132,6 +132,8 @@ struct jpeg_fifo
 enum
 {
     RTSP_TCP_SEND_FINISH = BIT(0),     // done的时候报错
+	RTSP_TCP_READ_MUTEX = BIT(1), 
+	RTSP_TCP_WRITE_MUTEX = BIT(2),    
 };
 struct conn {
 	struct conn *next;

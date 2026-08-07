@@ -61,7 +61,7 @@ uint32_t mp4_write(void *buf, uint32_t size, uint32_t n, F_FILE *fp)
     // 返回值0是代表异常
     uint32_t ret              = 1;
     uint32_t write_size_total = size * n;
-    ret = osal_fwrite(buf, 1, write_size_total, fp);
+    ret                       = osal_fwrite(buf, 1, write_size_total, fp);
     return !ret;
 }
 
@@ -141,16 +141,11 @@ static const unsigned char box_ftyp[]  = {
 #define mp4_free mp4_common_box_s
 #define mp4_esds mp4_common_box_full_s
 
-
-
-
-uint32_t mp4_audio_cfg_init(mp4_key_msg *msg, uint8_t *asps_data, uint8_t len);
+uint32_t        mp4_audio_cfg_init(mp4_key_msg *msg, uint8_t *asps_data, uint8_t len);
 static uint32_t _MP4_init(F_FILE *fp, mp4_key_msg *msg);
 uint32_t        write_h264_nal(F_FILE *fp, mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint32_t duration, int keyflag);
 
 uint32_t write_h264_pps_sps(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size);
-
-
 
 // 获取nal的size,从0开始搜索,返回的是的nal头的size,offset相对于头的偏移(通过多次调用,可以用于计算nal_size)
 // 返回0代表搜索不到nal的头
@@ -560,6 +555,25 @@ uint32_t mp4_avcC_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     return 0;
 }
 
+uint32_t mp4_colr_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
+{
+    mp4_colr colr;
+
+    memset(&colr, 0, sizeof(colr));
+    memcpy(colr.boxname, "colr", 4);
+    memcpy(colr.colour_type, "nclc", 4);
+
+    colr.size                     = BIG4_ENDIAN(sizeof(colr));
+    colr.full_range_flag          = BIG1_ENDIAN(80);
+    colr.colour_primaries         = BIG2_ENDIAN(1);
+    colr.transfer_characteristics = BIG2_ENDIAN(1);
+    colr.matrix_coefficients      = BIG2_ENDIAN(1);
+    mp4_seek(fp, offset, SEEK_SET);
+    mp4_write(&colr, 1, sizeof(colr), fp);
+    msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
+    return 0;
+}
+
 uint32_t mp4_stts_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
 {
     mp4_stts stts;
@@ -696,7 +710,7 @@ static int od_size_of_size(int size)
 {
     if (size > 0x7f)
     {
-        os_printf(KERN_ERR"%s:%d err,size:%X\n", __FUNCTION__, __LINE__, size);
+        os_printf(KERN_ERR "%s:%d err,size:%X\n", __FUNCTION__, __LINE__, size);
     }
     int i, size_of_size = 1;
     for (i = size; i > 0x7F; i -= 0x7F)
@@ -779,8 +793,8 @@ uint32_t mp4_mdat_write(F_FILE *fp, uint32_t offset, mp4_key_msg *msg)
     mdat.size = BIG4_ENDIAN(max_mdata_size - msg->mdat_offset);
     // 记录mdat_size
     mp4_write(&mdat, 1, sizeof(mdat), fp);
-    //512对齐
-    msg->mdat_nowoffset = (mp4_tell(fp)+0x1ff)&(~0x1ff);
+    // 512对齐
+    msg->mdat_nowoffset = (mp4_tell(fp) + 0x1ff) & (~0x1ff);
     msg->mdat_size      = max_mdata_size - msg->mdat_offset;
     mp4_truncate(fp, msg->mdat_size - 8);
     msg->msg_end = msg->msg_end > osal_ftell(fp) ? msg->msg_end : osal_ftell(fp);
@@ -928,7 +942,7 @@ uint32_t mp4_syn(mp4_key_msg *msg)
         max_duration = max_duration > vtrak->duration ? max_duration : vtrak->duration;
     }
 
-    os_printf(KERN_INFO"max_duration:%d\n", max_duration);
+    os_printf(KERN_INFO "max_duration:%d\n", max_duration);
     mp4_seek(fp, msg->mvhd_duration_offset, SEEK_SET);
     max_duration = BIG4_ENDIAN(max_duration);
     ret |= mp4_write(&max_duration, 1, sizeof(max_duration), fp);
@@ -951,9 +965,9 @@ uint32_t mp4_syn(mp4_key_msg *msg)
 uint32_t update_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, uint32_t duration, int keyflag)
 {
     // 更新stts
-    uint32_t      ret          = 0;
-    uint8_t       flag         = 0;
-    trak_key_msg *vtrak        = &msg->trak[0];
+    uint32_t      ret   = 0;
+    uint8_t       flag  = 0;
+    trak_key_msg *vtrak = &msg->trak[0];
 
     vtrak->duration += duration;
     uint32_t delta = duration * 90;
@@ -999,8 +1013,8 @@ uint32_t update_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, uint32_
     *stco_offset          = BIG4_ENDIAN(msg->mdat_nowoffset);
     vtrak->stco_need_write_len += sizeof(*stco_offset);
     msg->mdat_nowoffset += size;
-    //对齐操作
-    msg->mdat_nowoffset = (msg->mdat_nowoffset+0x1ff)&(~0x1ff);
+    // 对齐操作
+    msg->mdat_nowoffset = (msg->mdat_nowoffset + 0x1ff) & (~0x1ff);
     vtrak->stco_count++;
     // 如果大于512,则写入到sd卡
     if (vtrak->stco_need_write_len >= 512 || vtrak->stco_count >= STCO_COUNT)
@@ -1077,8 +1091,8 @@ uint32_t update_audio_stbl_subbox(F_FILE *fp, mp4_key_msg *msg, uint32_t size, u
     *stco_offset          = BIG4_ENDIAN(msg->mdat_nowoffset);
     vtrak->stco_need_write_len += sizeof(*stco_offset);
     msg->mdat_nowoffset += (size);
-    //对齐操作
-    msg->mdat_nowoffset = (msg->mdat_nowoffset+0x1ff)&(~0x1ff);
+    // 对齐操作
+    msg->mdat_nowoffset = (msg->mdat_nowoffset + 0x1ff) & (~0x1ff);
     vtrak->stco_count++;
     // 如果大于512,则写入到sd卡
     if (vtrak->stco_need_write_len >= 512 || vtrak->stco_count >= STCO_COUNT)
@@ -1100,7 +1114,7 @@ uint32_t write_h264_nal(F_FILE *fp, mp4_key_msg *msg, uint8_t *nal_buf, uint32_t
     // 已经超过对应用量
     if (msg->file_max_size > 0 && (msg->mdat_nowoffset - msg->mdat_offset + size > msg->mdat_size))
     {
-        ret |= (MP4_FULL_ERR<<16);
+        ret |= (MP4_FULL_ERR << 16);
         goto write_h264_nal_end;
     }
     trak_key_msg *vtrak = &msg->trak[0];
@@ -1110,27 +1124,27 @@ uint32_t write_h264_nal(F_FILE *fp, mp4_key_msg *msg, uint8_t *nal_buf, uint32_t
     mp4_seek(fp, msg->mdat_nowoffset, SEEK_SET);
     uint32_t big_size = BIG4_ENDIAN(size);
     uint32_t buf_size = size;
-    //直接拷贝数据直接写入
-    if(buf_size <= 512-4)
+    // 直接拷贝数据直接写入
+    if (buf_size <= 512 - 4)
     {
-        hw_memcpy(msg->cache+4,nal_buf,buf_size-4);
-        memcpy(msg->cache,&big_size,4);
+        hw_memcpy(msg->cache + 4, nal_buf, buf_size - 4);
+        memcpy(msg->cache, &big_size, 4);
         ret |= mp4_write(msg->cache, 1, 512, fp);
     }
-    //分段写入
+    // 分段写入
     else
     {
-        hw_memcpy(msg->cache+4,nal_buf,512-4);
-        memcpy(msg->cache,&big_size,4);
+        hw_memcpy(msg->cache + 4, nal_buf, 512 - 4);
+        memcpy(msg->cache, &big_size, 4);
         ret |= mp4_write(msg->cache, 1, 512, fp);
 
-        buf_size -= (512-4);
-        ret |= mp4_write(nal_buf + 512 - 4 , 1, ((buf_size+0x1ff)&(~0x1ff)), fp);
+        buf_size -= (512 - 4);
+        ret |= mp4_write(nal_buf + 512 - 4, 1, ((buf_size + 0x1ff) & (~0x1ff)), fp);
     }
     ret |= update_stbl_subbox(fp, msg, size + 4, duration, keyflag);
-    if(ret)
+    if (ret)
     {
-        ret |= (MP4_WRITE_ERR<<16);
+        ret |= (MP4_WRITE_ERR << 16);
     }
 write_h264_nal_end:
     return ret;
@@ -1141,14 +1155,14 @@ uint32_t write_aac_data(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t size, uint3
     uint32_t ret = 0;
     if (msg->trak_count < 2 || !msg->audio_enable)
     {
-        ret |= (MP4_AUDIO_ERR<<16);
-		goto write_aac_data_end;
+        ret |= (MP4_AUDIO_ERR << 16);
+        goto write_aac_data_end;
     }
     else
     {
         if (msg->file_max_size > 0 && (msg->mdat_nowoffset - msg->mdat_offset + size > msg->mdat_size))
         {
-            ret |= (MP4_FULL_ERR<<16);
+            ret |= (MP4_FULL_ERR << 16);
             goto write_aac_data_end;
         }
         F_FILE       *fp    = msg->fp;
@@ -1157,13 +1171,13 @@ uint32_t write_aac_data(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t size, uint3
         //+4是数据长度的4byte
         // update_stbl_subbox(fp,msg,size+4,duration,keyflag);
         mp4_seek(fp, msg->mdat_nowoffset, SEEK_SET);
-        ret |= mp4_write(aac_buf, 1, (size+0x1ff)&(~0x1ff), fp);
+        ret |= mp4_write(aac_buf, 1, (size + 0x1ff) & (~0x1ff), fp);
         // 更新box
         ret |= update_audio_stbl_subbox(fp, msg, size, duration);
-        //msg->mdat_nowoffset += (size);
-        if(ret)
+        // msg->mdat_nowoffset += (size);
+        if (ret)
         {
-            ret |= (MP4_WRITE_ERR<<16);
+            ret |= (MP4_WRITE_ERR << 16);
         }
     }
 
@@ -1230,7 +1244,7 @@ uint32_t write_h264_pps_sps(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size)
             ret           = _MP4_init(fp, msg);
         }
         uint32_t head_end_time = os_jiffies();
-        os_printf(KERN_INFO"pps sps spend time:%d\ttell:%X\n", head_end_time - head_start_time,osal_ftell(fp));
+        os_printf(KERN_INFO "pps sps spend time:%d\ttell:%X\n", head_end_time - head_start_time, osal_ftell(fp));
     }
     else
     {
@@ -1249,29 +1263,27 @@ uint32_t write_h264_data(mp4_key_msg *msg, uint8_t *nal_buf, uint32_t size, uint
     if (nal_buf[4] == 0x61)
     {
         ret |= write_h264_nal(fp, msg, (uint8_t *) &nal_buf[4], size - 4, duration, 0);
-        if(ret)
+        if (ret)
         {
-            ret |= (MP4_I_ERR<<16);
+            ret |= (MP4_I_ERR << 16);
         }
-        
     }
     else if (nal_buf[4] == 0x65)
     {
         ret |= write_h264_nal(fp, msg, (uint8_t *) &nal_buf[4], size - 4, duration, 1);
-        if(ret)
+        if (ret)
         {
-            ret |= (MP4_P_ERR<<16);
+            ret |= (MP4_P_ERR << 16);
         }
-        
     }
     else
     {
-        ret |= (MP4_V_TYPE_ERR<<16);
+        ret |= (MP4_V_TYPE_ERR << 16);
     }
     uint32_t end_time = os_jiffies();
     if (end_time - start_time > 500)
     {
-        os_printf(KERN_INFO"%s:%d\tspend time:%d\n", __FUNCTION__, __LINE__, end_time - start_time);
+        os_printf(KERN_INFO "%s:%d\tspend time:%d\n", __FUNCTION__, __LINE__, end_time - start_time);
     }
     return ret;
 }
@@ -1299,8 +1311,11 @@ uint32_t mp4_set_max_size(mp4_key_msg *msg, uint32_t max_size)
 
 uint32_t mp4_video_cfg_init(mp4_key_msg *msg, uint16_t w, uint16_t h)
 {
-    msg->video_w = w;
-    msg->video_h = h;
+    if (!msg->init)
+    {
+        msg->video_w = w;
+        msg->video_h = h;
+    }
     return 0;
 }
 
@@ -1357,9 +1372,10 @@ static uint32_t _MP4_init(F_FILE *fp,mp4_key_msg *msg)
                             ATOM(avc1)
                                 ATOM(avcC)
                                 END_ATOM
+                                ATOM(colr)
+                                END_ATOM
                             END_ATOM
                         END_ATOM
-
                         ATOM(free)
                         END_ATOM
                         ATOM(stts)
