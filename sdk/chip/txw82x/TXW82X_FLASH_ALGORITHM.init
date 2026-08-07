@@ -1,0 +1,19 @@
+# watchdog close : WDT->WDTKEY
+set *(unsigned int *)0x400C1004=0xdddd
+set *(unsigned int *)0x400C1014=0xdddd
+set $psr=0x80000000
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020000=0x3fac87e4
+
+#CPU1 disable
+set *(unsigned int *)0x4002019c=0
+
+#reset peripherals
+set *(unsigned int *)0x40020008=0x03
+
+
+set *(unsigned int *)0x40021300=0x0
+set *(unsigned int *)0x40021308=0x1
+
+
+#shell echo "123"

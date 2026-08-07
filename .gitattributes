@@ -1,0 +1,2 @@
+# Keep all repository text files portable across Linux and Windows.
+* text=auto eol=lf

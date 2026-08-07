@@ -1,0 +1,54 @@
+#include "typesdef.h"
+#include "g_sensor.h"
+#include "tx_platform.h"
+#include "list.h"
+#include "dev.h"
+#include "hal/i2c.h"
+
+
+GSENSOR_INIT_SECTION const unsigned char da280InitTable[28]={
+	0x00,0x24,
+	0xFC,0X05,      //delay 5ms
+	0x0f,0x03,
+	0x11,0x1e,
+	0x10,0x07,
+	0xFD,0x28,      //delay 40us
+	0x20,0x05,
+	0x21,0x8f,
+	0x16,0x47,
+	0x27,0x03,
+	0x19,0x00,
+	0x21,0x87,
+	0x28,0x01,
+	-1,-1,
+};
+
+
+
+GSENSOR_INIT_SECTION const unsigned char da280prereadTable[11]={
+	0x01,
+	0xFC,0X05,      //delay 5ms
+	0x09,
+	0xFC,0X05,      //delay 5ms
+	0x19,
+	0xFC,0X05,      //delay 5ms
+	-1,-1,
+};
+
+
+
+GSENSOR_OP_SECTION const _Gsensor_Adpt_ da280_cmd= {
+	.init    = (uint8_t *)da280InitTable,
+	.preread = (uint8_t *)da280prereadTable,
+	.local_xyz = {0x02,0x03,0x04,0x05,0x06,0x07},
+};
+
+
+const _Gsensor_Ident_ da280_init=
+{
+	0x13,0x4E,0x4F,0x01,0x01,0x01
+};
+
+
+
+

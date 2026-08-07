@@ -1,0 +1,98 @@
+#ifndef _TXSEMI_MEDIATYPES_H_
+#define _TXSEMI_MEDIATYPES_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+//媒体数据类别： 根据fb主类型 识别数据类别
+typedef enum {
+    MEDIA_DATA_VIDEO,    //视频数据
+    MEDIA_DATA_AUDIO,    //音频数据
+    MEDIA_DATA_PICTURE,  //图片数据
+    MEDIA_DATA_TEXT,     //字幕数据
+    MEDIA_DATA_MAX,
+} MEDIA_DATA_CATEGORY;
+
+//媒体数据的编码类型：用于查找decoder
+typedef enum {
+    //视频编码
+    MEDIA_CODEC_H264,
+    MEDIA_CODEC_H265,
+
+    //音频编码
+    MEDIA_CODEC_MP3 = 32,
+    MEDIA_CODEC_AAC,
+    MEDIA_CODEC_OPUS,
+    MEDIA_CODEC_FLAC,
+    MEDIA_CODEC_WAV,
+
+    //图片编码
+    MEDIA_CODEC_JPEG = 64,
+    MEDIA_CODEC_PNG,
+    MEDIA_CODEC_GIF,
+    MEDIA_CODEC_WebP,
+    MEDIA_CODEC_HEIF,
+
+    //字幕，起始 96
+
+    //自定义类型: 起始 128
+
+} MEDIA_CODECID;
+
+//媒体数据的封装类型： 用于查找container
+typedef enum {
+    MEDIA_DTYPE_PIC_JPG,
+    MEDIA_DTYPE_PIC_PNG,
+    MEDIA_DTYPE_PIC_BMP,
+    MEDIA_DTYPE_PIC_GIF,
+    MEDIA_DTYPE_PIC_WEBP,
+    MEDIA_DTYPE_PIC_TIFF,
+    MEDIA_DTYPE_PIC_HEIF,
+    MEDIA_DTYPE_PIC_SVG,
+
+    MEDIA_DTYPE_AUDIO_MP3,
+    MEDIA_DTYPE_AUDIO_AAC,
+    MEDIA_DTYPE_AUDIO_WAV,
+    MEDIA_DTYPE_AUDIO_FLAC,
+    MEDIA_DTYPE_AUDIO_OGG,
+    MEDIA_DTYPE_AUDIO_WMA,
+    MEDIA_DTYPE_AUDIO_APE,
+    MEDIA_DTYPE_AUDIO_M4A,
+
+    MEDIA_DTYPE_VIDEO_MP4,
+    MEDIA_DTYPE_VIDEO_MKV,
+    MEDIA_DTYPE_VIDEO_AVI,
+    MEDIA_DTYPE_VIDEO_TS,
+    MEDIA_DTYPE_VIDEO_FLV,
+    MEDIA_DTYPE_VIDEO_MOV,
+    MEDIA_DTYPE_VIDEO_WEBM,
+    MEDIA_DTYPE_VIDEO_WMV,
+    MEDIA_DTYPE_VIDEO_M2TS,
+
+    //自定义：裸视频编码帧类型
+    MEDIA_DTYPE_RAW_H264,
+    MEDIA_DTYPE_RAW_H265,
+    MEDIA_DTYPE_RAW_AV1,
+    MEDIA_DTYPE_RAW_VP9,
+    MEDIA_DTYPE_RAW_VP8,
+    MEDIA_DTYPE_RAW_MPEG2,
+    MEDIA_DTYPE_RAW_MPEG4,
+
+    MEDIA_DTYPE_MAX,
+} MEDIA_DATA_TYPE;
+
+typedef enum {
+    MEDIA_PLAY_FORWARD_SPEED_1X  = 1,  //向前播放，1倍速
+    MEDIA_PLAY_FORWARD_SPEED_2X  = 2,  //向前播放，2倍速
+    MEDIA_PLAY_FORWARD_SPEED_4X  = 4,  //向前播放，4倍速
+    MEDIA_PLAY_BACKWARD_SPEED_1X = -1, //向后播放，1倍速
+    MEDIA_PLAY_BACKWARD_SPEED_2X = -2, //向后播放，2倍速
+    MEDIA_PLAY_BACKWARD_SPEED_4X = -4, //向后播放，4倍速
+} MEDIA_PLAY_SPEED;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

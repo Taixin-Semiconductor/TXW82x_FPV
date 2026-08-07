@@ -1,0 +1,86 @@
+#set breakpoint always-inserted on
+# watchdog close : WDT->WDTKEY
+set *(unsigned int *)0x400c1004=0xdddd
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020000=0x3fac87e4
+# sysclk = osc : SYSCTRL->CLK_CON0
+set *(unsigned int *)0x40020044=0x00000009
+set *(unsigned int *)0x40020048=0x00000000
+# ROM Writable : SYSCTRL->SYS_CON3[4]
+set *(unsigned int *)0x40020010=0x08000010
+#set *(unsigned int *)0x00000000=0x180000E8
+
+# MONITOR disable : SYSMNT CTRL
+set *(unsigned int *)0x40021300=0x0
+set *(unsigned int *)0x40021308=0x1
+
+# CQSPI IO MAP: GPIOB->PUPL/H
+set *(unsigned int *)0x40020B10=0x00111111
+set *(unsigned int *)0x40020B14=0x00000000
+# CQSPI IO MAP : GPIOB->MODE
+set *(unsigned int *)0x40020B00=0x00000000
+# CQSPI IO MAP : SYSCTRL->QSPI_MAP_CON
+set *(unsigned int *)0x40020184=0x00053A21
+
+# VCC_FLASH POWER ON
+#         pmu_reg_write((uint32)&PMU->PMUCON11, PMU->PMUCON11 & (~ BIT(17)));\
+#         pmu_reg_write((uint32)&PMU->PMUCON0,  PMU->PMUCON0 | BIT(23)); \
+set *(unsigned int *)0x400180B8=0x00000044
+set *(unsigned int *)0x400180B4=0x32c046a4
+set *(unsigned int *)0x400180BC=0xc053781b
+set *(unsigned int *)0x400180B8=0x00000010
+set *(unsigned int *)0x400180B4=0x20880400
+set *(unsigned int *)0x400180BC=0xc053781b
+# QSPI clk(96Mhz source) : QSPI->CONFIG
+#set *(unsigned int *)0x40000000=0x00F90081
+set *(unsigned int *)0x40000000=0x80883881
+# QSPI clk(96Mhz source) : QSPI->CONFIG
+#READ_DATA_CAPTURE
+set *(unsigned int *)0x40000010=0x00000003
+# QSPI DELAY: QSPI->DEV_DELAY
+set *(unsigned int *)0x4000000C=0x02020202
+# QSPI write protect low addr : QSPI->WRITE_PROT_L
+set *(unsigned int *)0x40000050=0x00000000
+# QSPI write protect high addr : QSPI->WRITE_PROT_H
+set *(unsigned int *)0x40000054=0x00020000
+# QSPI write protect enable : QSPI->WRITE_PROT_CTRL
+set *(unsigned int *)0x40000058=0x0
+
+# FLASH reset
+set *(unsigned int *)0x40000090=0x66000001
+set *(unsigned int *)0x40000090=0x99000001
+
+# SPIFLASH write enable : QSPI->FLASH_CMD_CTRL
+set *(unsigned int *)0x40000090=0x06000001
+# QUAL MODE enable : QSPI->FLASH_CMD_WDATA_L && QSPI->FLASH_CMD_CTRL
+set *(unsigned int *)0x400000A8=0x0200
+set *(unsigned int *)0x40000090=0x01009001
+
+# QSPI DUAL MODE : QSPI->DEV_RDINSTR_CONFIG
+#set *(unsigned int *)0x40000004=0x0801003B
+# QSPI QUAL MODE : QSPI->DEV_RDINSTR_CONFIG
+#set *(unsigned int *)0x40000004=0x0802006B
+set *(unsigned int *)0x40000004=0x0802006B
+
+#READ_DATA_CAPTURE_EXT
+
+# QSPI poll disable
+#set *(unsigned int *)0x40000038=0x00014005
+# QSPI WEL disable
+#set *(unsigned int *)0x40000008=0x00000102
+
+# scramble enable
+#set *(unsigned int *)0x40020188=0x80000000
+
+# chip erase : QSPI->FLASH_CMD_CTRL
+#set *(unsigned int *)0x40000090=0xC7000001
+# delay 4000ms
+#shell sleep 7s
+#shell ping -c 3 -w 5 android.xx.xxx.com
+shell ping -c 10 -i 5 www.google.com
+
+#softreset
+#set $chr=0xabcd0009
+set $pc=0x10040190
+
+

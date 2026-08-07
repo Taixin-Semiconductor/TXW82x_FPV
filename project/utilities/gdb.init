@@ -1,0 +1,46 @@
+# ROM Writable : SYSCTRL->SYS_CON3[4]
+set *(unsigned int *)0x40020010=0x08000010
+
+# watchdog close : WDT->WDTKEY
+set *(unsigned int *)0x400C1004=0xdddd
+set *(unsigned int *)0x400C1014=0xdddd
+#//LP WDT
+set *(unsigned int*)0x400180b8=0xe8
+set *(unsigned int*)0x400180b4=0xdddd
+set *(unsigned int*)0x400180bc=0xC053781B
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020000=0x3fac87e4
+# stop cpu1
+#set *(unsigned int *)0x4002019c=0x0
+# sysclk = osc : SYSCTRL->CLK_CON0
+#set *(unsigned int *)0x40020044=0x00000001
+# ROM writeable : SYSCTRL->SYS_CON3 BIT(4)
+#set *(unsigned int *)0x40020010=0x00802138
+# ROM Writable : SYSCTRL->SYS_CON6
+#set *(unsigned int *)0x4002001c=0x01C0CCA4
+# CQSPI IO MAP : GPIOB->AFRL, default 0
+# CQSPI IO MAP : GPIOB->MODE
+#set *(unsigned int *)0x40020B00=0x02AA0000
+# QSPI clk : QSPI->CONFIG
+#set *(unsigned int *)0x40000000=0x00200081
+# SPIFLASH write enable : QSPI->FLASH_CMD_CTRL
+#set *(unsigned int *)0x40000090=0x06000001
+# QUAL MODE enable : QSPI->FLASH_CMD_WDATA_L && QSPI->FLASH_CMD_CTRL
+#set *(unsigned int *)0x400000A8=0x2
+#set *(unsigned int *)0x40000090=0x31008001
+
+# QSPI DUAL MODE : QSPI->DEV_RDINSTR_CONFIG
+#set *(unsigned int *)0x40000004=0x0801003B
+# QSPI QUAL MODE : QSPI->DEV_RDINSTR_CONFIG
+#set *(unsigned int *)0x40000004=0x0802006B
+
+# chip erase : QSPI->FLASH_CMD_CTRL
+#set *(unsigned int *)0x40000090=0xC7000001
+# delay 4000ms
+#shell sleep 7s
+#shell ping -c 3 -w 5 android.xx.xxx.com
+#shell ping -c 10 -i 5 www.google.com
+
+#restore ../txw4302803/Obj/txw4302_core.ihex
+#restore ./Obj/txw4302_app.ihex
+ 

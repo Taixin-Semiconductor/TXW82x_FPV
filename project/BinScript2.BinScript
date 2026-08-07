@@ -1,0 +1,15 @@
+memset(ibuf, ff);
+read(bin, loader.bin);
+def(LOADER_LEN, v_lx);
+read(bin, program.bin);
+remap(0, LOADER_LEN, v_lx);
+reset(ibuf);
+memset(ibuf, ff);
+read(bin, loader.bin);
+remap(0, 0, v_lx);
+memmode(obuf, 8, lit);
+write(bin, project_merge.bin);
+
+
+
+
