@@ -1,0 +1,145 @@
+#include "basic_include.h"
+#include "sys_config.h"
+#include "demo/app_device.h"
+#include "demo/app_common.h"
+#include "lib/video/dvp/jpeg/jpg.h"
+#include "lib/video/mipi_csi/mipi_csi.h"
+#include "lib/video/vpp/vpp_dev.h"
+#include "audio_msi/audio_adc.h"
+#include "app/app_iic/app_iic.h"
+#include "lib/video/isp/isp_dev.h"
+#include "heap/aurpc_heap.h"
+#include "audio/audio_coder.h"
+#include "app_mem.h"
+#include "lib/net/eloop/eloop.h"
+#include "gen420/gen420_jpg_en.h"
+#include "video/coder/vdec_wkq.h"
+#include "video_app/video_msi.h"
+#include "lib/video/dvp/jpeg/jpg_common.h"
+#include "user_work/sd_work.h"
+#include "lib/scale/scale_common.h"
+#include "gen420_hardware_msi.h"
+#include "spook.h"
+#include "sleep_720p_cb.h"
+#include "stream_define.h"
+
+
+extern void user_workqueue_init(uint16 pri, void *stack, uint16 stack_size);
+
+static void app_print_init(void)
+{
+    print_level(7);
+    disable_print_color(1);
+}
+
+static void app_heap_init(void)
+{
+    // 视频内存分配,分别配置av_psram和av_heap
+    video_psram_init(0, CONFIG_PSRAM_AVHEAP_SIZE);
+    video_sram_init(0, CONFIG_AVHEAP_SIZE);
+}
+
+/***********************************************************
+ * @brief 初始化vpp模块,注意不同方案需要的vpp配置不一样
+ **********************************************************/
+static void app_vpp_init(uint16_t w, uint16_t h)
+{
+    os_printf(KERN_INFO "vpp_cfg w:%d h:%d\n", w, h);
+    // 设置buf0,
+    vpp_set_buf_msg(VPP_BUF0, 1, VPP_BUF_IN_SRAM, w, h);
+    // 设置buf1(如果需要副码流)
+    vpp_set_buf_msg(VPP_BUF1, SUB_STREAM_EN, VPP_BUF_IN_PSRAM, SUB_STREAM_WIDTH, 0);
+    vpp_set_double_psram_for_buf1(0);
+    vpp_cfg(VPP_INPUT_FROM);
+}
+
+/*************************************************
+ * @brief 初始化拍照模块,不同方案配置不一样
+ ************************************************/
+static void app_takephoto_init(void)
+{
+    // 初始化拍照模块,从vpp_data0获取数据
+    auto_jpg_msi_init(AUTO_JPG, JPGID0, VPP_DATA0);
+}
+
+// 硬件模块初始化
+static int32_t app_hardware_init(void)
+{
+    int32_t  ret = RET_OK;
+    uint16_t w = 0, h = 0;
+#if FS_EN
+    ret = app_sd_init(STARTUP_OTA, "/sd0/ota.bin");
+    APP_RETUNR_RET(ret);
+#endif
+    // iic线程初始化,i2c模块复用
+    iic_thread_init();
+    // sensor信息初始化
+    sensor_info_init();
+    mipi_csi_hardware_config(HG_MIPI_CSI_DEVID, 1, CAM_SINGLE_MASTER_MODE, 0, SENSOR_TYPE_MASTER, 24, NULL);
+    get_single_mipi(HG_MIPI_CSI_DEVID, &w, &h);
+    // isp初始化
+    isp_cfg_dev();
+    ircut_init();
+    app_vpp_init(w, h);
+    // 音频模块初始化
+    app_audio_init(8000,16000);
+    return ret;
+}
+
+// 用户应用初始化
+static void app_user_init(void)
+{
+    spook_init();
+}
+
+static void app_function_init(void)
+{
+    // scale相关信号量初始化
+    scale_mutex_init(); // scale相关锁初始化
+
+    // jpg编码相关信号量以及空间初始化
+    jpg_mutex_init();
+    jpg_mem_init(32);
+
+    // gen420模块启动,h264副码流或者mjpg手动编码需要
+    gen420_hardware_msi_init();
+
+    app_cjson_init();
+    // 网络eloop模块初始化
+    eloop_init();
+    app_h264_init(SUB_STREAM_EN);
+    app_takephoto_init();
+}
+
+/****************************************************************
+ * @brief 应用层的workqueue初始化(优先级比较高)
+ ****************************************************************/
+static void app_workqueue_init(void)
+{
+    user_workqueue_init(OS_TASK_PRIORITY_HIGH, NULL, 2048);
+    sd_workqueue_init(OS_TASK_PRIORITY_HIGH, NULL, 2048);
+}
+
+// 函数入口先确定方案,将需要的模块attatch
+void app_sleep_720p_demo_init(void)
+{
+    int ret = RET_OK;
+    app_print_init();
+    app_heap_init();
+    app_power_init();
+    app_workqueue_init();
+    // 硬件模块初始化
+    ret = app_hardware_init();
+    RETUNR(ret);
+    // 应用代码初始化
+    app_function_init();
+    app_user_init();
+
+    if (app_720p_lowpower_register() != RET_OK) {
+        os_printf("%s:%d register lowpower modules failed\n",
+                  __FUNCTION__, __LINE__);
+        return;
+    }
+
+
+}

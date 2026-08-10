@@ -1,0 +1,234 @@
+#set breakpoint always-inserted on
+# watchdog close : WDT->WDTKEY
+set *(unsigned int *)0x400C1004=0xdddd
+set *(unsigned int *)0x400C1014=0xdddd
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020000=0x3fac87e4
+#set *(unsigned int *)0x40020000=~0x0fac87e4
+
+#/* msrom */
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020000=0x3fac87e4
+# ROM Writable : SYSCTRL->SYS_CON3[4]
+set *(unsigned int *)0x40020010=0x00000010
+
+
+set *(unsigned int *)0x4002019c=0x0
+# sysclk = osc : SYSCTRL->CLK_CON0
+set *(unsigned int *)0x40020044=0x0000000b
+set *(unsigned int *)0x40020048=0x00000000
+# ROM Writable : SYSCTRL->SYS_CON3[4]
+set *(unsigned int *)0x40020010=0x08000010
+#set *(unsigned int *)0x00000000=0x180000E8
+
+
+#rst pin cfg
+set *(unsigned int *)0x400e0000 = 0x40000000
+set *(unsigned int *)0x400e0024 = 0x00008000
+
+#reset
+	#SYSCTRL->CLK_CON4 &= ~BIT(20);
+	#delay_ms(10);
+	#SYSCTRL->CLK_CON4 |= BIT(20);
+	#delay_ms(10);
+set *(unsigned int *)0x40020040= (*(unsigned int *)0x40020040 & 0xfffeffff)
+set *(unsigned int *)0x40020040= (*(unsigned int *)0x40020040 | 0x00010000)
+
+#0xe3ff4a57 60MHZ   0xe2ff4a57  80MHZ
+set *(unsigned int *)0x40020054=0xe2ff4a57                     
+
+#odd_even clk (8/16wire)
+#SYSCTRL->SYS_CON15 |= (BIT(14) | BIT(15)); 
+set *(unsigned int *)0x40020040= (*(unsigned int *)0x40020040 | 0x0000c000)
+
+
+#SET IO
+#restore ./utilities/ospi_io_cfg binary 0x400201A8
+#set *(unsigned int *)0x400201cc = 0
+set *(unsigned int *)0x400201a8 = 0x01871404
+set *(unsigned int *)0x400201ac = 0x16a4a0e6
+set *(unsigned int *)0x400201c4 = 0x2728c1ac
+set *(unsigned int *)0x400201c8 = 0x000bdab4
+set *(unsigned int *)0x400201cc = 0x00000000
+set *(unsigned int *)0x400201d0 = 0xffffffff
+set *(unsigned int *)0x400201d4 = 0xffffffff
+
+#OSPI CFG
+restore ./utilities/ospi_cfg binary 0x40001000
+
+set *(unsigned int *)0x400201d0 = 0xffffffff
+set *(unsigned int *)0x400201d4 = 0xffffffff
+
+
+#p_qspi->PHY_CONFIG =  (p_qspi->PHY_CONFIG & ~(0x7FUL << 16)) | ((delay & 0x7FUL) << 16) | BIT(30);
+# rx0, tx
+set *(unsigned int*)0x400010b4 = (*(unsigned int*)0x400010b4 & (~0xffffff)) | (2) | (12 << 16)
+# rx1
+set *(unsigned int*)0x400010c4 = (*(unsigned int*)0x400010c4 & (~0xff)) | (2)
+    #p_qspi->PHY_CONFIG =  (p_qspi->PHY_CONFIG & ~(0x7FUL << 0)) | ((delay & 0x7FUL) << 0) | BIT(30);
+	#p_qspi->NEW_ADD_CONFIG3 =  (p_qspi->NEW_ADD_CONFIG3 & ~(0x7FUL << 0)) | ((delay & 0x7FUL) << 0);
+set *(unsigned int *)0x400010b4 = (*(unsigned int *)0x400010b4 & 0x7fffffff)
+set *(unsigned int *)0x400010b4 = (*(unsigned int *)0x400010b4 | 0x80000000)
+shell ping -c 10 -i 5 www.google.com
+#rwreg start
+#p_qspi->NEW_ADD_CONFIG2 =  (p_qspi->NEW_ADD_CONFIG2 & ~(0x1UL << 22)) | ((0x1UL) << 22);
+set *(unsigned int *)0x400010d4 = 0x00d03f3f
+shell ping -c 10 -i 5 www.google.com
+
+
+#OSPI->DEV_WRINSTR_CONFIG = WR_OPC(wr_opc) | WEL_DISEN(0x1) | ADDR_TM(0x3) | DATA_TM(0x3) | WR_DUMMY(wr_dummy);
+set *(unsigned int *)0x40001008 = 0x00033160
+set *(unsigned int *)0x40001004 = 0x03033fe0
+set *(unsigned int *)0x4000100C = 0x02020202
+
+#reset
+
+
+#dummy & various lc
+set *(unsigned short *)0x28001000 = 0x8f07
+
+#OSPI->DEV_WRINSTR_CONFIG = WR_OPC(wr_opc) | WEL_DISEN(0x1) | ADDR_TM(0x3) | DATA_TM(0x3) | WR_DUMMY(wr_dummy);
+#OSPI->DEV_RDINSTR_CONFIG = WR_OPC(wr_opc) | WEL_DISEN(0x1) | ADDR_TM(0x3) | DATA_TM(0x3) | WR_DUMMY(wr_dummy);
+set *(unsigned int *)0x40001004 = 0x05033fa0
+set *(unsigned int *)0x40001008 = 0x05033120
+
+#rwreg end
+#p_qspi->NEW_ADD_CONFIG2 =  (p_qspi->NEW_ADD_CONFIG2 & ~(0x1UL << 22)) | ((0x0UL) << 22) ;
+set *(unsigned int *)0x400010d4 = 0x00903f3f
+
+#reset
+#set *(unsigned int *)0x40020040= (*(unsigned int *)0x40020040 | 0x0000c000)
+#0xe3ff4a57 60MHZ   0xe2ff4a57  80MHZ
+set *(unsigned int *)0x40020054=0xe4ff4a57   
+
+
+# load cpu1 psram code 
+#restore ./../txw4302803/Obj/txw4302_core.ihex
+#restore ./../txw4302803/txw4302803.bin binary 0x28000000
+#restore ./../txw4302803/Obj/txw4302_core.elf
+#tb sys_main_loop
+#restore ./../txw4302803/Obj/txw4302_core.elf
+#tb sys_main_loop
+
+
+
+
+#set breakpoint always-inserted on
+# watchdog close : WDT->WDTKEY
+set *(unsigned int *)0x400c1004=0xdddd
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020000=0x3fac87e4
+# sysclk = osc : SYSCTRL->CLK_CON0
+set *(unsigned int *)0x40020044=0x00000009
+set *(unsigned int *)0x40020048=0x00000000
+# ROM Writable : SYSCTRL->SYS_CON3[4]
+set *(unsigned int *)0x40020010=0x08000010
+#set *(unsigned int *)0x00000000=0x180000E8
+
+
+
+
+# MONITOR disable : SYSMNT CTRL
+set *(unsigned int *)0x40021300=0x0
+set *(unsigned int *)0x40021308=0x1
+
+
+
+
+# CQSPI IO MAP: GPIOB->PUPL/H
+set *(unsigned int *)0x40020B10=0x00111111
+set *(unsigned int *)0x40020B14=0x00000000
+# CQSPI IO MAP : GPIOB->MODE
+set *(unsigned int *)0x40020B00=0x00000000
+# CQSPI IO MAP : SYSCTRL->QSPI_MAP_CON
+set *(unsigned int *)0x40020184=0x00053A21
+
+
+
+
+# VCC_FLASH POWER ON
+#         pmu_reg_write((uint32)&PMU->PMUCON11, PMU->PMUCON11 & (~ BIT(17)));\
+#         pmu_reg_write((uint32)&PMU->PMUCON0,  PMU->PMUCON0 | BIT(23)); \
+set *(unsigned int *)0x400180B8=0x00000044
+set *(unsigned int *)0x400180B4=0x32c046a4
+set *(unsigned int *)0x400180BC=0xc053781b
+set *(unsigned int *)0x400180B8=0x00000010
+set *(unsigned int *)0x400180B4=0x20880400
+set *(unsigned int *)0x400180BC=0xc053781b
+# QSPI clk(96Mhz source) : QSPI->CONFIG
+#set *(unsigned int *)0x40000000=0x00F90081
+set *(unsigned int *)0x40000000=0x80883881
+# QSPI clk(96Mhz source) : QSPI->CONFIG
+#READ_DATA_CAPTURE
+set *(unsigned int *)0x40000010=0x00000003
+# QSPI DELAY: QSPI->DEV_DELAY
+set *(unsigned int *)0x4000000C=0x02020202
+# QSPI write protect low addr : QSPI->WRITE_PROT_L
+set *(unsigned int *)0x40000050=0x00000000
+# QSPI write protect high addr : QSPI->WRITE_PROT_H
+set *(unsigned int *)0x40000054=0x00020000
+# QSPI write protect enable : QSPI->WRITE_PROT_CTRL
+set *(unsigned int *)0x40000058=0x0
+
+
+
+
+# FLASH reset
+set *(unsigned int *)0x40000090=0x66000001
+set *(unsigned int *)0x40000090=0x99000001
+
+
+
+
+# SPIFLASH write enable : QSPI->FLASH_CMD_CTRL
+set *(unsigned int *)0x40000090=0x06000001
+# QUAL MODE enable : QSPI->FLASH_CMD_WDATA_L && QSPI->FLASH_CMD_CTRL
+set *(unsigned int *)0x400000A8=0x0200
+set *(unsigned int *)0x40000090=0x01009001
+
+
+
+
+# QSPI DUAL MODE : QSPI->DEV_RDINSTR_CONFIG
+#set *(unsigned int *)0x40000004=0x0801003B
+# QSPI QUAL MODE : QSPI->DEV_RDINSTR_CONFIG
+#set *(unsigned int *)0x40000004=0x0802006B
+set *(unsigned int *)0x40000004=0x0802006B
+
+
+
+
+#READ_DATA_CAPTURE_EXT
+
+
+
+
+# QSPI poll disable
+#set *(unsigned int *)0x40000038=0x00014005
+# QSPI WEL disable
+#set *(unsigned int *)0x40000008=0x00000102
+
+
+
+
+# scramble enable
+#set *(unsigned int *)0x40020188=0x80000000
+
+
+
+
+# chip erase : QSPI->FLASH_CMD_CTRL
+#set *(unsigned int *)0x40000090=0xC7000001
+
+
+
+
+#softreset
+#set $chr=0xabcd0009
+set $pc=*(unsigned int *)0x10040000
+
+
+
+
+# sysctrl writable : SYSCTRL->SYS_KEY
+set *(unsigned int *)0x40020028=0x00300000

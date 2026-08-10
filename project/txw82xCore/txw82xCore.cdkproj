@@ -1,0 +1,1525 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project Name="txw82xCore" Version="v1.4" Language="C">
+  <Description>CPU: e804d
+Chip: txw4302
+Board: txw4302
+  </Description>
+  <Dependencies Name="Debug"/>
+  <File Name="main.c">
+    <FileOption/>
+  </File>
+  <VirtualDirectory Name="csky">
+    <VirtualDirectory Name="configs">
+      <File Name="../../csky/configs/csi_config.h">
+        <FileOption/>
+      </File>
+    </VirtualDirectory>
+    <VirtualDirectory Name="csi_core">
+      <VirtualDirectory Name="include">
+        <File Name="../../csky/csi_core/include/csi_core.h">
+          <FileOption/>
+        </File>
+        <File Name="../../csky/csi_core/include/csi_gcc.h">
+          <FileOption/>
+        </File>
+        <File Name="../../csky/csi_core/include/core_803.h">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+    </VirtualDirectory>
+    <VirtualDirectory Name="csi_kernel">
+      <VirtualDirectory Name="include">
+        <File Name="../../csky/csi_kernel/include/csi_kernel.h">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+      <VirtualDirectory Name="rhino">
+        <VirtualDirectory Name="adapter">
+          <File Name="../../csky/csi_kernel/rhino/adapter/csi_rhino.c">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+        <VirtualDirectory Name="arch">
+          <VirtualDirectory Name="csky">
+            <File Name="../../csky/csi_kernel/rhino/arch/csky/cpu_impl.c">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/arch/csky/csky_sched.c">
+              <FileOption/>
+            </File>
+            <VirtualDirectory Name="e804d">
+              <File Name="../../csky/csi_kernel/rhino/arch/csky/e804d/port_c.c">
+                <FileOption/>
+              </File>
+              <File Name="../../csky/csi_kernel/rhino/arch/csky/e804d/port_s.S">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+          </VirtualDirectory>
+          <VirtualDirectory Name="include">
+            <File Name="../../csky/csi_kernel/rhino/arch/include/k_config.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/arch/include/k_types.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/arch/include/port.h">
+              <FileOption/>
+            </File>
+          </VirtualDirectory>
+        </VirtualDirectory>
+        <VirtualDirectory Name="common">
+          <File Name="../../csky/csi_kernel/rhino/common/k_atomic.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/common/k_atomic.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/common/k_cpuset.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/common/k_ffs.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/common/k_ffs.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/common/k_fifo.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/common/k_trace.c">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+        <VirtualDirectory Name="core">
+          <VirtualDirectory Name="include">
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_api.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_bitmap.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_buf_queue.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_critical.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_default_config.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_endian.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_err.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_event.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_fifo.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_hook.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_internal.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_list.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_mm.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_mm_blk.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_mm_debug.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_mm_region.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_mutex.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_obj.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_queue.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_ringbuf.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_sched.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_sem.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_soc.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_stats.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_sys.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_task.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_task_sem.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_time.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_timer.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_trace.h">
+              <FileOption/>
+            </File>
+            <File Name="../../csky/csi_kernel/rhino/core/include/k_workqueue.h">
+              <FileOption/>
+            </File>
+          </VirtualDirectory>
+          <File Name="../../csky/csi_kernel/rhino/core/k_buf_queue.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_dyn_mem_proc.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_err.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_event.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_idle.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_mm.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_mm_blk.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_mm_debug.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_mutex.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_obj.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_pend.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_queue.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_ringbuf.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_sched.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_sem.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_stats.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_sys.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_task.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_task_sem.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_tick.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_time.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_timer.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_workqueue.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/core/k_isr.c">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+        <VirtualDirectory Name="driver">
+          <File Name="../../csky/csi_kernel/rhino/driver/coretim.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/driver/hook_impl.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/driver/systick.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/driver/yoc_impl.c">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/driver/hook_weak.c">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+        <VirtualDirectory Name="pwrmgmt">
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/cpu_pwr_api.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/cpu_pwr_config.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/cpu_pwr_hal_lib.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/cpu_pwr_lib.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/cpu_tickless.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/dl_list.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/pwr_debug.h">
+            <FileOption/>
+          </File>
+          <File Name="../../csky/csi_kernel/rhino/pwrmgmt/pwr_state.h">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+      </VirtualDirectory>
+    </VirtualDirectory>
+    <VirtualDirectory Name="libs">
+      <VirtualDirectory Name="libc">
+        <File Name="../../csky/libs/libc/malloc.c">
+          <FileOption/>
+        </File>
+        <File Name="../../csky/libs/libc/minilibc_port.c">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+    </VirtualDirectory>
+    <VirtualDirectory Name="txsemi">
+      <File Name="../../csky/txsemi/assert.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/condv.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/event.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/init.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/malloc.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/msgqueue.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/mutex.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/semaphore.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/sleep.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/task.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/time.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/timer.c">
+        <FileOption/>
+      </File>
+      <File Name="../../csky/txsemi/usart.c">
+        <FileOption/>
+      </File>
+    </VirtualDirectory>
+  </VirtualDirectory>
+  <VirtualDirectory Name="sdk">
+    <VirtualDirectory Name="chip">
+      <VirtualDirectory Name="txw82x">
+        <File Name="../../sdk/chip/txw82x/isr.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/trap_c.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/vectors.S">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/uart.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/rpc1.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/system1.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/ticker_api.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/pin_function.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/chip/txw82x/sysctrl1.c">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+    </VirtualDirectory>
+    <VirtualDirectory Name="driver">
+      <VirtualDirectory Name="dma">
+        <File Name="../../sdk/driver/dma/dw_dmac.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/driver/dma/hg_m2m_dma_core1.c">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+      <VirtualDirectory Name="adc">
+        <File Name="../../sdk/driver/adc/hgadc_v1.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/driver/adc/hgadc_v1_hw.h"/>
+      </VirtualDirectory>
+    </VirtualDirectory>
+    <VirtualDirectory Name="hal">
+      <File Name="../../sdk/hal/dev.c">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/adc.c">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/dma.c" ExcludeProjConfig="">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/spi.c">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/gpio.c">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/sysaes.c">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/dma2d.c">
+        <FileOption/>
+      </File>
+      <File Name="../../sdk/hal/timer.c">
+        <FileOption/>
+      </File>
+    </VirtualDirectory>
+    <VirtualDirectory Name="lib" ExcludeProjConfig="">
+      <VirtualDirectory Name="heap">
+        <File Name="../../sdk/lib/heap/alloc.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/heap/psram_heap.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/heap/sram_heap.c">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+      <VirtualDirectory Name="common" ExcludeProjConfig="">
+        <File Name="../../sdk/lib/common/common.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/common/string.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/common/us_ticker.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/common/atcmd.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/common/sysevt_rpc.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/common/weak.c">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/common/dsleepdata.c" ExcludeProjConfig="">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+      <VirtualDirectory Name="net">
+        <VirtualDirectory Name="wifi">
+          <File Name="../../sdk/lib/net/wifi/wifi_dev_rpc.c">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+      </VirtualDirectory>
+      <VirtualDirectory Name="bus">
+        <VirtualDirectory Name="spi">
+          <VirtualDirectory Name="spi_nor">
+            <File Name="../../sdk/hal/spi_nor.c">
+              <FileOption/>
+            </File>
+          </VirtualDirectory>
+        </VirtualDirectory>
+      </VirtualDirectory>
+      <VirtualDirectory Name="crypto">
+        <VirtualDirectory Name="openssl">
+          <VirtualDirectory Name="crypto">
+            <VirtualDirectory Name="aes">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/aes/aes.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/aes/aes_cbc.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/aes/aes_core.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/aes/aes_locl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/aes/aes_misc.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/aes/aes_wrap.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="asn1">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/ameth_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/asn1_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/asn1_locl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/a_bitstr.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/a_int.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/a_object.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/a_octet.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/a_type.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/p8_pkey.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/tasn_dec.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/tasn_enc.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/tasn_fre.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/tasn_new.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/tasn_typ.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/tasn_utl.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/x_algor.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/x_attrib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/x_bignum.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/x_long.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/x_pubkey.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/asn1/x_sig.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="bn">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_add.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_asm.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_blind.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_const.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_ctx.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_depr.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_div.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_err.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_exp.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_exp2.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_gcd.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_gf2m.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_kron.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_lcl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_mod.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_mont.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_mpi.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_mul.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_nist.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_prime.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_prime.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_print.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_rand.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_recp.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_shift.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_sqr.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_sqrt.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_word.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/bn_x931p.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/rsaz_exp.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/rsaz_exp.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/bn/vms-helper.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="buffer">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/buffer/buffer.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/buffer/buffer.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/buffer/buf_str.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <File Name="../../sdk/lib/crypto/openssl/crypto/constant_time_locl.h">
+              <FileOption/>
+            </File>
+            <File Name="../../sdk/lib/crypto/openssl/crypto/cryptlib.h">
+              <FileOption/>
+            </File>
+            <VirtualDirectory Name="dh">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_ameth.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_asn1.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_check.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_depr.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_err.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_gen.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_kdf.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_key.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_pmeth.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/dh/dh_rfc5114.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="ec">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec2_mult.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec2_oct.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec2_smpl.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ecp_mont.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ecp_nist.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ecp_oct.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ecp_smpl.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_ameth.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_asn1.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_curve.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_cvt.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_key.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_lcl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_mult.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_oct.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ec/ec_pmeth.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="ecdh">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ecdh.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ech_err.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ech_kdf.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ech_key.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ech_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ech_locl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdh/ech_ossl.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="ecdsa">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecdsa.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_asn1.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_err.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_locl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_ossl.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_sign.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/ecdsa/ecs_vrf.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="evp">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/digest.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/evp_enc.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/evp_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/evp_locl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/e_aes.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/e_rc4.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/m_md5.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/m_sha1.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/names.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/p5_crpt2.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/pmeth_fn.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/pmeth_gn.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/pmeth_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/evp/p_lib.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="hmac">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/hmac/hmac.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/hmac/hmac.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/hmac/hm_ameth.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/hmac/hm_pmeth.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="lhash">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/lhash/lhash.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/lhash/lhash.h">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <File Name="../../sdk/lib/crypto/openssl/crypto/md32_common.h">
+              <FileOption/>
+            </File>
+            <VirtualDirectory Name="modes">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/modes/cbc128.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/modes/modes.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/modes/modes_lcl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/modes/wrap128.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="objects">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/objects/objects.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/objects/obj_dat.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/objects/obj_dat.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/objects/obj_lib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/objects/o_names.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="rand">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/rand/md_rand.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/rand/rand.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/rand/rand_lcl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/rand/rand_lib.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="stack">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/stack/safestack.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/stack/stack.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/stack/stack.h">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+            <VirtualDirectory Name="sys">
+              <File Name="../../sdk/lib/crypto/openssl/crypto/sys/cryptlib.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/sys/ex_data.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/sys/mem.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/sys/mem_clr.c">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/crypto/sys/mem_dbg.c">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+          </VirtualDirectory>
+          <VirtualDirectory Name="include">
+            <File Name="../../sdk/lib/crypto/openssl/include/dirent.h">
+              <FileOption/>
+            </File>
+            <File Name="../../sdk/lib/crypto/openssl/include/e_os.h">
+              <FileOption/>
+            </File>
+            <File Name="../../sdk/lib/crypto/openssl/include/e_os2.h">
+              <FileOption/>
+            </File>
+            <VirtualDirectory Name="openssl">
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/aes.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/asn1.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/asn1t.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/asn1_mac.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/bio.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/blowfish.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/bn.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/buffer.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/camellia.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/cast.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/cmac.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/cms.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/comp.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/conf.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/conf_api.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/crypto.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/des.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/des_old.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/dh.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/dsa.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/dso.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/dtls1.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ebcdic.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ec.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ecdh.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ecdsa.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/engine.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/err.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/evp.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/e_os2.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/hmac.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/idea.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/krb5_asn.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/kssl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/lhash.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/md4.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/md5.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/mdc2.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/modes.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/objects.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/obj_mac.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ocsp.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/opensslconf.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/opensslv.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ossl_typ.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/pem.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/pem2.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/pkcs12.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/pkcs7.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/pqueue.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/rand.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/rc2.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/rc4.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ripemd.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/rsa.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/safestack.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/seed.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/sha.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/srp.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/srtp.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ssl.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ssl2.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ssl23.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ssl3.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/stack.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/symhacks.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/tls1.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ts.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/txt_db.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ui.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/ui_compat.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/whrlpool.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/x509.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/x509v3.h">
+                <FileOption/>
+              </File>
+              <File Name="../../sdk/lib/crypto/openssl/include/openssl/x509_vfy.h">
+                <FileOption/>
+              </File>
+            </VirtualDirectory>
+          </VirtualDirectory>
+        </VirtualDirectory>
+      </VirtualDirectory>
+      <VirtualDirectory Name="bluetooth">
+        <VirtualDirectory Name="hci">
+        </VirtualDirectory>
+      </VirtualDirectory>
+      <VirtualDirectory Name="lvgl_rotate_rpc">
+        <File Name="../../sdk/lib/lvgl_rotate_rpc/lvgl_rotate_rpc.h">
+          <FileOption/>
+        </File>
+        <File Name="../../sdk/lib/lvgl_rotate_rpc/lvgl_rotate_rpc1.c">
+          <FileOption/>
+        </File>
+      </VirtualDirectory>
+      <VirtualDirectory Name="audio">
+        <VirtualDirectory Name="audio_code">
+          <File Name="../../sdk/lib/audio/audio_code/audio_code_run.c">
+            <FileOption/>
+          </File>
+        </VirtualDirectory>
+      </VirtualDirectory>
+    </VirtualDirectory>
+  </VirtualDirectory>
+  <VirtualDirectory Name="project">
+    <File Name="device.c">
+      <FileOption/>
+    </File>
+    <File Name="device.h">
+      <FileOption/>
+    </File>
+    <File Name="sys_config.h">
+      <FileOption/>
+    </File>
+    <File Name="project_config.h">
+      <FileOption/>
+    </File>
+    <File Name="atcmd.c">
+      <FileOption/>
+    </File>
+  </VirtualDirectory>
+  <MonitorProgress>
+    <DebugLaunch>44</DebugLaunch>
+    <FlashOperate>25</FlashOperate>
+  </MonitorProgress>
+  <Dependencies Name="BuildSet">
+    <Project Name="lib_umac3"/>
+    <Project Name="lib_openssl"/>
+  </Dependencies>
+  <VendorInfo>
+    <VendorName>NULL</VendorName>
+  </VendorInfo>
+  <ToolsConfig>
+    <Compiler>
+      <Name>CKV2ElfMinilib</Name>
+      <Version>latest</Version>
+    </Compiler>
+  </ToolsConfig>
+  <BuildConfigs>
+    <BuildConfig Name="FLASH">
+      <Target>
+        <ROMBank Selected="1">
+          <ROM1>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+          </ROM1>
+          <ROM2>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+          </ROM2>
+          <ROM3>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+          </ROM3>
+          <ROM4>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+          </ROM4>
+          <ROM5>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+          </ROM5>
+        </ROMBank>
+        <RAMBank>
+          <RAM1>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+            <Init>yes</Init>
+          </RAM1>
+          <RAM2>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+            <Init>yes</Init>
+          </RAM2>
+          <RAM3>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+            <Init>yes</Init>
+          </RAM3>
+          <RAM4>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+            <Init>yes</Init>
+          </RAM4>
+          <RAM5>
+            <InUse>no</InUse>
+            <Start/>
+            <Size/>
+            <Init>yes</Init>
+          </RAM5>
+        </RAMBank>
+        <CPU>e804d</CPU>
+        <UseMiniLib>yes</UseMiniLib>
+        <Endian>little</Endian>
+        <UseHardFloat>no</UseHardFloat>
+        <UseEnhancedLRW>yes</UseEnhancedLRW>
+        <UseContinueBuild>no</UseContinueBuild>
+        <ToolchainID/>
+        <ToolchainVersion/>
+        <UseSemiHost>no</UseSemiHost>
+      </Target>
+      <Output>
+        <OutputName>$(ProjectName)</OutputName>
+        <Type>Executable</Type>
+        <CreateHexFile>yes</CreateHexFile>
+        <CreateBinFile>yes</CreateBinFile>
+        <Preprocessor>no</Preprocessor>
+        <Disassmeble>yes</Disassmeble>
+        <CallGraph>no</CallGraph>
+        <Map>yes</Map>
+      </Output>
+      <User>
+        <BeforeCompile>
+          <RunUserProg>no</RunUserProg>
+          <UserProgName>$(ProjectPath)/precompile.sh $&lt;</UserProgName>
+          <IsBatchScript>no</IsBatchScript>
+        </BeforeCompile>
+        <BeforeMake>
+          <RunUserProg>yes</RunUserProg>
+          <UserProgName>$(ProjectPath)/prebuild.sh $&lt;</UserProgName>
+          <IsBatchScript>no</IsBatchScript>
+        </BeforeMake>
+        <AfterMake>
+          <RunUserProg>yes</RunUserProg>
+          <UserProgName>$(ProjectPath)/BuildBIN.sh</UserProgName>
+          <IsBatchScript>no</IsBatchScript>
+        </AfterMake>
+        <Tools/>
+      </User>
+      <Compiler>
+        <Define>ARCH_CSKY;TXW82X;MPOOL_ALLOC;CSKY_OS;SKB_POOL_ENABLE;__NO_BOARD_INIT;CONFIG_UMAC4;CONFIG_SLEEP;</Define>
+        <Undefine/>
+        <Optim>Optimize more (-O2)</Optim>
+        <DebugLevel>Default (-g)</DebugLevel>
+        <IncludePath>$(ProjectPath);$(ProjectPath)/../../csky/configs;$(ProjectPath)/../../csky/csi_core/include;$(ProjectPath)/../../csky/csi_driver/include;$(ProjectPath)/../../csky/csi_dsp/include;$(ProjectPath)/../../csky/csi_kernel/include;$(ProjectPath)/../../csky/csi_kernel/rhino/arch/include;$(ProjectPath)/../../csky/csi_kernel/rhino/common;$(ProjectPath)/../../csky/csi_kernel/rhino/core/include;$(ProjectPath)/../../csky/csi_kernel/rhino/driver;$(ProjectPath)/../../csky/csi_kernel/rhino/pwrmgmt;$(ProjectPath)/../../csky/csi_nn/include;$(ProjectPath)/../../csky/libs/include;$(ProjectPath)/../../sdk/;$(ProjectPath)/../../sdk/driver/dma2d;$(ProjectPath)/../../sdk/include;$(ProjectPath)/../../sdk/include/chip;$(ProjectPath)/../../sdk/lib/;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/aac_encode;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/amrnb;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/amrwb;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/aucode_math_priv;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/g711;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/helix_aac;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/minimp3;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/celt;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/include;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/silk;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/silk/fixed;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/silk/float;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/src;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/aec;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/aec/delay_estimator;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/ahs;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/anf;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/ans;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/auproc_math_priv;$(ProjectPath)/../../sdk/lib/bluetooth;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/include/mbedtls;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/include/psa;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/library;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/library/hw_alt;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/aes;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/asn1;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/bn;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/buffer;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/dh;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/ec;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/ecdh;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/ecdsa;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/engine;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/err;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/evp;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/hmac;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/lhash;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/md5;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/modes;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/objects;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/rand;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/rc4;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/rsa;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/sha;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/stack;$(ProjectPath)/../../sdk/lib/crypto/openssl/include;$(ProjectPath)/../../sdk/lib/crypto/openssl/include/openssl;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2/module;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2/rate_control;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2/rf;$(ProjectPath)/../../sdk/lib/lvgl_rotate_rpc;$(ProjectPath)/../../sdk/lib/umac/umac4</IncludePath>
+        <OtherFlags>-ffunction-sections -fdata-sections -Wno-comment -Wno-unused-function -Wno-unused-but-set-variable -I. </OtherFlags>
+        <Verbose>no</Verbose>
+        <Ansi>no</Ansi>
+        <Syntax>no</Syntax>
+        <Pedantic>no</Pedantic>
+        <PedanticErr>no</PedanticErr>
+        <InhibitWarn>no</InhibitWarn>
+        <AllWarn>yes</AllWarn>
+        <WarnErr>no</WarnErr>
+        <OneElfS>yes</OneElfS>
+        <OneElfSPerData>no</OneElfSPerData>
+        <Fstrict>no</Fstrict>
+      </Compiler>
+      <Asm>
+        <Define>ARCH_CSKY;__NO_BOARD_INIT;TXW82X;CPU1_PRJ</Define>
+        <Undefine/>
+        <IncludePath>$(ProjectPath);$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/components/data-model;$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/components/ota;$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/core;$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/core/sysdep;$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/core/utils;$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/external/mbedtls/include/mbedtls;$(ProjectPath)/../../txw80x_trunk_test/sdk/lib/iot/LinkSDK/portfiles/aiot_port;$(ProjectPath)/../../csky/configs;$(ProjectPath)/../../csky/csi_core/include;$(ProjectPath)/../../csky/csi_driver/include;$(ProjectPath)/../../csky/csi_dsp/include;$(ProjectPath)/../../csky/csi_kernel/include;$(ProjectPath)/../../csky/csi_kernel/rhino/arch/include;$(ProjectPath)/../../csky/csi_kernel/rhino/common;$(ProjectPath)/../../csky/csi_kernel/rhino/core/include;$(ProjectPath)/../../csky/csi_kernel/rhino/driver;$(ProjectPath)/../../csky/csi_kernel/rhino/pwrmgmt;$(ProjectPath)/../../csky/csi_nn/include;$(ProjectPath)/../../csky/libs/include;$(ProjectPath)/../../sample/pdmSample;$(ProjectPath)/../../sdk/app/touchkey;$(ProjectPath)/../../sdk/driver/audio;$(ProjectPath)/../../sdk/driver/audio/analog;$(ProjectPath)/../../sdk/driver/dma2d;$(ProjectPath)/../../sdk/driver/emac;$(ProjectPath)/../../sdk/driver/timer;$(ProjectPath)/../../sdk/driver/tk;$(ProjectPath)/../../sdk/driver/uart;$(ProjectPath)/../../sdk/include;$(ProjectPath)/../../sdk/include/chip;$(ProjectPath)/../../sdk/include/lib/lwip/include;$(ProjectPath)/../../sdk/lib/app;$(ProjectPath)/../../sdk/lib/app/net/algorithm/frame_memt;$(ProjectPath)/../../sdk/lib/app/net/algorithm/pdmFilter;$(ProjectPath)/../../sdk/lib/app/net/avi;$(ProjectPath)/../../sdk/lib/app/net/cmd_input;$(ProjectPath)/../../sdk/lib/app/net/eloop;$(ProjectPath)/../../sdk/lib/app/net/flash;$(ProjectPath)/../../sdk/lib/app/net/ftp;$(ProjectPath)/../../sdk/lib/app/net/media;$(ProjectPath)/../../sdk/lib/app/net/netspeedTest;$(ProjectPath)/../../sdk/lib/app/net/record;$(ProjectPath)/../../sdk/lib/app/net/remoteControl;$(ProjectPath)/../../sdk/lib/app/net/spook;$(ProjectPath)/../../sdk/lib/app/net/udhcp-0.9.8;$(ProjectPath)/../../sdk/lib/app/net/update;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/aac_encode;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/amrnb;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/amrwb;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/aucode_math_priv;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/g711;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/helix_aac;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/minimp3;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/celt;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/include;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/silk;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/silk/fixed;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/silk/float;$(ProjectPath)/../../sdk/lib/audio/audio_code_lib/opus/src;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/aec;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/aec/delay_estimator;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/ahs;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/anf;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/ans;$(ProjectPath)/../../sdk/lib/audio/audio_proc_lib/auproc_math_priv;$(ProjectPath)/../../sdk/lib/avformat/avi;$(ProjectPath)/../../sdk/lib/bus/macbus;$(ProjectPath)/../../sdk/lib/cJSON;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/include/mbedtls;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/include/psa;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/library;$(ProjectPath)/../../sdk/lib/crypto/mbedtls/library/hw_alt;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/aes;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/asn1;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/bn;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/buffer;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/dh;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/ec;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/ecdh;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/ecdsa;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/engine;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/err;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/evp;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/hmac;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/lhash;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/md5;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/modes;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/objects;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/rand;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/rc4;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/rsa;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/sha;$(ProjectPath)/../../sdk/lib/crypto/openssl/crypto/stack;$(ProjectPath)/../../sdk/lib/crypto/openssl/include;$(ProjectPath)/../../sdk/lib/crypto/openssl/include/openssl;$(ProjectPath)/../../sdk/lib/fs/fatfs;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/components/data-model;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/components/ota;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/core;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/core/sysdep;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/core/utils;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/core/utils2;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/external/mbedtls/include/mbedtls;$(ProjectPath)/../../sdk/lib/iot/LinkSDK/portfiles/aiot_port;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2/module;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2/rate_control;$(ProjectPath)/../../sdk/lib/lmac/eagle_v2/rf;$(ProjectPath)/../../sdk/lib/lmac/venus/module;$(ProjectPath)/../../sdk/lib/lmac/venus/rf;$(ProjectPath)/../../sdk/lib/lmac/venus_v2;$(ProjectPath)/../../sdk/lib/lmac/venus_v2/module;$(ProjectPath)/../../sdk/lib/lmac/venus_v2/rate_control;$(ProjectPath)/../../sdk/lib/lmac/venus_v2/rf;$(ProjectPath)/../../sdk/lib/lvgl_rotate_rpc;$(ProjectPath)/../../sdk/lib/net/ethphy;$(ProjectPath)/../../sdk/lib/net/libcurl;$(ProjectPath)/../../sdk/lib/net/libcurl/include/curl;$(ProjectPath)/../../sdk/lib/net/libcurl/vauth;$(ProjectPath)/../../sdk/lib/net/libcurl/vquic;$(ProjectPath)/../../sdk/lib/net/libcurl/vssh;$(ProjectPath)/../../sdk/lib/net/libcurl/vtls;$(ProjectPath)/../../sdk/lib/net/lwip/src/apps/altcp_tls;$(ProjectPath)/../../sdk/lib/net/lwip/src/apps/http;$(ProjectPath)/../../sdk/lib/net/lwip/src/apps/http/makefsdata;$(ProjectPath)/../../sdk/lib/net/lwip/src/apps/snmp;$(ProjectPath)/../../sdk/lib/net/mongoose/inc;$(ProjectPath)/../../sdk/lib/net/wifi/wifi_zroam;$(ProjectPath)/../../sdk/lib/rpc/4110_803;$(ProjectPath)/../../sdk/lib/rpc/4110_804;$(ProjectPath)/../../sdk/lib/umac/umac4/include;$(ProjectPath)/../../sdk/lib/umac/umac4/lib;$(ProjectPath)/../../sdk/lib/umac/umac4/wpa;$(ProjectPath)/../../sdk/lib/umac/umac4/wpa_auth;$(ProjectPath)/../../test;$(ProjectPath)/app/aliyun_demo;$(ProjectPath)/app/ble_demo;$(ProjectPath)/app/ble_net;$(ProjectPath)/app/examples;$(ProjectPath)/app/examples/peripherals/adc;$(ProjectPath)/app/examples/peripherals/capture;$(ProjectPath)/app/examples/peripherals/gpio;$(ProjectPath)/app/examples/peripherals/i2c;$(ProjectPath)/app/examples/peripherals/pdm_iis;$(ProjectPath)/app/examples/peripherals/pwm;$(ProjectPath)/app/examples/peripherals/sdhost;$(ProjectPath)/app/examples/peripherals/spi;$(ProjectPath)/app/examples/peripherals/timer;$(ProjectPath)/app/examples/peripherals/uart;$(ProjectPath)/app/tk;$(ProjectPath)/app/touchkey</IncludePath>
+        <OtherFlags>-I.  -mno-doloop</OtherFlags>
+        <DebugLevel>gdwarf2</DebugLevel>
+      </Asm>
+      <Linker>
+        <Garbage>yes</Garbage>
+        <Garbage2>yes</Garbage2>
+        <LDFile>$(ProjectPath)\utilities\gcc_csky.ld</LDFile>
+        <LibName>m;wifi_wpa3;lmac;core1;misc1;boot1;pmu1;dma2d1;uble1;netutils1;common1;mpool1;atcmd1</LibName>
+        <LibPath>$(ProjectPath)/utilities;$(ProjectPath)/../../libs</LibPath>
+        <OtherFlags>-Wl,-zmax-page-size=1024  -Wl,-Map=project.map</OtherFlags>
+        <AutoLDFile>no</AutoLDFile>
+        <LinkType/>
+        <IncludeAllLibs>no</IncludeAllLibs>
+        <LinkSpecsType>none</LinkSpecsType>
+        <LinkUseNewlibNano>no</LinkUseNewlibNano>
+        <LinkUseMinilibc>no</LinkUseMinilibc>
+      </Linker>
+      <Debug>
+        <LoadApplicationAtStartup>no</LoadApplicationAtStartup>
+        <Connector>ICE</Connector>
+        <StopAt>no</StopAt>
+        <StopAtText>main</StopAtText>
+        <InitFile>$(ProjectPath)/utilities/gdb.init</InitFile>
+        <PreInit/>
+        <AfterLoadFile/>
+        <AutoRun>no</AutoRun>
+        <ResetType>Hard Reset</ResetType>
+        <SoftResetVal>0</SoftResetVal>
+        <ResetAfterLoad>no</ResetAfterLoad>
+        <AfterResetFile/>
+        <Dumpcore>no</Dumpcore>
+        <DumpcoreText>$(ProjectPath)/$(ProjectName).cdkcore</DumpcoreText>
+        <SVCFile/>
+        <ConfigICE>
+          <IP>localhost</IP>
+          <PORT>1025</PORT>
+          <CPUNumber>0</CPUNumber>
+          <Clock>12000</Clock>
+          <Delay>10</Delay>
+          <NResetDelay>100</NResetDelay>
+          <WaitReset>50</WaitReset>
+          <DDC>yes</DDC>
+          <TRST>no</TRST>
+          <PreReset>no</PreReset>
+          <DebugPrint>no</DebugPrint>
+          <Connect>Normal</Connect>
+          <ResetType>Soft Reset</ResetType>
+          <SoftResetVal>abcd0048</SoftResetVal>
+          <RTOSType>Bare Metal</RTOSType>
+          <DownloadToFlash>no</DownloadToFlash>
+          <ResetAfterConnect>no</ResetAfterConnect>
+          <GDBName/>
+          <GDBServerType>Local</GDBServerType>
+          <OtherFlags/>
+          <ICEEnablePCSampling>no</ICEEnablePCSampling>
+          <ICESamplingFreq>1000</ICESamplingFreq>
+          <RemoteICEEnablePCSampling>no</RemoteICEEnablePCSampling>
+          <RemoteICESamplingPort>1026</RemoteICESamplingPort>
+          <Version>latest</Version>
+          <SupportRemoteICEAsyncDebug>no</SupportRemoteICEAsyncDebug>
+        </ConfigICE>
+        <ConfigSIM>
+          <SIMTarget>soccfg/userconfig/huge-ic/txw4002.xml</SIMTarget>
+          <OtherFlags/>
+          <NoGraphic>yes</NoGraphic>
+          <Log>no</Log>
+          <SimTrace>no</SimTrace>
+          <Version>latest</Version>
+        </ConfigSIM>
+        <ConfigOpenOCD>
+          <OpenOCDExecutablePath/>
+          <OpenOCDLocally>yes</OpenOCDLocally>
+          <OpenOCDTelnetPortEnable>no</OpenOCDTelnetPortEnable>
+          <OpenOCDTelnetPort>4444</OpenOCDTelnetPort>
+          <OpenOCDTclPortEnable>no</OpenOCDTclPortEnable>
+          <OpenOCDTclPort>6666</OpenOCDTclPort>
+          <OpenOCDConfigOptions/>
+          <OpenOCDTimeout>5000</OpenOCDTimeout>
+          <OpenOCDRemoteIP>localhost</OpenOCDRemoteIP>
+          <OpenOCDRemotePort>3333</OpenOCDRemotePort>
+          <PluginID>openocd-sifive</PluginID>
+          <Version>latest</Version>
+        </ConfigOpenOCD>
+      </Debug>
+      <Flash>
+        <InitFile>"$(ProjectPath)/utilities/flashinit"</InitFile>
+        <PreInit/>
+        <Erase>Erase Sectors</Erase>
+        <Algorithms Path=""/>
+        <Program>yes</Program>
+        <Verify>no</Verify>
+        <ResetAndRun>no</ResetAndRun>
+        <ResetType>Soft Reset</ResetType>
+        <SoftResetVal/>
+        <FlashIndex>no</FlashIndex>
+        <FlashIndexVal>0</FlashIndexVal>
+        <External>yes</External>
+        <Command>$(ProjectPath)/CSKYFlashProgramerConsole.bat</Command>
+        <Arguments>$(CDKPath) CSKYFlashProgramerCfg</Arguments>
+      </Flash>
+    </BuildConfig>
+  </BuildConfigs>
+  <DebugSessions>
+    <watchExpressions>xfw:1;g_sys_tick_count:0;div:1;sys_soft_int_cnt:1;(ktimer_t*)0x20012d2c:1</watchExpressions>
+    <memoryExpressions>0x20012BC4;0x10000000;0x20005a8c;0x80000200</memoryExpressions>
+    <statistics>;;MHZ;;MHZ;;up</statistics>
+    <peripheralTabs>
+      <Tab disFormat="Hex">GPIOA</Tab>
+      <Tab disFormat="Hex">GPIOC</Tab>
+      <Tab disFormat="Hex">SYSCTRL</Tab>
+      <Tab disFormat="Hex">PDM</Tab>
+      <Tab disFormat="Hex">TIMER0</Tab>
+      <Tab disFormat="Hex">TIMER1</Tab>
+      <Tab disFormat="Hex">SPI0</Tab>
+      <Tab disFormat="Hex">SPI1</Tab>
+      <Tab disFormat="Hex">UART0</Tab>
+      <Tab disFormat="Hex">UART1</Tab>
+      <Tab disFormat="Hex">UART4</Tab>
+      <Tab disFormat="Hex">UART5</Tab>
+      <Tab disFormat="Hex">QSPI</Tab>
+    </peripheralTabs>
+    <WatchDisplayFormat>1</WatchDisplayFormat>
+    <LocalDisplayFormat>1</LocalDisplayFormat>
+    <debugLayout>layout2|name=Project View;caption=Project View;state=31459324;dir=4;layer=1;row=0;pos=0;prop=66243;bestw=456;besth=277;minw=10;minh=5;maxw=-1;maxh=-1;floatx=-3;floaty=100;floatw=400;floath=250|name=Debugger;caption=Debugger;state=14698492;dir=3;layer=0;row=1;pos=0;prop=75977;bestw=341;besth=315;minw=10;minh=5;maxw=-1;maxh=-1;floatx=1302;floaty=649;floatw=663;floath=340|name=Frame Info;caption=Frame Info;state=14682108;dir=3;layer=0;row=1;pos=1;prop=116897;bestw=400;besth=300;minw=10;minh=5;maxw=-1;maxh=-1;floatx=551;floaty=566;floatw=981;floath=488|name=Peripherals;caption=Peripherals;state=1105201150;dir=3;layer=1;row=0;pos=1;prop=100000;bestw=11;besth=43;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1|name=Serial Pane;caption=Serial Pane;state=1088423934;dir=3;layer=1;row=0;pos=1;prop=100000;bestw=400;besth=300;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1|name=Editor;caption=;state=256;dir=5;layer=0;row=0;pos=0;prop=100000;bestw=20;besth=20;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1|name=Output View;caption=Output View;state=1105201150;dir=3;layer=1;row=0;pos=1;prop=100000;bestw=958;besth=244;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1|name=Register;caption=Register;state=2099198;dir=4;layer=1;row=0;pos=1;prop=100000;bestw=200;besth=200;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=83;floaty=444;floatw=218;floath=240|name=Outline;caption=Outline;state=2099198;dir=2;layer=0;row=2;pos=0;prop=100000;bestw=200;besth=200;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=1823;floaty=285;floatw=216;floath=236|dock_size(4,1,0)=267|dock_size(5,0,0)=20|dock_size(3,0,1)=468|</debugLayout>
+    <memoryTabColSizeExpressions>100:4;100:4;100:8;100:4;</memoryTabColSizeExpressions>
+    <QuickWatchDisplayFormat>1</QuickWatchDisplayFormat>
+  </DebugSessions>
+</Project>

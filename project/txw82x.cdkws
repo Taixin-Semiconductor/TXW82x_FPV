@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CDK_Workspace Name="txw82x" Database="" DoubleClick="Yes">
+  <Project Name="txw82xCore" Path="txw82xCore/txw82xCore.cdkproj" Active="No"/>
+  <Project Name="txw82xApp" Path="txw82xApp/txw82xApp.cdkproj" Active="Yes"/>
+  <BuildMatrix>
+    <WorkspaceConfiguration Name="Debug" Selected="yes">
+      <Environment/>
+      <Project Name="txw82xCore" ConfigName="FLASH"/>
+      <Project Name="txw82xApp" ConfigName="FLASH"/>
+    </WorkspaceConfiguration>
+  </BuildMatrix>
+</CDK_Workspace>

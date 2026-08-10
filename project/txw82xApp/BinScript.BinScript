@@ -1,0 +1,19 @@
+memset(ibuf, ff);
+read(hex, project.hex);
+remap(v_ax, 0, v_lx);
+memmode(obuf, 32, lit);
+reset(ibuf);
+read(bin, txw82xcore.bin);
+remap(0, 1000, v_lx);
+write(bin, txw82xApp.bin);
+
+reset(ibuf);
+reset(obuf);
+read(bin, txw82xApp.bin);
+def16_at(v_param_len, 180);
+read(bin, parameter.cfg);
+memmode(ibuf, 32, lit);
+remap(210, 0, v_param_len);
+setbuf16(0, v_param_len);
+outrange(0, v_param_len, 10);
+write(bin, param.bin);
