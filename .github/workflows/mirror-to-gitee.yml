@@ -1,0 +1,60 @@
+name: Mirror to Gitee
+
+"on":
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitee-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Force-sync branches and tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the GitHub repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Configure strict Gitee SSH authentication
+        shell: bash
+        env:
+          GITEE_SSH_PRIVATE_KEY: ${{ secrets.GITEE_SSH_PRIVATE_KEY }}
+          GITEE_KNOWN_HOSTS: ${{ secrets.GITEE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          test -n "$GITEE_SSH_PRIVATE_KEY"
+          test -n "$GITEE_KNOWN_HOSTS"
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$GITEE_SSH_PRIVATE_KEY" > "$HOME/.ssh/gitee_mirror"
+          chmod 600 "$HOME/.ssh/gitee_mirror"
+          printf '%s\n' "$GITEE_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 644 "$HOME/.ssh/known_hosts"
+
+          ssh-keygen -F gitee.com -f "$HOME/.ssh/known_hosts" > /dev/null
+
+      - name: Force-sync GitHub branches and tags
+        shell: bash
+        env:
+          GITEE_REPOSITORY: git@gitee.com:zhuhai-taixin-semiconductor_1/TXW82x_FPV.git
+        run: |
+          set -euo pipefail
+
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/gitee_mirror -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+
+          git fetch --prune --no-tags origin \
+            '+refs/heads/*:refs/mirror/heads/*' \
+            '+refs/tags/*:refs/mirror/tags/*'
+
+          git push --force --prune "$GITEE_REPOSITORY" \
+            '+refs/mirror/heads/*:refs/heads/*' \
+            '+refs/mirror/tags/*:refs/tags/*'
