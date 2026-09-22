@@ -4,19 +4,26 @@
 
 本仓库包含泰芯半导体 TXW82x 系列的软件开发套件。泰芯官网将 TXW82x 定位为面向图传与智能终端产品的 Wi-Fi SoC 系列。
 
-## 版本信息
+## 版本发布
 
-- 版本：`v2.7.1.7-44398`
-- 来源：SVN 发布版本 `v2.7.1.7-44398`
-- 初始版本：开放双核工程开发，支持低功耗应用方案开发，支持 AI 大模型应用方案开发。
+各版本的 SDK 源码快照、中英文发布说明及下载文件统一发布在
+[GitHub Releases](https://github.com/Taixin-Semiconductor/TXW82x_FPV/releases)。
+发布版本以不可变的附注标签为准，不从本 README 或分支名称判断。标签格式为
+`TXW82x_FPV-v<版本>-<来源版本>`。
+
+- [最新版本](https://github.com/Taixin-Semiconductor/TXW82x_FPV/releases/latest)
+- [全部版本](https://github.com/Taixin-Semiconductor/TXW82x_FPV/releases)
+
+具体版本号、来源版本、升级说明和受影响组件应记录在对应的 GitHub Release 中，
+本 README 不再重复这些随版本变化的信息。
 
 ## 开发环境
 
-本版本需要使用[玄铁 CDK](https://www.xrvm.cn/soft-tools/tools/CDK)。CDK 是面向玄铁及通用 RISC-V 处理器、仅支持 Windows 的集成开发环境。
+本 SDK 使用[玄铁 CDK](https://www.xrvm.cn/soft-tools/tools/CDK)。CDK 是面向玄铁及通用 RISC-V 处理器、仅支持 Windows 的集成开发环境。
 
 玄铁 CDS 是独立的开发工具集，同时支持 Windows 和 Linux。CDK 与 CDS 是不同的产品，不应视为同一个开发环境。
 
-> **主机支持：** 本 SDK 版本请使用 Windows 和 CDK。基于 CDS 的 Linux 构建环境尚未针对本版本准备并完成验证。
+> **主机支持：** 本仓库支持的工作流程使用 Windows 和 CDK。本仓库未提供或验证基于 CDS 的 Linux 构建流程。
 
 仓库中的文本文件统一使用 LF 换行符，以兼容 Windows 和 Linux 工具。
 
