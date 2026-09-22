@@ -64,7 +64,7 @@ static void self_creat(struct rtsp_source *source,void *priv)
 	            r->audio_msi = aenc_get_msi(AUDIO_CODEC_AAC, "adc", &codec_info);
 				if(r->audio_msi) 
 				{
-	                auadc_msi_add_output(AUSYS_AUAD, r->audio_msi->name);
+	                auadc_msi_add_output(MAIN_MIC_ID, r->audio_msi->name);
 	                msi_do_cmd(r->audio_msi, MSI_CMD_START, 0, 0);
 					msi_add_output(r->audio_msi, NULL, NULL, R_RTP_AUDIO2);
 				}

@@ -1603,7 +1603,7 @@ static int32 coze_sts_connect(void *session)
         ret = RET_ERR;
         goto __cleanup;
     }
-    os_printf("llm websocket connect to %s (%dms) success\r\n",
+    llm_err("llm websocket connect to %s (%dms) success\r\n",
               chat_url, os_jiffies_to_msecs(os_jiffies() - tick));
     llm_free(auth_header);
     llm_free(chat_url);

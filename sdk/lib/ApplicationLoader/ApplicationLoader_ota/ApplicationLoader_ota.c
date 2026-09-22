@@ -158,7 +158,9 @@ static void application_loader_ota_accept(EVT_HDL event, void *data)
     socklen_t address_bytes = sizeof(client_address);
     int server_fd = (int)(intptr_t)data;
     int tcp_connect_fd;
-    int timeout_ms = APPLICATION_LOADER_OTA_SOCKET_TIMEOUT_MS;
+    struct timeval timeout;
+    timeout.tv_sec = APPLICATION_LOADER_OTA_SOCKET_TIMEOUT_MS / 1000;
+    timeout.tv_usec =(APPLICATION_LOADER_OTA_SOCKET_TIMEOUT_MS % 1000) * 1000;;
     void *task_handle;
 
     (void)event;
@@ -171,13 +173,13 @@ static void application_loader_ota_accept(EVT_HDL event, void *data)
         close(tcp_connect_fd);
         return;
     }
-    if (setsockopt(tcp_connect_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout_ms,
-                   sizeof(timeout_ms)) < 0) {
+    if (setsockopt(tcp_connect_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   sizeof(timeout)) < 0) {
         close(tcp_connect_fd);
         return;
     }
-    if (setsockopt(tcp_connect_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout_ms,
-                   sizeof(timeout_ms)) < 0) {
+    if (setsockopt(tcp_connect_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                   sizeof(timeout)) < 0) {
         close(tcp_connect_fd);
         return;
     }

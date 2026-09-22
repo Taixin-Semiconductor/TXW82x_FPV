@@ -8,6 +8,7 @@
 #include "osal/work.h"
 #include "osal/semaphore.h"
 #include "osal/timer.h"
+#include "osal/sleep.h"
 #include "hal/netdev.h"
 #include "hal/dma.h"
 #include "hal/netdev.h"
@@ -30,6 +31,76 @@ struct wifi_dev {
     uint8           icmp_mntr: 1, rev: 7;
     uint32          no_mem;
 };
+
+#if WIFI_DEV_HOOKS
+struct {
+    uint32 lock_init;
+    struct ieee80211_pkthook *pkt_hooks;
+    struct ieee80211_pkthook *run_hook;  
+    os_mutex_t hooklock;
+} wifi_dev_hook;
+
+__init int32 ieee80211_register_pkthook(struct ieee80211_pkthook *hook)
+{
+    uint32 flag = disable_irq();
+    hook->time_max = 0;
+    hook->consume_data = 0;
+    hook->next = wifi_dev_hook.pkt_hooks;
+    wifi_dev_hook.pkt_hooks = hook;
+    enable_irq(flag);
+    return RET_OK;
+}
+
+int32 ieee80211_hook_ext_data(uint8 ifidx, uint8 tx, uint8 *data, uint32 len)
+{
+    int32 ret = 0;
+    uint64 jiff;
+    ieee80211_pkthdl hdl;
+    struct ieee80211_hookdata hdata;
+    struct ieee80211_pkthook *hook = wifi_dev_hook.pkt_hooks;
+    uint16 proto = get_unaligned_be16(data + 12);
+
+    while (hook) {
+        if (hook && ((hook->c_data->protocol == proto) || (hook->c_data->mcast && (0x01 & data[0])))) {            
+            hdl = tx ? hook->c_data->tx : hook->c_data->rx;
+            if (hdl) {
+                hdata.data = data;
+                hdata.len  = len;
+                hdata.hdl  = 0;
+                hdata.ext  = 1;
+
+                os_mutex_lock(&wifi_dev_hook.hooklock, osWaitForever);
+                wifi_dev_hook.run_hook = hook;
+                jiff = os_jiffies();
+                if (hdl(hook, ifidx, &hdata)) {
+                    hook->consume_data++;
+                    ret = 1;
+                }
+                jiff = DIFF_JIFFIES(jiff, os_jiffies());
+                if ((uint32)jiff > hook->time_max) {
+                    hook->time_max = jiff;
+                }
+                wifi_dev_hook.run_hook = NULL;
+                os_mutex_unlock(&wifi_dev_hook.hooklock);
+                if (jiff > 1000) {
+                    os_printf("HOOK [%s] %s hdl took %d ticks!\r\n", hook->c_data->name, tx ? "TX" : "RX", jiff);
+                }
+            }
+        }
+        hook = hook->next;
+    }
+    return ret;
+}
+#else
+int32 ieee80211_register_pkthook(struct ieee80211_pkthook *hook)
+{
+    return RET_OK;
+}
+int32 ieee80211_hook_ext_data(uint8 ifidx, uint8 tx, uint8 *data, uint32 len)
+{
+    return IEEE80211_PKTHDL_CONTINUE;
+}
+#endif
 
 static void wifi_dev_icmp_monitor(struct wifi_dev *wifi, uint8 *data, uint32 len, const char *prefix)
 {
@@ -78,16 +149,40 @@ static int32 wifi_dev_send(struct netdev *ndev, uint8 *data, uint32 size)
 
     wifi->wifi.tx_bytes += size;
     wifi_dev_icmp_monitor(wifi, data, size, "WIFI_DEV TX");
+    if (ieee80211_hook_ext_data(ifidx, 1, data, size)) {
+        return RET_OK;
+    }
     return ieee80211_tx(ifidx, (uint8 *)data, size);
 }
 
 static int32 wifi_dev_scatter_send(struct netdev *ndev, scatter_data *data, uint32 count)
 {
+    uint32 len = 0;
+    uint8  i   = 0;
+    uint8 *buff = NULL;
     struct wifi_dev *wifi = (struct wifi_dev *)ndev;
     uint8 ifidx = (wifi->ifidx == WIFI_MODE_APSTA ? 0 : wifi->ifidx);
 
     wifi->wifi.tx_bytes += scatter_size(data, count);
     wifi_dev_icmp_monitor_scatter(wifi, data, count, "WIFI_DEV TX");
+
+    for (i = 0; i < count; i++) { len += data[i].size; }
+    buff = os_malloc(len);
+    if (buff) {
+        len = 0;
+        for (i = 0; i < count; i++) {
+            hw_memcpy(buff + len, data[i].addr, data[i].size);
+            len += data[i].size;
+        }
+        if (ieee80211_hook_ext_data(ifidx, 1, buff, len)) {
+            os_free(buff);
+            return RET_OK;
+        }
+        os_free(buff);
+    } else {
+        os_printf("no more memory for hooks data\r\n");
+    }
+
     return ieee80211_scatter_tx(ifidx, data, count);
 }
 
@@ -144,12 +239,16 @@ int32 sys_wifi_recv(void *priv, uint8 *data, uint32 len, uint32 flags)
     netdev_input_cb  input_cb;
     void            *input_priv;
     struct wifi_dev *wifi  = (struct wifi_dev *)priv;
+    uint8 ifidx = wifi->ifidx == WIFI_MODE_APSTA ? WIFI_MODE_STA : wifi->ifidx;
 
     uint32 f = disable_irq();
     input_cb   = wifi->input_cb;
     input_priv = wifi->input_priv;
     enable_irq(f);
 
+    if (ieee80211_hook_ext_data(ifidx, 0, data, len)) {
+        return RET_OK;
+    }
     if (input_cb) {
         wifi_dev_icmp_monitor(wifi, data, len, "WIFI_DEV RX");
         input_cb(&wifi->wifi, data, len, input_priv);
@@ -185,6 +284,12 @@ __init void *sys_wifi_register(uint32 ifidx)
     wifi->wifi.dev.ops = (const struct devobj_ops *)&wifi_dev_ops;
     wifi->ifidx        = (uint8)ifidx;
     dev_register(dev_id, (struct dev_obj *)wifi);
+#if WIFI_DEV_HOOKS
+    if (!wifi_dev_hook.lock_init) {
+        os_mutex_init(&wifi_dev_hook.hooklock);
+        wifi_dev_hook.lock_init = 1;
+    }
+#endif
     return wifi;
 }
 

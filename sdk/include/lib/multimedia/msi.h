@@ -333,7 +333,7 @@ extern int32 msi_delete_fb(struct msi *msi, struct framebuff *fb);
 extern struct framebuff *msi_get_fb(struct msi *msi, uint32 tmo_ms);
 
 /**
- * @brief 强制丢弃 Framebuff。
+ * @brief 强制丢弃 Framebuff。
  *        已存入下游组件的fb也会被丢弃。
  * @param msi    组件指针
  * @param fb     待丢弃帧

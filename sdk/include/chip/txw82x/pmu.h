@@ -595,14 +595,7 @@ enum vcc_ldo_vol_level {
     VCC_LDO_VOL_2V55,
 };
 
-#define pmu_set_vcam2_vol(vcc_ldo_vol_level)            PMU_REG_SET_VALUE(PMU->PMUCON16, 0x07800000, vcc_ldo_vol_level, 23)
-enum vcam2_oc_level {
-    VCAM2_OC_750MA,
-    VCAM2_OC_250MA,
-    VCAM2_OC_150MA,
-    VCAM2_OC_100MA,
-};
-#define pmu_vcam2_oc_set(vcam2_oc_level)                PMU_REG_SET_VALUE(PMU->PMUCON16, 0x00600000, vcam2_oc_level, 21)
+
 
 struct system_reset_pending_bits {
   uint32  srp_mclr : 1,           /* mclr pin reset */

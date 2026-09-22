@@ -90,14 +90,26 @@ int32_t ringbuf_write(RINGBUF *ringbuf, void *data, uint32_t elementcount)
     return writecount; 
 }
 
-int32_t ringbuf_move_readptr(RINGBUF *ringbuf, int32_t elementcount)
+int32_t ringbuf_move_readptr(RINGBUF *ringbuf, int32_t elementcount, uint32 *lookback)
 {
     uint32_t read_avable = ringbuf_read_available(ringbuf);
     if(read_avable < elementcount) {
+        if(ringbuf->front + read_avable > ringbuf->elementcount) {
+            *lookback = 1;
+        }
+        else {
+            *lookback = 0;
+        }
         ringbuf->front = (ringbuf->front + read_avable) % (ringbuf->elementcount);
         return read_avable;
     }
     else {
+        if(ringbuf->front + elementcount > ringbuf->elementcount) {
+            *lookback = 1;
+        }
+        else {
+            *lookback = 0;
+        }
         ringbuf->front = (ringbuf->front + elementcount) % (ringbuf->elementcount);
         return elementcount;
     }
@@ -129,6 +141,14 @@ int32_t ringbuf_read_nomove(RINGBUF *ringbuf, void *data, uint32_t elementcount)
 		os_memcpy((uint8_t*)data, ringbuf->data + ringbuf->front * ringbuf->elementsize, readcount * ringbuf->elementsize);	
 	}
     return readcount;    
+}
+
+uint32_t ringbuf_cur_front(RINGBUF *ringbuf)
+{
+    if(ringbuf == NULL) {
+        return 0;
+    } 
+    return ringbuf->front;
 }
 
 void ringbuf_clean(RINGBUF *ringbuf)

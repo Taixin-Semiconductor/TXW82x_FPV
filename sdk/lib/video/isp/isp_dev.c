@@ -380,7 +380,7 @@ void isp_sensor_basic_init(struct hgisp_sensor_init *init,  const _Sensor_Adpt_ 
     sensor_ae->max_analog_gain =p_sensor_init->sensor_isp_cfg.expo_max_gain ?: 4096;
     sensor_ae->expo_frame_interval = p_sensor_init->sensor_isp_cfg.expo_update_delay ?: 1;
     sensor_ae->min_frame_vb = p_sensor_init->sensor_isp_cfg.min_frame_vb ?: 8;
-    // sensor_ae->min_exposure_line = p_sensor_init->sensor_isp_cfg.min_frame_vb ?: 8;
+	sensor_ae->min_exposure_line = p_sensor_init->sensor_isp_cfg.min_frame_vb ?: 8;
     sensor_ae->row_time_us = 30;
 }
 
@@ -454,13 +454,19 @@ void isp_cfg_dev(){
 	isp_dev = (struct isp_device *)dev_get(HG_ISP_DEVID);	
     if (isp_dev == NULL)
     {
-        os_printf("get isp device err\r\n");
+        os_printf(KERN_ERR"get isp device err\r\n");
         return;
     }
 	os_printf("isp cfg....\r\n");
-    sensor_init = (struct hgisp_sensor_init *)isp_param_load((void *)isp_param);
-    if (sensor_init && !list_empty((void *)&sensor_info_head))
+    
+    if (!list_empty((void *)&sensor_info_head))
     {
+        sensor_init = (struct hgisp_sensor_init *)isp_param_load((void *)isp_param);
+        if(sensor_init==NULL) {
+            os_printf(KERN_ERR"sensor param init err!\r\n");
+            goto end;
+        }
+
         os_event_init((void *)&isp_event);
         os_msgq_init((void *)&isp_msg, 2);
 
@@ -530,8 +536,8 @@ void isp_cfg_dev(){
             os_printf("isp open err");
             goto end;
         }	
-    } else {
-        os_printf("sensor param init err!\r\n");
+    }else{
+        os_printf(KERN_ERR"sensor list empty, isp init err!\r\n");
     }
 end:
     sensor_info_destory();

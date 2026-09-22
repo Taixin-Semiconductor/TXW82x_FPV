@@ -122,10 +122,21 @@ VCAM2开关,部分io电源域需要打开才有电,参考pmu.h的头文件,这�
 #define DEV_SENSOR_F37P                 0
 #define DEV_SENSOR_TP9950               0
  ***************************************************************************************************************************/
-//#define DEV_SENSOR_SC1346               1
+#define DEV_SENSOR_GC20C3               1
+#define DEV_SENSOR_OV9734               1
+#define DEV_SENSOR_H62                  1
+#define DEV_SENSOR_H63P                 1
+#define DEV_SENSOR_H63S                 1
+#define DEV_SENSOR_SC1346               1
 #define DEV_SENSOR_GC1084               1
 #define DEV_SENSOR_GC2083               1
 #define DEV_SENSOR_GC2053               1
+#define DEV_SENSOR_SC2336P              1
+#define DEV_SENSOR_SC2331               1
+#define DEV_SENSOR_XS9950               1
+#define DEV_SENSOR_IMX219               1
+#define DEV_SENSOR_CV2008               1
+#define DEV_SENSOR_CV2005               1
 
 /***********************************************************
  *音频及功放使能io配置

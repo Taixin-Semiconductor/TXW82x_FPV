@@ -62,7 +62,8 @@ struct dev_obj{
  * 返回值含义：
  *    0 : 继续遍历下一个设备
  *    1 : 结束遍历
- *   -1 : 结束遍历，并且该设备已被外部引用（不再释放）。ref计数会自动加1，不再使用该设备时需要执行dev_put
+ *   -1 : 该设备已被外部引用（ref计数会自动加1）。不再使用该设备时需要执行dev_put
+ *   -2 : 该设备已被外部引用（ref计数会自动加1）且 退出遍历。不再使用该设备时需要执行dev_put
  */
 typedef int32 (*dev_walkcb)(const struct dev_obj *dev, void *arg);
 

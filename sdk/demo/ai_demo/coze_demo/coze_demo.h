@@ -17,6 +17,7 @@
 #include "screen_command.h"
 #include "screen_common.h"
 #include "screen_msg_queue.h"
+#include "home_view.h"
 
 #ifdef PIN_FROM_PARAM
 #include "pin_param.h"
@@ -176,5 +177,7 @@ void coze_ui_set_ai_text(char *text);
 void coze_ui_set_user_text(char *text);
 void coze_ui_create(coze_ui_id ui_id);
 void coze_ui_destroy(coze_ui_id ui_id);
+void coze_ui_err_msg(int32 err_code, char *err_msg);
 
 #endif
+

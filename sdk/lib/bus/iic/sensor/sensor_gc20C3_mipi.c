@@ -417,6 +417,33 @@ void GC20C3_ae_adjust(struct isp_exposure_opt *p_cfg)
     p_cfg->cmd_len   = 2+1;
 }
 
+void gc20C3_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x02;
+    addr[index++] = 0x2c;
+    addr[index++] = p_opt->reverse_en*2 + p_opt->mirror_en;
+
+    p_opt->data.size = index;
+    p_opt->cmd_len   = 3;
+}
+
+void gc20C3_fps_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr        = (uint8 *)p_opt->data.addr;
+    uint8  index        = 0;
+    addr[index++]       = 0x03;
+    addr[index++]       = 0x40;
+    addr[index++]       = p_opt->curr_length >> 8;
+    addr[index++]       = 0x03;
+    addr[index++]       = 0x41;
+    addr[index++]       = p_opt->curr_length & 0xff;
+    p_opt->data.size    = index;
+    p_opt->cmd_len      = 2+1;
+	
+}
+
 
 static const SensorWorkMode gc20c3_supported_modes[] = {
     // 单目
@@ -472,8 +499,8 @@ SENSOR_OP_SECTION const _Sensor_Adpt_ gc20C3_cmd =
         
         .input_format = ISP_INPUT_DAT_FORMAT_RAW10,
         .adjust_func  = (isp_ae_func     )GC20C3_ae_adjust,
-        // .img_opt      = (sensor_img_opt  )gc20C3_img_opt,
-        // .fps_opt      = (sensor_fps_opt  )gc20C3_fps_opt,
+        .img_opt      = (sensor_img_opt  )gc20C3_img_opt,
+        .fps_opt      = (sensor_fps_opt  )gc20C3_fps_opt,
         // .isp_iq_param   = (_Sensor_ISP_Init*)&20c3_isp_param_init,
     },
 };

@@ -10,7 +10,7 @@
 #define PSRAM_HEAP          
 #define AV_PSRAM_HEAP    
 #define AV_HEAP
-#define CONFIG_PSRAM_AVHEAP_SIZE        (2*1024*1024+512*1024)
+#define CONFIG_PSRAM_AVHEAP_SIZE        (512*1024)
 #define CONFIG_AVHEAP_SIZE              (40*1024)
 //#define MEM_TRACE
 #define PIN_FROM_PARAM
@@ -41,6 +41,8 @@
 #define SYS_APP_SNTP                    1           // SNTP
 #define URLFILE_ENABLE                  1
 
+#define SYS_APP_NETAT                   1
+#define WIFI_DEV_HOOKS                  1
 //#define LWIP_WND_SCALE                  4
 //#define TCP_RCV_SCALE                   4
 

@@ -16,10 +16,10 @@ const unsigned char wav_header[] = {
     'f', 'm', 't', ' ',      // "fmt" 标志  
     16, 0, 0, 0,             // 过渡字节（不定）  
     0x01, 0x00,              // 格式类别  
-    0x01, 0x00,              // 声道数      
+    0x00, 0x00,              // 声道数      
     0, 0, 0, 0,              // 采样率  
     0, 0, 0, 0,              // 位速  
-    0x01, 0x00,              // 一个采样多声道数据块大小  
+    0x00, 0x00,              // 一个采样多声道数据块大小  
     0x10, 0x00,              // 一个采样占的 bit 数  
     'd', 'a', 't', 'a',      // 数据标记符＂data ＂  
     0, 0, 0, 0               // 语音数据的长度，比文件长度小42一般。这个是计算音频播放时长的关键参数~  
@@ -54,7 +54,8 @@ struct audio_record_struct {
     char filename[32];
     uint8_t record_format;
     uint8_t is_running;
-    uint16_t sampleRate; 
+    uint16_t channels;
+    uint32_t sampleRate; 
     int32_t record_time;  //seconds 
     uint32_t data_size;
     struct msi *msi; 
@@ -134,7 +135,7 @@ static void audio_file_record_thread(void *d)
     struct framebuff *frame_buf = NULL;
     txAudioInfo_t codec_info;
 	codec_info.sample_rate = audio_record_s->sampleRate;
-	codec_info.channels = 1;
+	codec_info.channels = audio_record_s->channels;
 
     fp = osal_fopen(audio_record_s->filename, "wb+");
     if(fp == NULL) {
@@ -151,7 +152,7 @@ static void audio_file_record_thread(void *d)
         if(audio_record_s->wave_head == NULL) {
             goto audio_record_thread_end;
         }
-        auadc_msi_add_output(AUSYS_AUAD, audio_record_s->msi->name);
+        auadc_msi_add_output(MAIN_MIC_ID, audio_record_s->msi->name);
         osal_fseek(fp, sizeof(TYPE_WAVE_HEAD));
         os_memcpy(audio_record_s->wave_head, wav_header, sizeof(TYPE_WAVE_HEAD));
     }
@@ -161,7 +162,7 @@ static void audio_file_record_thread(void *d)
         if(audio_msi == NULL) {
             goto audio_record_thread_end;
         }
-        auadc_msi_add_output(AUSYS_AUAD, audio_msi->name);
+        auadc_msi_add_output(MAIN_MIC_ID, audio_msi->name);
         msi_add_output(audio_msi, NULL, audio_record_s->msi, NULL);
         msi_do_cmd(audio_msi, MSI_CMD_START, 0, 0);
     }
@@ -187,8 +188,10 @@ audio_record_thread_end:
     if(audio_record_s->record_format == WAV) {
         if(fp) {
             audio_record_s->wave_head->riff_chunk.ChunkSize = audio_record_s->data_size + sizeof(TYPE_WAVE_HEAD) - 8;
+            audio_record_s->wave_head->fmt_chunk.FmtChannels = audio_record_s->channels;
             audio_record_s->wave_head->fmt_chunk.SampleRate = audio_record_s->sampleRate;
-            audio_record_s->wave_head->fmt_chunk.ByteRate = audio_record_s->sampleRate*2;
+            audio_record_s->wave_head->fmt_chunk.ByteRate = audio_record_s->sampleRate * audio_record_s->channels * 2; //2:BitsPerSample / 8
+            audio_record_s->wave_head->data_chunk.DataSize = audio_record_s->channels * 2;
             audio_record_s->wave_head->data_chunk.DataSize = audio_record_s->data_size;
 			osal_fseek(fp, 0);
 			osal_fwrite(audio_record_s->wave_head, 1, sizeof(TYPE_WAVE_HEAD), fp);
@@ -196,7 +199,7 @@ audio_record_thread_end:
         if(audio_record_s->wave_head) {
             os_free_psram(audio_record_s->wave_head);
         }
-        auadc_msi_del_output(AUSYS_AUAD, audio_record_s->msi->name);
+        auadc_msi_del_output(MAIN_MIC_ID, audio_record_s->msi->name);
     }
     else {
         if(audio_msi) {
@@ -248,7 +251,7 @@ int32_t audio_file_record_stop(void)
     return RET_ERR;
 }
 
-int32_t audio_file_record_init(char *filename, uint32_t sampleRate, int32_t record_time)
+int32_t audio_file_record_init(char *filename, uint32_t sampleRate, uint32_t channels, int32_t record_time)
 {
     uint8_t *file_extension = NULL;
 
@@ -290,6 +293,7 @@ int32_t audio_file_record_init(char *filename, uint32_t sampleRate, int32_t reco
 #endif
     }
     audio_record_s->sampleRate = sampleRate;
+    audio_record_s->channels = channels;
     audio_record_s->record_time = record_time;
     audio_record_s->is_running = 1;
     os_task_create("audio_file_record_thread", audio_file_record_thread, audio_record_s, OS_TASK_PRIORITY_NORMAL, 0, NULL, 1024);
@@ -301,16 +305,18 @@ int32 atcmd_record_audio(const char *cmd, char *argv[], uint32 argc)
 	uint32_t record_time = 0;
 	uint32_t record_ctl = 0;
 	uint32_t samplerate = 0;
+    uint32_t channels = 0;
 	
-	if(argc < 3) {
-		os_printf("%s argc err:%d,enter the mode,samplerate and time\n",__FUNCTION__,argc);
+	if(argc < 4) {
+		os_printf("%s argc err:%d,enter the mode,samplerate,channels and time\n",__FUNCTION__,argc);
         return 0;
 	}
 	record_ctl = os_atoi(argv[0]);
 	if(record_ctl) {
 		samplerate = os_atoi(argv[1]);
-		record_time = os_atoi(argv[2]);
-		audio_file_record_init(NULL,samplerate,record_time);	
+        channels = os_atoi(argv[2]);
+		record_time = os_atoi(argv[3]);
+		audio_file_record_init(NULL,samplerate,channels,record_time);	
 	}
 	else {
 		audio_file_record_stop();

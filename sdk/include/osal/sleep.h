@@ -82,6 +82,8 @@ typedef enum {
     DSLEEP_ACTION_DO_NOTHING,
     DSLEEP_ACTION_SLEEP_CONTINUE,
     DSLEEP_ACTION_SLEEP_EXIT,
+    DSLEEP_ACTION_GOTO_LOOP,
+    DSLEEP_ACTION_SLEEP_CONTINUE_KEEP_TIMER,
 } DSLEEP_ACTION;
 
 struct system_sleep_param {
@@ -161,11 +163,15 @@ enum DSLEEP_IOCTL_CMD {
     DSLEEP_IOCTL_SET_EXIT_HOOK,
     DSLEEP_IOCTL_SET_RX_HOOK,
     DSLEEP_IOCTL_SET_READY_HOOK,
+    DSLEEP_IOCTL_SET_CHANGE_WKREASON,
+    DSLEEP_IOCTL_SET_LOOP_HOOK,
     
     /*Get CMDs*/
     DSLEEP_IOCTL_GET_IP_ADDR = 0x20000000,
     DSLEEP_IOCTL_GET_DTIM,
-    DSLEEP_IOCTL_GET_DBG_CFG
+    DSLEEP_IOCTL_GET_DBG_CFG,
+    DSLEEP_IOCTL_GET_RC_HZ,
+    DSLEEP_IOCTL_CHECK_SLEEP_TIME_END,
 };
 
 //ioctrl: set_cfg
@@ -205,14 +211,19 @@ enum DSLEEP_IOCTL_CMD {
 #define dsleep_set_exit_hook(func)                  dsleep_ioctl(DSLEEP_IOCTL_SET_EXIT_HOOK, (uint32)func, 0)
 #define dsleep_set_rx_hook(func)                    dsleep_ioctl(DSLEEP_IOCTL_SET_RX_HOOK, (uint32)func, 0)
 #define dsleep_set_ready_hook(func)                 dsleep_ioctl(DSLEEP_IOCTL_SET_READY_HOOK, (uint32)func, 0)
+#define dsleep_set_change_wkreason(reason)          dsleep_ioctl(DSLEEP_IOCTL_SET_CHANGE_WKREASON, (uint32)reason, 0)
+#define dsleep_set_loop_hook(func)                  dsleep_ioctl(DSLEEP_IOCTL_SET_LOOP_HOOK, (uint32)func, 0)
 
 
 //ioctrl: get_cfg
 #define dsleep_get_ip_addr()                        dsleep_ioctl(DSLEEP_IOCTL_GET_IP_ADDR, 0, 0)
 #define dsleep_get_dtim()                           dsleep_ioctl(DSLEEP_IOCTL_GET_DTIM, 0, 0)
 #define dsleep_get_dbg_cfg()                        dsleep_ioctl(DSLEEP_IOCTL_GET_DBG_CFG, 0, 0)
+#define dsleep_get_rc_hz()                          dsleep_ioctl(DSLEEP_IOCTL_GET_RC_HZ, 0, 0)
+#define dsleep_check_sleep_time_end()               dsleep_ioctl(DSLEEP_IOCTL_CHECK_SLEEP_TIME_END, 0, 0)
 
 int32 dsleep_ioctl(uint32 cmd, uint32 param1, uint32 param2);
+int32 dsleep_tx_ether(uint8 *data, uint32 len);
 void os_sleep(int32 sec);
 void os_sleep_ms(int32 msec);
 extern void os_sleep_us(int us);

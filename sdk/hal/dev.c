@@ -290,14 +290,14 @@ int32 dev_walk(uint16 type, dev_walkcb cb, void *arg)
     while (dev) {
         if (type == 0 || dev->dev_type == type) {
             int32 ret = cb((const struct dev_obj *)dev, arg);
-            if (ret == -1 && dev->hotplug) {
+            if (ret < 0 && dev->hotplug) {
                 atomic_inc(&dev->ref);
                 if (atomic_read(&dev->ref) > 128) {
                     os_printf(KERN_WARNING"Device %d Ref is %d, Maybe device reference exception!!!(lr:%p)\r\n",
                               dev->dev_id, atomic_read(&dev->ref), RETURN_ADDR());
                 }
             }
-            if (ret)  break;
+            if (ret == 1 || ret == -2) break;
         }
         dev = dev->next;
     }

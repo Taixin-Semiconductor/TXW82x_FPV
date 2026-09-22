@@ -258,6 +258,7 @@ enum spi_ioctl_cmd {
     SPI_XIP_LOCK,
     SPI_XIP_UNLOCK,
 
+    SPI_XIP_CAP_ADAPT,
 };
 
 

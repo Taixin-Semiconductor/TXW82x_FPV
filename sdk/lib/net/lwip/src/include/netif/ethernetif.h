@@ -97,6 +97,7 @@ uint32 lwip_netif_ipaddr4(struct netif* netif);
 uint8 *lwip_netif_ipaddr6(struct netif* netif);
 err_t lwip_netif_linkoutput(struct netif* netif, struct pbuf *buf);
 void lwip_netif_mcast_addr(struct netif* netif, void (*cb)(struct netif *, const ip4_addr_t *, uint8 *));
+int32 lwip_netif_set_hwaddr(char *ifname, uint8 *mac_addr);
 
 #if LWIP_IPV6
 err_t lwip_netif_set_dhcp6(struct netdev *ndev, uint8 enable);

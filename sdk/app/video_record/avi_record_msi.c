@@ -330,7 +330,7 @@ static int avi_record_running(struct msi *msi, uint32_t save_time, void *fp, con
             }
         }
 
-        if (ctx)
+        if (ctx && avimuxer_sync_judge(ctx, 1000))
         {
             uint8_t sync_lock = 0;
             if (avi_record->file_process.need_lock && !holding_lock)
@@ -338,7 +338,7 @@ static int avi_record_running(struct msi *msi, uint32_t save_time, void *fp, con
                 os_mutex_lock(&mult_record.mutex, osWaitForever);
                 sync_lock = 1;
             }
-            avimuxer_sync_time(ctx, 1000);
+            avimuxer_sync(ctx);
             if (sync_lock)
             {
                 os_mutex_unlock(&mult_record.mutex);

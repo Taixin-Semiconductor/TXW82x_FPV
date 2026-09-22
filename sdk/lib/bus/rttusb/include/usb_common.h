@@ -99,6 +99,11 @@ USB2.0 SIE:
 #define USB_FEATURE_ENDPOINT_HALT       0x00
 #define USB_FEATURE_DEV_REMOTE_WAKEUP   0x01
 #define USB_FEATURE_TEST_MODE           0x02
+#define USB_TEST_J                      0x01
+#define USB_TEST_K                      0x02
+#define USB_TEST_SE0_NAK                0x03
+#define USB_TEST_PACKET                 0x04
+#define USB_TEST_FORCE_ENABLE           0x05
 
 #define USB_REQ_GET_STATUS              0x00
 #define USB_REQ_CLEAR_FEATURE           0x01

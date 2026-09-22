@@ -12,6 +12,7 @@ enum
 };
 
 void avimuxer_sync(void *ctx);
+uint8_t avimuxer_sync_judge(void *ctx, uint32_t time_ms);
 void avimuxer_sync_time(void *ctx, uint32_t time_ms);
 void *avimuxer_init(void *fp,  uint32_t max_size, int w, int h, int frate, int h265, int audio_enable);
 void *avimuxer_init_with_file(void *fp, const file_ops_t *ops, uint32_t max_size, int w, int h, int frate, int h265, int audio_enable);

@@ -352,4 +352,6 @@
 //#define USE_WOLFSSL
 //#define USE_GNUTLS
 
+#define CURL_MAX_WRITE_SIZE 2048
+
 #endif

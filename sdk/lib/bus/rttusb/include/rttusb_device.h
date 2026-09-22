@@ -100,6 +100,7 @@ struct udcd_ops
     rt_err_t (*ep0_send_status)(void);
     rt_err_t (*suspend)(void);
     rt_err_t (*wakeup)(void);
+    rt_err_t (*set_test_mode)(rt_uint8_t selector);
 };
 
 struct ep_id
@@ -127,6 +128,7 @@ struct uendpoint
 {
     rt_list_t list;
     uep_desc_t ep_desc;
+    rt_uint8_t *address_mirror;
     rt_list_t request_list;
     struct uio_request request;
     rt_uint8_t* buffer;
@@ -280,6 +282,7 @@ ufunction_t rt_usbd_function_new(udevice_t device, udev_desc_t dev_desc,
 rt_err_t rt_usbd_function_release(ufunction_t func);
 uintf_t rt_usbd_interface_new(udevice_t device, uintf_handler_t handler);
 uep_t rt_usbd_endpoint_new(uep_desc_t ep_desc, udep_handler_t handler);
+rt_err_t rt_usbd_endpoint_bind_address(uep_t ep, rt_uint8_t *address);
 ualtsetting_t rt_usbd_altsetting_new(rt_size_t desc_size);
 
 rt_err_t rt_usbd_core_device_list_init();
@@ -320,6 +323,8 @@ int audio_speaker_init(void);
 int rt_usbd_uac_speaker_class_register(rt_uint32_t devid);
 int rt_usbd_uac_mic_class_register(rt_uint32_t devid);
 int rt_usbd_uvc_device_class_register(rt_uint32_t devid);
+int rt_usbd_uvc_mjpeg_device_class_register(rt_uint32_t dev_id);
+int rt_usbd_uvc_h264_device_class_register(rt_uint32_t dev_id);
 int rt_usbd_vcom_class_register(rt_uint32_t devid);
 int rt_usbd_ecm_class_register(rt_uint32_t devid);
 int rt_usbd_hid_class_register(rt_uint32_t devid);
@@ -367,6 +372,19 @@ rt_inline rt_err_t dcd_set_config(udcd_t dcd, rt_uint8_t address)
     RT_ASSERT(dcd->ops->set_config != RT_NULL);
 
     return dcd->ops->set_config(address);
+}
+
+rt_inline rt_err_t dcd_set_test_mode(udcd_t dcd, rt_uint8_t selector)
+{
+    RT_ASSERT(dcd != RT_NULL);
+    RT_ASSERT(dcd->ops != RT_NULL);
+
+    if(dcd->ops->set_test_mode == RT_NULL)
+    {
+        return -RT_ERROR;
+    }
+
+    return dcd->ops->set_test_mode(selector);
 }
 
 rt_inline rt_err_t dcd_ep_enable(udcd_t dcd, uep_t ep)

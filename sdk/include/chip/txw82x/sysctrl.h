@@ -61,6 +61,8 @@ struct __clock_cfg {
     uint32 hirc_clk_hz;  /* read from efuse */
     uint32 sys_clk;
     uint32 syspll_clk;
+	uint32 max_flash_clk;
+    uint32 flash_clk_mod;
 };
 
 typedef struct __rom_clock_cfg {
@@ -385,16 +387,16 @@ enum iis_clk_src {
 
 
 #define sysctrl_iis0_clk_sel(iis_clk_src)         SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON0, BIT(11)|BIT(10), iis_clk_src, 10)
-#define sysctrl_mac_pa_en()                       SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON0, BIT(9))
-#define sysctrl_mac_pa_dis()                      SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON0, BIT(9))
+#define sysctrl_mac_pa_en()                       SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON0, BIT(9))
+#define sysctrl_mac_pa_dis()                      SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON0, BIT(9))
 //#define sysctrl_qspi_dlychain_cfg(n)              SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON0, 0x1F0, n, 4)
 //#define sysctrl_qspi_clkin_dis()                  SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON0, BIT(3))
 //#define sysctrl_qspi_clkin_en()                   SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON0, BIT(3))
 //#define sysctrl_mjpeg_reset()                     SYSCTRL_REG_BITS_S0S1(SYSCTRL->SYS_CON0, BIT(2))
 //#define sysctrl_iis1_reset()                      SYSCTRL_REG_BITS_S0S1(SYSCTRL->SYS_CON0, BIT(1))
 #define sysctrl_h264_master_sel(n)                SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON0, BIT(1), n, 1)
-#define sysctrl_wdt_at_lp_gate_en()               SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON0, BIT(0))
-#define sysctrl_wdt_at_lp_gate_dis()              SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON0, BIT(0))
+#define sysctrl_wdt_at_lp_gate_en()               SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON0, BIT(0))
+#define sysctrl_wdt_at_lp_gate_dis()              SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON0, BIT(0))
 
 
 /* SYS_CON1 */
@@ -550,18 +552,26 @@ enum pll1_xoscm_refclk_sel {
 
 
 /* SYS_CON10 */
-#define sysctrl_mem_end_16k_remap_sel(n)              SYSCTRL_REG_SET_VALUE(SYSCTRL->SYSCON11, BIT(31)|BIT(30), n, 30)
-#define sysctrl_cpu1_swd_anymap_en                    SYSCTRL_REG_SET_BITS(SYSCTRL->SYSCON11, BIT(24))
+#define sysctrl_mem_end_16k_remap_sel(n)              SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON10, BIT(31)|BIT(30), n, 30)
+#define sysctrl_cpu1_swd_anymap_en                    SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON10, BIT(24))
 /* SYS_CON14 */
 #define sysctrl_image_isp_pll1_2x_clk_sel(n)          SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON14, BIT(27)|BIT(26)|BIT(25), n, 25)
 #define sysctrl_image_isp_pll1_2x_clk_open()          SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON14, BIT(24))
 #define sysctrl_image_isp_pll1_2x_clk_close()         SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON14, BIT(24))
+enum vcam2_oc_level {
+    VCAM2_OC_750MA,
+    VCAM2_OC_250MA,
+    VCAM2_OC_150MA,
+    VCAM2_OC_100MA,
+};
+#define sysctrl_vcam2_oc_set(vcam2_oc_level)          SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON14, 0x0000000c, vcam2_oc_level, 2)
+
 /* SYS_CON15 */
-#define sysctrl_gpiof_dbc_clk_sel(gpio_dbc_clk_src)   SYSCTRL_REG_SET_VALUE(SYSCTRL->SYSCON15, BIT(28)|BIT(27), gpio_dbc_clk_src, 27)
+#define sysctrl_gpiof_dbc_clk_sel(gpio_dbc_clk_src)   SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON15, BIT(28)|BIT(27), gpio_dbc_clk_src, 27)
 #define sysctrl_cpu1_cache_en(n)                      SYSCTRL_REG_CLR_BITS(SYSCTRL->SYS_CON15, BIT(22))
 #define sysctrl_cpu1_cache_dis(n)                     SYSCTRL_REG_SET_BITS(SYSCTRL->SYS_CON15, BIT(22))
-#define sysctrl_gpioe_dbc_clk_sel(gpio_dbc_clk_src)   SYSCTRL_REG_SET_VALUE(SYSCTRL->SYSCON15, BIT(20)|BIT(19), gpio_dbc_clk_src, 19)
-#define sysctrl_gpiod_dbc_clk_sel(gpio_dbc_clk_src)   SYSCTRL_REG_SET_VALUE(SYSCTRL->SYSCON15, BIT(18)|BIT(17), gpio_dbc_clk_src, 17)
+#define sysctrl_gpioe_dbc_clk_sel(gpio_dbc_clk_src)   SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON15, BIT(20)|BIT(19), gpio_dbc_clk_src, 19)
+#define sysctrl_gpiod_dbc_clk_sel(gpio_dbc_clk_src)   SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON15, BIT(18)|BIT(17), gpio_dbc_clk_src, 17)
 
 
 /* CLK_CON0 */
@@ -581,7 +591,6 @@ enum qspi_clk_src {
     QSPI_CLK_XOSC, 
     QSPI_CLK_USBPLL2X_NP5_1,
 };
-
 
 /* CKL_CON2 */
 #define sysctrl_dvp_clk_open()             SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(31))
@@ -630,14 +639,10 @@ enum qspi_clk_src {
 //#define sysctrl_uart1_clk_close()          SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON2, BIT(11))
 //#define sysctrl_uart0_clk_open()           SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(10))
 //#define sysctrl_uart0_clk_close()          SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON2, BIT(10))
-//#define sysctrl_tmr2_clk_open()            SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(8))
-//#define sysctrl_tmr2_clk_close()           SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON2, BIT(8))
-//#define sysctrl_spi2_clk_open()            SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(7))
-//#define sysctrl_spi2_clk_close()           SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON2, BIT(7))
 #define sysctrl_qspi_xosc_sel_xosc         SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON2, BIT(9))
 #define sysctrl_qspi_xosc_sel_rc10m        SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(9))
-
 #define sysctrl_qspi_clk_src_sel(qspi_clk_src) SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON2, BIT(8)|BIT(7), qspi_clk_src, 7)
+#define sysctrl_qspi_clk_sel_upll()            sysctrl_qspi_clk_src_sel(QSPI_CLK_USBPLL)
 #define sysctrl_spi1_clk_open()            SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(6))
 #define sysctrl_spi1_clk_close()           SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON2, BIT(6))
 #define sysctrl_spi0_clk_open()            SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON2, BIT(5))
@@ -687,6 +692,7 @@ enum lvd_dbc_clk_src {
 #define sysctrl_sdio_fifo_open()      		       SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON3, BIT(14))
 #define sysctrl_sdio_fifo_close()                  SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON3, BIT(14))
 #define sysctrl_qspi_pll_div(n)                    SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON3, BIT(13)|BIT(12)|BIT(11), n, 11)
+#define sysctrl_qspi_get_clk_div()                 ((SYSCTRL->CLK_CON3 & 0x00003800) >> 11)
 #define sysctrl_sram10_clk_open()                  SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON3, BIT(10))
 #define sysctrl_sram10_clk_close()                 SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON3, BIT(10))
 #define sysctrl_sram9_clk_open()                   SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON3, BIT(9))
@@ -892,35 +898,9 @@ enum audac_pll_sel{
 //#define sysctrl_dvp_pll_sel(dvp_pll_src) 		  SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, BIT(28)|BIT(27), dvp_pll_src, 27)
 //#define sysctrl_qspi_pll_sel(n)          		  SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, BIT(26), n, 26)
 
+
 //todo: check
-#define sysctrl_qspi_clk_sel_spll()               do {  SYSCTRL_REG_OPT( SYSCTRL->CLK_CON0 &= ~(BIT(3));\
-                                                         SYSCTRL->CLK_CON0 &= ~(BIT(26)); );\
-                                                  } while(0)
-#define sysctrl_qspi_clk_sel_upll()               do {  SYSCTRL_REG_OPT( SYSCTRL->CLK_CON0 &= ~(BIT(3));\
-                                                         SYSCTRL->CLK_CON1 |= (BIT(26)); );\
-                                                  } while(0)
-#define sysctrl_qspi_clk_sel_hxosc()              do {  SYSCTRL_REG_OPT( SYSCTRL->CLK_CON0 |= (BIT(3));\
-                                                         SYSCTRL->CLK_CON1 &= ~(BIT(26)); );\
-                                                  } while(0)
-#define sysctrl_qspi_clk_sel_rc10m()              do {  SYSCTRL_REG_OPT( SYSCTRL->CLK_CON0 |= (BIT(3));\
-                                                         SYSCTRL->CLK_CON1 |= (BIT(26)); );\
-                                                  } while(0)
 
-#define sysctrl_qspi_get_clk_div()              ((SYSCTRL->CLK_CON3 & 0x00003800) >> 11)
-
-// enum qspi_clk_src {
-//     QSPI_CLK_NONE, 
-//     QSPI_CLK_USBPLL, 
-//     QSPI_CLK_XOSC, 
-//     QSPI_CLK_RC10M,
-// };
-//#define sysctrl_qspi_clk_src_sel(qspi_clk_src)\
-//do {\
-//    if (qspi_clk_src & BIT(1))    SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON0, BIT(3));\
-//    else                          SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON0, BIT(3));\
-//    if (qspi_clk_src & BIT(0))    SYSCTRL_REG_SET_BITS(SYSCTRL->CLK_CON1, BIT(26));\
-//    else                          SYSCTRL_REG_CLR_BITS(SYSCTRL->CLK_CON1, BIT(26));\
-//} while (0)
 
 #define sysctrl_iis_clk_set(init) \
     SYSCTRL->CLK_CON0 = (SYSCTRL->CLK_CON0 & ~(0x7f << 16)) | (((init) ? 23 : 3) << 16)
@@ -946,8 +926,8 @@ enum audac_pll_sel{
 #define sysctrl_adda_cnt_pr(rfadc_pll_sel)   SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, BIT(25)|BIT(24), rfadc_pll_sel, 24)
 #define sysctrl_apb1_clk_div(n)              SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, 0x00FF0000, n, 16)
 #define sysctrl_apb0_clk_div(n)              SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, 0x0000FF00, n, 8)
-#define sysctrl_mac_clk_sel(n)               SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, 0x000000C0, n, 6)
-#define sysctrl_sys_clk_div(n)               SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, 0x0000003F, n, 0)
+#define sysctrl_mac_clk_sel(n)               SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, 0x00000040, n, 6)
+#define sysctrl_sys_clk_div(n)               SYSCTRL_REG_SET_VALUE(SYSCTRL->CLK_CON1, 0x00000003, n, 0)
 
 
 
@@ -1311,10 +1291,10 @@ enum cpu_burst_size_def {
 #define sysctrl_cpu0_dbus_burst_set(cpu_burst_size_def)  SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON9, BIT(19)|BIT(18), cpu_burst_size_def, 18);
 #define sysctrl_cpu1_ibus_burst_set(cpu_burst_size_def)  SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON10, BIT(17)|BIT(16), cpu_burst_size_def, 16);
 #define sysctrl_cpu1_dbus_burst_set(cpu_burst_size_def)  SYSCTRL_REG_SET_VALUE(SYSCTRL->SYS_CON10, BIT(19)|BIT(18), cpu_burst_size_def, 18);
-#define sysctrl_cpu0_ibus_burst_get()  (SYSCTRL->SYS_CON9 & (BIT(17)|BIT(16)) >> 16)
-#define sysctrl_cpu0_dbus_burst_get()  (SYSCTRL->SYS_CON9 & (BIT(19)|BIT(18)) >> 18)
-#define sysctrl_cpu1_ibus_burst_get()  (SYSCTRL->SYS_CON10 & (BIT(17)|BIT(16)) >> 16)
-#define sysctrl_cpu1_dbus_burst_get()  (SYSCTRL->SYS_CON10 & (BIT(19)|BIT(18)) >> 18)
+#define sysctrl_cpu0_ibus_burst_get()  ((SYSCTRL->SYS_CON9 & (BIT(17)|BIT(16))) >> 16)
+#define sysctrl_cpu0_dbus_burst_get()  ((SYSCTRL->SYS_CON9 & (BIT(19)|BIT(18))) >> 18)
+#define sysctrl_cpu1_ibus_burst_get()  ((SYSCTRL->SYS_CON10 & (BIT(17)|BIT(16))) >> 16)
+#define sysctrl_cpu1_dbus_burst_get()  ((SYSCTRL->SYS_CON10 & (BIT(19)|BIT(18))) >> 18)
 
 
 enum peris_access_ace_def {

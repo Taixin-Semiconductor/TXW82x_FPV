@@ -7,6 +7,14 @@
 #include "magic_voice/magic_voice.h"
 #include "auadc_proc.h"
 
+#define AUADC_OUTPUT_SIN    0
+
+#if AUADC_OUTPUT_SIN
+static const int16_t sin1khz_table[8] = {
+	5792,8191,5792,0,-5792,-8191,-5792,0,
+};
+#endif
+
 typedef struct {
     uint16 data_size;
     uint16 data_offset;
@@ -225,13 +233,18 @@ magic_voice_read_again:
             if(nsamples >= auadc_proc_s->frame_size) {
                 send_frame_buf = msi_alloc_fb(auadc_proc_s->msi, NULL, NULL, nsamples * sizeof(int16), 0, 0);
                 if(send_frame_buf) {
-
+#if AUADC_OUTPUT_SIN
+                    buf = (int16*)send_frame_buf->data;
+                    for(uint32_t i=0; i<nsamples; i++) {
+                        buf[i] = sin1khz_table[i%8];
+                    }
+#else
 #if MAGIC_VOICE_EN
                     magic_voice_read(auadc_proc_s->magVo_s, (int16*)(send_frame_buf->data), &nsamples);
 #else
                     hw_memcpy(send_frame_buf->data, buf, nsamples * sizeof(int16));
 #endif
-
+#endif
                     send_frame_buf->mtype = MEDIA_DATA_AUDIO;	
                     send_frame_buf->stype = AUDIO_CODEC_PCM_S16LE;
                     send_frame_buf->time = os_jiffies();

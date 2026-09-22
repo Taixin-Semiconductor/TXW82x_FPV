@@ -145,6 +145,7 @@ enum SYSEVT_LMAC_SUBEVT {
     SYSEVT_LMAC_ACS_DONE = 1,            ///< 自动信道选择 (ACS) 完成
     SYSEVT_LMAC_TX_STATUS = 2,           ///< 底层发送状态报告 (ACK/Retry)
     SYSEVT_LMAC_APP_HBDATA_DETECT = 3,   ///< 检测到应用层的心跳包 (用于判断保活包是否进入LMAC层)
+    SYSEVT_LMAC_TEST_RESULT = 4,         ///< 测试盒反馈测试结果
 };
 /** @brief 快捷宏：发送 LMAC 事件 */
 #define SYSEVT_NEW_LMAC_EVT(subevt, data) sys_event_new(SYS_EVENT(SYS_EVENT_LMAC, subevt), (uint32)data)

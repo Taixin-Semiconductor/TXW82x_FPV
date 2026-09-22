@@ -78,6 +78,7 @@ static const struct hgic_atcmd static_atcmds[] = {
 
 #if COZE_DEMO
     {"AT+UPLOAD_PHOTO",sys_atcmd_coze_upload_photo},
+    {"AT+PAT_KEY",sys_atcmd_coze_set_pat_key},
 #endif
     /*
         继续添加其他AT命令

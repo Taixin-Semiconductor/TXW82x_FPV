@@ -159,7 +159,7 @@ static int32 hgvpp_ioctl(struct vpp_device *p_vpp, enum vpp_ioctl_cmd ioctl_cmd,
 			hw->IWM0_CON &= ~(0x1ff<<15);
 			hw->IWM0_CON &= ~(0xff<<24);
 			hw->IWM0_CON |= (((param1&0Xff00)>>8)<<24);
-			hw->IWM0_CON |= ((param1&0Xff)<<15);			
+			hw->IWM0_CON |= ((param1&0Xff)<<16);			
 		break;
 		
 		case VPP_IOCTL_CMD_SET_WATERMARK1_LOCATED:

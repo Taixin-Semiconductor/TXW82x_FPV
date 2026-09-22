@@ -24,8 +24,6 @@
 #endif
 #include "syscfg.h"
 
-#define IIC_CLK 250000UL
-
 
 uint32 sensor0_ident,sensor1_ident;
 
@@ -40,311 +38,18 @@ static uint8_t  fsync_pending   = 0;
 
 void dual_mipi_csi_reset(enum fps_mode mode, float fps);
 
-
-static const _Sensor_Adpt_* SensorTable_CSI[] = {
-
-#if DEV_SENSOR_JXV3
-    &jxv3_cmd,
-#endif
-
-#if DEV_SENSOR_GC0308
-    &gc0308_cmd,
-#endif
-
-#if DEV_SENSOR_GC0309
-    &gc0309_cmd,
-#endif
-
-#if DEV_SENSOR_GC0311
-    &gc0311_cmd,
-#endif
-
-#if DEV_SENSOR_GC0312
-    &gc0312_cmd,
-#endif
-
-#if DEV_SENSOR_GC0328
-    &gc0328_cmd,
-#endif
-
-#if DEV_SENSOR_GC0329
-    &gc0329_cmd,
-#endif
-
-#if DEV_SENSOR_BF3A03
-    &bf3a03_cmd,
-#endif
-
-#if DEV_SENSOR_BF3703
-    &bf3703_cmd,
-#endif
-
-#if DEV_SENSOR_OV2640
-    &ov2640_cmd,
-#endif
-
-#if DEV_SENSOR_OV7725
-    &ov7725_cmd,
-#endif
-
-#if DEV_SENSOR_OV7670
-    &ov7670_cmd,
-#endif
-
-#if DEV_SENSOR_BF2013
-    &bf2013_cmd,
-#endif
-
-#if DEV_SENSOR_H62
-    &h62_cmd,
-#endif
-
-#if DEV_SENSOR_H66
-    &h66_cmd,
-#endif
-
-#if DEV_SENSOR_GC1084
-    &gc1084_cmd,
-#endif
-
-#if DEV_SENSOR_GC1054
-    &gc1054_cmd,
-#endif
-
-#if DEV_SENSOR_SC1336
-    &sc1336_cmd,
-#endif
-
-#if DEV_SENSOR_SC1346
-    &sc1346_cmd,
-#endif
-
-#if DEV_SENSOR_XC7016_H63
-    &xc7016_h63_cmd,
-#endif
-
-#if DEV_SENSOR_XC7011_H63
-    &xc7011_h63_cmd,
-#endif
-
-#if DEV_SENSOR_XC7011_GC1054
-    &xc7011_gc1054_cmd,
-#endif
-
-#if DEV_SENSOR_GC2053
-    &gc2053_cmd,
-#endif
-
-#if DEV_SENSOR_XCG532
-    &xcg532_cmd,
-#endif
-
-#if DEV_SENSOR_GC2145
-    &gc2145_cmd,
-#endif
-
-#if DEV_SENSOR_SP0718
-    &sp0718_cmd,
-#endif
-
-#if DEV_SENSOR_SP0A19
-    &sp0a19_cmd,
-#endif
-
-#if DEV_SENSOR_BF3720
-    &bf3720_cmd,
-#endif
-
-#if DEV_SENSOR_SC2336P
-    &sc2336p_cmd,
-#endif
-
-#if DEV_SENSOR_GC2083
-    &gc2083_cmd,
-#endif
-
-#if DEV_SENSOR_OV9734
-    &ov9734_cmd,
-#endif
-
-#if DEV_SENSOR_GC20C3
-    &gc20C3_cmd,
-#endif
-
-#if DEV_SENSOR_XS9950
-    &xs9950_cmd,
-#endif
-
-#if DEV_SENSOR_F37P
-    &f37p_cmd,
-#endif
-
-#if DEV_SENSOR_F38P
-    &f38p_cmd,
-#endif
-
-#if DEV_SENSOR_H63P
-    &h63p_cmd,
-#endif
-
-#if DEV_SENSOR_H63S
-    &h63s_cmd,
-#endif
-
-#if DEV_SENSOR_IMX219
-    &imx219_cmd,
-#endif
-
-#if DEV_SENSOR_CV2008
-    &cv2008_cmd,
-#endif
-
-#if DEV_SENSOR_CV2005
-    &cv2005_cmd,
-#endif
-
-    NULL,
-};
-
-int check_sensor_id(uint8_t devid,const _Sensor_Ident_ *p_sensor_ident)
-{
-	int8 u8Buf[3];
-	uint8_t tablebuf[16];
-	uint32 id= 0;
-	uint32 k = 0;
-    uint8 u8SensorwriteID2;
-
-	u8SensorwriteID2 = p_sensor_ident->w_cmd;
-
-	tablebuf[0] = p_sensor_ident->addr_num;
-	tablebuf[1] = p_sensor_ident->data_num;
-
-	tablebuf[2] = u8SensorwriteID2>>1;
-
-	u8Buf[0] = p_sensor_ident->id_reg;
-	if(p_sensor_ident->addr_num == 2)
-	{
-		u8Buf[0] = p_sensor_ident->id_reg>>8;
-		u8Buf[1] = p_sensor_ident->id_reg;
-	}
-	k = 0;
-	tablebuf[3+k] = u8Buf[0];
-	k++;
-	if(p_sensor_ident->addr_num == 2){
-		tablebuf[3+k] = u8Buf[1];
-		k++;
-	}
-
-	tablebuf[3+k] = tablebuf[4+k] = tablebuf[5+k] = tablebuf[6+k] = 0;
-	//i2c_read(p_iic,u8Buf,p_sensor_ident->addr_num,(int8*)&id,p_sensor_ident->data_num);
-	wake_up_iic_queue(devid,tablebuf,0,0,(uint8_t*)NULL);
-	while(iic_devid_finish(devid) != 1){
-		os_sleep_ms(1);
-	}
-	
-	id = tablebuf[3+k] | (tablebuf[4+k]<<8) | (tablebuf[5+k]<<16) | (tablebuf[6+k]<<24);
-	os_printf("SID: %x, %x, %x, %x,%x\r\n",id,p_sensor_ident->id,u8SensorwriteID2,p_sensor_ident->r_cmd,p_sensor_ident->id_reg);
-	if(id == p_sensor_ident->id){
-		iic_devid_set_addr(devid,u8SensorwriteID2>>1);
-		return 1;
-	}
-	else{
-		return -1;
-	}
-}
-
-
-/*******************************************************************************
-* Function Name  : sensor_reset
-* Description    : for sensor reset before start
-* Input          : nop number
-* Output         : None
-* Return         : None
-*******************************************************************************/
-void sensor_power_on(uint32_t csi_dev_id)
-{
-    uint8_t rsn, pdn;
-
-    if (csi_dev_id == HG_MIPI_CSI_DEVID) {
-        /* CSI0 PDN */
-        pdn = MACRO_PIN(PIN_CSI0_PDN);
-        if (pdn != 255) {
-            gpio_iomap_output(pdn, GPIO_IOMAP_OUTPUT);
-            gpio_set_val(pdn, 0);
-            os_sleep_ms(2);
-            gpio_set_val(pdn, 1);
-        }
-
-        /* CSI0 RESET */
-        rsn = MACRO_PIN(PIN_CSI0_RESET);
-        if (rsn != 255) {
-            gpio_iomap_output(rsn, GPIO_IOMAP_OUTPUT);
-            gpio_set_val(rsn, 1);
-            os_sleep_ms(50);
-            gpio_set_val(rsn, 0);
-            os_sleep_ms(20);
-            gpio_set_val(rsn, 1);
-
-        }
-
-    } else if (csi_dev_id == HG_MIPI1_CSI_DEVID) {
-        /* CSI1 PDN */
-        pdn = MACRO_PIN(PIN_CSI1_PDN);
-        if (pdn != 255) {
-            gpio_iomap_output(pdn, GPIO_IOMAP_OUTPUT);
-            gpio_set_val(pdn, 0);
-            os_sleep_ms(2);
-            gpio_set_val(pdn, 1);
-        }
-
-        /* CSI1 RESET */
-        rsn = MACRO_PIN(PIN_CSI1_RESET);
-        if (rsn != 255) {
-            gpio_iomap_output(rsn, GPIO_IOMAP_OUTPUT);
-            gpio_set_val(rsn, 1);
-            os_sleep_ms(50);
-            gpio_set_val(rsn, 0);
-            os_sleep_ms(20);
-            gpio_set_val(rsn, 1);
-
-        }
-    }
-}
-
-static _Sensor_Adpt_ *sensorAutoCheck(uint8_t csi_dev_id, uint8_t iic_devid)
-{
-    _Sensor_Adpt_ *matched_entry = NULL;
-
-    sensor_power_on(csi_dev_id);
-
-    for (uint8_t i = 0; SensorTable_CSI[i] != NULL; i++) {
-        const _Sensor_Adpt_  *entry = SensorTable_CSI[i];
-        const _Sensor_Ident_ *ident = &entry->sensor_iic;
-
-        if (check_sensor_id(iic_devid, ident) >= 0) {
-            os_printf("sensor id=0x%x index=%d\n", ident->id, i);
-            matched_entry = (_Sensor_Adpt_ *)entry;
-            break;
-        }
-    }
-
-    if (!matched_entry) {
-        os_printf("Er: unknown sensor!\n");
-		// devSensorInit2 = (_Sensor_Ident_ *)&null_init2;
-    }
-
-    return matched_entry;
-}
-
-
 void mipi_csi_fovie_isr(uint32 irq,uint32 dev,uint32 param){
-	//dvp_vpp_reset();
 	os_printf(KERN_ERR"------------------------------------------------------------------------------mipi fv\r\n");
 }
 
-void mipi_csi_sip_isr(uint32 irq,uint32 dev,uint32 param){
-	//dvp_vpp_reset();
-	os_printf(KERN_ERR"sip reset mipi csi_dev %08x \r\n",param);
+//MIPI CSI 接收端收到的行数和配置预期行数不匹配
+void mipi_csi_vsip_isr(uint32 irq,uint32 dev,uint32 param){
+	os_printf(KERN_ERR"vsip reset mipi csi_dev %08x \r\n",param);
+}
+
+//MIPI CSI 接收端检测到单行内部数据异常
+void mipi_csi_hsip_isr(uint32 irq,uint32 dev,uint32 param){
+	os_printf(KERN_ERR"hsip reset mipi csi_dev %08x \r\n",param);
 }
 
 capture_irq_hdl fsync_capture_irq_hdl(uint32 irq, uint32 irq_data){
@@ -687,51 +392,7 @@ uint32 mipi_csi_check(uint32 csi_data_lane_num, uint32 csi_dev_id, _Sensor_Adpt_
     }
 }
 
-int mipi_csi_sensor_init(_Sensor_Adpt_ *sensor_cmd, uint8_t index ,uint8_t mipi_csi_iic)
-{
-	scatter_data init_table = {0};
-	uint32_t i 				= 0;
-	uint32_t table_size 	= 0;
 
-    const uint8_t *flash_init_table = sensor_cmd->supported_modes[index].reg_list;
-    uint8 addr_num = sensor_cmd->sensor_iic.addr_num;
-    uint8 data_num = sensor_cmd->sensor_iic.data_num;
-    uint8 cmd_len = data_num + addr_num;
-
-    if (!flash_init_table || cmd_len == 0) {
-        return -1;
-    }
-
-	for(i = 0 ; ; i+=cmd_len)
-	{
-		if((flash_init_table[i]==0xFF)&&(flash_init_table[i+1]==0xFF)){
-			table_size = i;
-			break;
-		}
-		if(i > 0xffff) {
-			os_printf(KERN_ERR"sensor init table too large\r\n");
-			return -1;
-		}
-	}	
-
-	init_table.size = table_size;
-    init_table.addr = os_malloc(table_size);
-    if (!init_table.addr) {
-        os_printf(KERN_ERR"%s: malloc fail\r\n",__func__);
-        return -1;
-    }
-
-    os_memcpy(init_table.addr, flash_init_table, table_size);
-
-	wake_up_iic_queue(mipi_csi_iic,(uint8_t*)&init_table,cmd_len,2,(uint8_t*)NULL);
-	while(iic_devid_finish(mipi_csi_iic) != 1){
-		os_sleep_ms(1);
-	}
-	os_free(init_table.addr);
-
-	os_printf("Sensor initialization table write completed ,size:%d\r\n",table_size);
-	return 0;
-}
 
 void dual_mipi_csi_reset(enum fps_mode mode, float fps)
 {
@@ -772,8 +433,8 @@ void dual_mipi_csi_reset(enum fps_mode mode, float fps)
 		pwm_ioctl((struct pwm_device *)sensor_fsync, PWM_CHANNEL_0, PWM_IOCTL_CMD_SET_PERIOD_DUTY_IMMEDIATELY, period_sysclkpd_cnt, period_sysclkpd_cnt*3/5);   		
 	}
 
-	// mipi_csi_sensor_init(sensor0_adapt->sensor_stop_stream,sensor0_opt.devid_id);
-	// mipi_csi_sensor_init(sensor1_adapt->sensor_stop_stream,sensor1_opt.devid_id);
+	// sensor_write_reg_table(sensor0_adapt->sensor_stop_stream,sensor0_opt.devid_id);
+	// sensor_write_reg_table(sensor1_adapt->sensor_stop_stream,sensor1_opt.devid_id);
 
 	mipi_csi_close(mipi1_csi_dev);
 	mipi_csi_init(mipi1_csi_dev,1); 
@@ -794,15 +455,16 @@ void dual_mipi_csi_reset(enum fps_mode mode, float fps)
 	//mipi_csi_hsync_rec_time(mipi_csi_dev,5);
 	mipi_csi_hsync_rec_enable(mipi_csi_dev,1);	
 	mipi_csi_input_format(mipi_csi_dev,sensor0_adapt->sensor_isp_cfg.input_format); 
-	mipi_csi_request_irq(mipi_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
+	mipi_csi_request_irq(mipi_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_vsip_isr,0);
+	mipi_csi_request_irq(mipi_csi_dev,CSI2_HSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_hsip_isr,0);
 	mipi_csi_request_irq(mipi_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
 	mipi_csi_open(mipi_csi_dev);
 	
-//	mipi_csi_sensor_init(sensor0_adapt->init,sensor0_opt.devid_id);
+//	sensor_write_reg_table(sensor0_adapt->init,sensor0_opt.devid_id);
 //	if(mode == FPS_MODE_NIGHT_LOW){
-//		mipi_csi_sensor_init(sensor0_adapt->nigth_mode_init,sensor0_opt.devid_id);
+//		sensor_write_reg_table(sensor0_adapt->nigth_mode_init,sensor0_opt.devid_id);
 //	}else if(mode == FPS_MODE_DAY_NORMAL){
-//		mipi_csi_sensor_init(sensor0_adapt->slave_init,sensor0_opt.devid_id);
+//		sensor_write_reg_table(sensor0_adapt->slave_init,sensor0_opt.devid_id);
 //	}
 	mipi_csi_hs_rx_zero_cnt_set(mipi_csi_dev, sys_cfgs.mipi_csi0_hs_zero_cnt);
 
@@ -815,129 +477,22 @@ void dual_mipi_csi_reset(enum fps_mode mode, float fps)
 	mipi_csi_img_size(mipi1_csi_dev,sensor1_adapt->pixelw, sensor1_adapt->pixelh);
 	mipi_csi_hsync_rec_enable(mipi1_csi_dev,1);	
 	mipi_csi_input_format(mipi1_csi_dev,sensor1_adapt->sensor_isp_cfg.input_format); 
-	mipi_csi_request_irq(mipi1_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
+	mipi_csi_request_irq(mipi1_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_vsip_isr,0);
+	mipi_csi_request_irq(mipi1_csi_dev,CSI2_HSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_hsip_isr,0);
 	mipi_csi_request_irq(mipi1_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
 	mipi_csi_open(mipi1_csi_dev);
 
 	
-//	mipi_csi_sensor_init(sensor1_adapt->init,sensor1_opt.devid_id,cmd1_len);
+//	sensor_write_reg_table(sensor1_adapt->init,sensor1_opt.devid_id,cmd1_len);
 //	if(mode == FPS_MODE_NIGHT_LOW){
-//		mipi_csi_sensor_init(sensor1_adapt->nigth_mode_init,sensor1_opt.devid_id,cmd1_len);
+//		sensor_write_reg_table(sensor1_adapt->nigth_mode_init,sensor1_opt.devid_id,cmd1_len);
 //	}else if(mode == FPS_MODE_DAY_NORMAL){
-//		mipi_csi_sensor_init(sensor1_adapt->slave_init,sensor1_opt.devid_id,cmd1_len);
+//		sensor_write_reg_table(sensor1_adapt->slave_init,sensor1_opt.devid_id,cmd1_len);
 //	}
 	mipi_csi_hs_rx_zero_cnt_set(mipi1_csi_dev, sys_cfgs.mipi_csi1_hs_zero_cnt);
 
 }
 
-
-// 公共通用IIC写寄存器函数
-static int iic_write_reg(uint8 mipi_csi_iic, uint8 addr_num, uint8 cmd_len, uint16 reg_addr, uint16 val)
-{
-    scatter_data table = {0};
-    uint8 index = 0;
-
-    table.size = cmd_len;
-    table.addr = os_malloc(table.size);
-    if (!table.addr){
-        return -1;
-    }
-    memset(table.addr, 0, table.size);
-
-    // 拼接寄存器地址
-    if (addr_num == SENSOR_REG_WIDTH_8) {
-        table.addr[index++] = reg_addr & 0xFF;
-    } else{
-        table.addr[index++] = reg_addr >> 8;
-        table.addr[index++] = reg_addr & 0xFF;
-    }
-    // 写入2字节数据
-    table.addr[index++] = val & 0xFF;
-
-    wake_up_iic_queue(mipi_csi_iic, (uint8_t*)&table, cmd_len, 2, (uint8_t*)NULL);
-    while (iic_devid_finish(mipi_csi_iic) != 1){
-        os_sleep_ms(1);
-    }
-
-    os_free(table.addr);
-    return 0;
-}
-
-/**
- * 设置帧率VTS
- */
-static uint16 sensor_fps_to_vts(const _Sensor_Adpt_ *sensor_cmd, uint8_t index, uint8_t mipi_csi_iic, uint8_t target_fps)
-{
-    if (!sensor_cmd)
-        return 0;
-
-    FpsVtsMap_t *preset_arr = sensor_cmd->supported_modes[index].fps_table;
-    uint8 addr_num = sensor_cmd->sensor_iic.addr_num;
-    uint8 data_num = sensor_cmd->sensor_iic.data_num;
-    uint8 cmd_len = data_num + addr_num;
-    uint8 reg_cnt = sensor_cmd->vts_reg_num;
-
-    for (uint8 i = 0; i < SENSOR_PRESET_FPS_NUM; i++)
-    {
-        // os_printf("preset_arr[i].fps %d  vts %d\r\n",preset_arr[i].fps,preset_arr[i].vts);
-        if (preset_arr[i].fps == target_fps)
-        {
-            uint16 vts_val = 0;
-            // 循环写入所有VTS寄存器
-            for (uint8 k = 0; k < reg_cnt; k++)
-            {
-                uint16 reg = sensor_cmd->vts_reg[k];
-				vts_val = preset_arr[i].vts >> (8*(reg_cnt-k-1));
-                iic_write_reg(mipi_csi_iic, addr_num, cmd_len, reg, vts_val);
-            }
-            return vts_val;
-        }
-    }
-
-    os_printf("no support this fps:%d, use default frame rate\r\n", target_fps);
-    return 0;
-}
-
-
-/**
- * 设置同步边沿
- */
-static uint8 set_sync_edge(const _Sensor_Adpt_ *sensor_cmd, uint8_t index ,uint8_t mipi_csi_iic, SyncEdgeType edge)
-{
-    if (!sensor_cmd)
-        return 0;
-
-    uint8 addr_num = sensor_cmd->sensor_iic.addr_num;
-    uint8 data_num = sensor_cmd->sensor_iic.data_num;
-    uint8 cmd_len = data_num + addr_num;
-
-    const SlaveSyncCfg_t *sync = &sensor_cmd->supported_modes[index].sync_cfg;
-    uint16 reg = sync->sync_reg;
-    uint16 val = (edge == SYNC_EDGE_RISE) ? sync->edge_rise : sync->edge_fall;
-
-    // 寄存器地址、上升沿、下降沿参数全部为0，代表无需配置
-    if (reg == 0 && sync->edge_rise == 0 && sync->edge_fall == 0){
-        return 0;
-    }
-
-    iic_write_reg(mipi_csi_iic, addr_num, cmd_len, reg, val);
-
-    return 1;
-}
-
-static int sensor_mode_find_index(_Sensor_Adpt_ *sensor_cmd,uint8_t target_mode, uint8_t target_lane)
-{
-    for (uint8_t i = 0; i < sensor_cmd->mode_num; i++) {
-        const SensorWorkMode *m = &sensor_cmd->supported_modes[i];
-
-        if (m->mode == target_mode &&
-            m->mipi.mipi_lane_num == target_lane) {
-            return i;
-        }
-    }
-    os_printf("Er: unsupported sensor mode: mode=%d lane=%d\n", target_mode, target_lane);
-    return -1;
-}
 
 int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t csi_lane_num, uint8_t camera_mode, uint8_t slave_en, uint8_t sensor_type,uint8_t fps, struct mipi_csi_debug *p_debug) 
 {
@@ -1038,11 +593,12 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t csi_lane_num, uint8_t 
 		//mipi_csi_hsync_rec_time(mipi_csi_dev,5);
 		mipi_csi_hsync_rec_enable(mipi_csi_dev,1);	
 		mipi_csi_input_format(mipi_csi_dev,p_sensor_cmd->sensor_isp_cfg.input_format); 
-		mipi_csi_request_irq(mipi_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
+		mipi_csi_request_irq(mipi_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_vsip_isr,0);
+		mipi_csi_request_irq(mipi_csi_dev,CSI2_HSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_hsip_isr,0);
 		mipi_csi_request_irq(mipi_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
 		mipi_csi_open(mipi_csi_dev);
 
-		mipi_csi_sensor_init(p_sensor_cmd,mode_index,mipi_csi0_iic);
+		sensor_write_reg_table(p_sensor_cmd,mode_index,mipi_csi0_iic);
 		sensor_fps_to_vts(p_sensor_cmd,mode_index,mipi_csi0_iic,fps);
 		if(camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE){
 			set_sync_edge(p_sensor_cmd,mode_index,mipi_csi0_iic,SYNC_EDGE_FALL);
@@ -1083,11 +639,12 @@ int mipi_csi_hardware_config(uint32_t csi_dev_id, uint8_t csi_lane_num, uint8_t 
 		mipi_csi_img_size(mipi1_csi_dev,sensor_mode->width,sensor_mode->height);
 		mipi_csi_hsync_rec_enable(mipi1_csi_dev,1);	
 		mipi_csi_input_format(mipi1_csi_dev,p_sensor_cmd->sensor_isp_cfg.input_format); 
-		mipi_csi_request_irq(mipi1_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_sip_isr,0);
+		mipi_csi_request_irq(mipi1_csi_dev,CSI2_VSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_vsip_isr,0);
+		mipi_csi_request_irq(mipi1_csi_dev,CSI2_HSIP_ISR, (mipi_csi_irq_hdl )&mipi_csi_hsip_isr,0);
 		mipi_csi_request_irq(mipi1_csi_dev,CSI2_FOVIE_ISR,(mipi_csi_irq_hdl )&mipi_csi_fovie_isr,0);
 		mipi_csi_open(mipi1_csi_dev);
 
-		mipi_csi_sensor_init(p_sensor_cmd,mode_index,mipi_csi1_iic);
+		sensor_write_reg_table(p_sensor_cmd,mode_index,mipi_csi1_iic);
 		sensor_fps_to_vts(p_sensor_cmd,mode_index,mipi_csi1_iic,fps);
 		if(camera_mode == CAM_DUAL_SPLICE_SLAVE_MODE){
 			set_sync_edge(p_sensor_cmd,mode_index,mipi_csi1_iic,SYNC_EDGE_RISE);

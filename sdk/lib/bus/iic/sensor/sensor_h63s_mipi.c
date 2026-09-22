@@ -202,7 +202,6 @@ void h63s_fps_opt(struct isp_sensor_opt *p_opt)
 }
 
 static const SensorWorkMode h63s_supported_modes[] = {
-
     {
         .mode = CAM_SINGLE_MASTER_MODE,
         .bayer_patten = ISP_BAYER_FORMAT_BGGR,

@@ -427,6 +427,7 @@ uint32_t write_aac_data(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t size, uint3
 uint32_t write_aac_data_batch(mp4_key_msg *msg, uint8_t *aac_buf, uint32_t total_size,
                               uint32_t *sizes, uint32_t *duration_ticks, uint32_t frame_count);
 uint32_t mp4_sync(mp4_key_msg *msg);
+uint8_t mp4_sync_judge(mp4_key_msg *msg, uint32_t time_ms);
 uint32_t mp4_sync_time(mp4_key_msg *msg, uint32_t time_ms);
 void *MP4_open_init(F_FILE *fp, uint8_t audio_en);
 void *mp4_open_init_with_file(F_FILE *fp, const file_ops_t *ops, uint8_t audio_en);

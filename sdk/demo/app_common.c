@@ -64,10 +64,10 @@ int32_t app_lvgl_init(void *main_ui_fn,uint32_t indev_mask)
     };
 #else
     struct hg_lv_mem_hooks hook = {
-            .malloc  = av_psram_malloc,
-            .realloc = av_psram_realloc,
-            .zalloc  = av_psram_zalloc,
-            .free    = av_psram_free,
+            .malloc  = _os_malloc_psram,
+            .realloc = _os_realloc_psram,
+            .zalloc  = _os_zalloc_psram,
+            .free    = _os_free_psram,
     };
 #endif
     hg_lv_mem_register(&hook);

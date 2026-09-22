@@ -25,6 +25,7 @@
 #ifdef PIN_FROM_PARAM
 #include "pin_param.h"
 #endif
+#include "ota.h"
 
 
 extern void user_workqueue_init(uint16 pri, void *stack, uint16 stack_size);
@@ -61,6 +62,8 @@ static void app_io_init(void)
     // AUDIO PA EN
     gpio_set_dir(MACRO_PIN(PIN_AUDIO_PA_EN), GPIO_DIR_OUTPUT);
     gpio_set_val(MACRO_PIN(PIN_AUDIO_PA_EN), 1);
+
+    dsleep_set_ext_dcdc(1);
 }
 
 /***********************************************************
@@ -131,6 +134,7 @@ static void app_function_init(void)
     app_cjson_init();
     // 网络eloop模块初始化
     eloop_init();
+    ota_Tcp_Server();
     app_h264_init(0);
     app_takephoto_init();
 }

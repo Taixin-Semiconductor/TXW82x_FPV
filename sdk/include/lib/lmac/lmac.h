@@ -125,6 +125,18 @@ struct lmac_fallback_ctl {
     struct lmac_fallback_type fallback;
 };
 
+struct testbox_test_result {
+    uint8 test_id;
+    uint8 result;
+    union {
+        struct {
+            int8 rssi;
+            int8 evm;
+            int32 freq_offset;
+        } wlan;
+    };
+} STRUCT_PACKED;
+
 enum LMAC_IOCTL_CMD {
     /*Set CMDs*/
     LMAC_IOCTL_SET_AGGCNT = 0x1,
@@ -261,6 +273,7 @@ enum LMAC_IOCTL_CMD {
     LMAC_IOCTL_SET_TX_AGG_TID_BITMAP,
     LMAC_IOCTL_SET_BEACON_MODULATION,
     LMAC_IOCTL_SET_AFH_PERIOD,
+    LMAC_IOCTL_SET_DISABLE_RX_TESTBOX,
 
     /*Get CMDs*/
     LMAC_IOCTL_GET_AGGCNT = 0x20000000,
@@ -562,6 +575,7 @@ enum {
 #define lmac_update_fem_voltage(ops, voltage)               lmac_ioctl(ops, LMAC_IOCTL_SET_UPDATE_FEM_VOLTAGE, (uint32)(voltage), 0)
 #define lmac_set_tx_agg_tid_bitmap(ops, bitmap)             lmac_ioctl(ops, LMAC_IOCTL_SET_TX_AGG_TID_BITMAP, (uint32)bitmap, 0)
 #define lmac_set_beacon_modulation(ops, rate)               lmac_ioctl(ops, LMAC_IOCTL_SET_BEACON_MODULATION, (uint32)rate, 0)
+#define lmac_set_disable_rx_testbox(ops, disable)           lmac_ioctl(ops, LMAC_IOCTL_SET_DISABLE_RX_TESTBOX, (uint32)disable, 0)
 
 int32 lmac_ioctl(void *ops, uint32 cmd, uint32 param1, uint32 param2);
 int32 lmac_start_acs(void *lops, struct lmac_acs_ctl *p_ctl, uint32 sync);

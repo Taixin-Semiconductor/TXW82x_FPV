@@ -25,7 +25,7 @@
  * SRAM2-0: 0x20040000 ~ 0x20057FFF 96KB  
  * SRAM2-1: 0x20058000 ~ 0x2005FFFF 32KB (DCAHCE) 
  * SRAM2-2: 0x20060000 ~ 0x20067FFF 32KB (CPU1 I/D CACHE) 
- * SRAM2-3: 0x20068000 ~ 0x2006BF00 16KB (末尾256byte为CoreSetting数据)
+ * SRAM2-3: 0x20068000 ~ 0x2006BF00 16KB (开头14KB可能分配给RXBUF使用, 末尾256byte为CoreSetting数据)
  * SRAM3:   0x20080000 ~ 0x2009FFFF 128KB (H264)   
  ******************************************************************************/
 MEMORY
@@ -34,7 +34,7 @@ MEMORY
     DS-SRAM : ORIGIN = 0x20002000 , LENGTH = 0x2000
     ISRAM  : ORIGIN = 0x04001000 , LENGTH = 0x2a000   
     SRAM   : ORIGIN = COREBSS_END , LENGTH = 0x40000  /*起始地址为CoreCode BSS结束地址 */ 
-    SRAM2  : ORIGIN = 0x20068000 , LENGTH = 0x3A00    /*末尾预留256byte做为CoreSetting数据*/
+    SRAM2  : ORIGIN = 0x20068000 , LENGTH = 0x3A00    /*开头14KB可能分配给RXBUF使用, 末尾预留256byte做为CoreSetting数据*/
     FLASH  : ORIGIN = 0x10000000 , LENGTH = 0x400000 
     PSRAM  : ORIGIN = 0x28000000 , LENGTH = 0x800000 
     /*SRAM0   : ORIGIN = 0x20003000 , LENGTH = 0x1F00*/   /*SRAM0 16 - 4KB for sleep*/ 

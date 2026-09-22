@@ -222,6 +222,39 @@ int vfs_umount(const char *target)
     return ret;
 }
 
+int vfs_statvfs(const char *path, struct vfs_statvfs *buf)
+{
+    if (!path || !buf) {
+        return -EINVAL;
+    }
+
+    VFS_LOCK();
+
+    struct vfs_mount_point *mp = find_mount_point(path);
+    if (!mp) {
+        VFS_UNLOCK();
+        return -ENOENT;
+    }
+
+    const char *rel_path = get_relative_path(mp, path);
+    int ret;
+
+    MP_LOCK(mp);
+    if (mp->mops && mp->mops->statvfs) {
+        ret = mp->mops->statvfs(mp->fs_ctx, rel_path, buf);
+    } else {
+        ret = -ENOSYS;   /* 底层文件系统未实现此接口 */
+    }
+    MP_UNLOCK(mp);
+
+    VFS_UNLOCK();
+
+    if (ret != 0) {
+        set_errno(-ret);
+    }
+    return ret;
+}
+
 /*=============================================================================
  * 文件操作API实现
  *============================================================================*/

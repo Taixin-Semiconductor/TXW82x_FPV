@@ -670,11 +670,11 @@ void h264_ini_recfg(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, stru
 		}
 	}
 	
-	enc_ctl->frm_qp    = enc_cfg->ini_qp;
+//	enc_ctl->frm_qp    = enc_cfg->ini_qp;
 	enc_ctl->target_gop = (((((uint32_t)enc_cfg->enc_bps * 1000 * (uint32_t)enc_cfg->frm_gop) / enc_cfg->frm_rate ) >> 3)*7)/10;   ;  //group total len*0.7, enc_bps for max bps
 	enc_ctl->target_gop = (enc_ctl->target_gop*reduce_mil)/1000;          
-	rc_ctl->i_qp      = enc_cfg->ini_qp;
-	rc_ctl->p_qp      = enc_cfg->ini_qp;
+//	rc_ctl->i_qp      = enc_cfg->ini_qp;
+//	rc_ctl->p_qp      = enc_cfg->ini_qp;
 	//--- cal I frame target byte
 	rc_ctl->i_byte    = (enc_ctl->target_gop * enc_cfg->frm_ip_rate)     / (enc_cfg->frm_gop - 1 + enc_cfg->frm_ip_rate);
 	rc_ctl->i_frm_max = (enc_ctl->target_gop * enc_cfg->frm_ip_rate_max) / (enc_cfg->frm_gop - 1 + enc_cfg->frm_ip_rate_max);
@@ -1237,6 +1237,26 @@ uint32 h264_rc_cal(struct h264_cfg_t *enc_cfg, struct h264_ctl_t *enc_ctl, struc
 	return (grp_byte);
 }
 
+
+#define H264_MAX_IP_QP_DELTA 3
+
+static uint8_t h264_limit_i_qp(uint8_t i_qp, uint8_t p_qp)
+{
+	int16_t delta = (int16_t)i_qp - (int16_t)p_qp;
+
+	if(delta > H264_MAX_IP_QP_DELTA)
+		i_qp = p_qp + H264_MAX_IP_QP_DELTA;
+	else if(delta < -H264_MAX_IP_QP_DELTA)
+		i_qp = p_qp - H264_MAX_IP_QP_DELTA;
+
+	if(i_qp > 50)
+		i_qp = 50;
+	else if(i_qp < 16)
+		i_qp = 16;
+
+	return i_qp;
+}
+
 extern volatile uint32_t vpp_md_cnt;
 void h264_start_enc_frm_noready(struct h264_device *p_h264,struct h264_cfg_t *penc_cfg, struct h264_ctl_t *enc_ctl, struct h264_rc_ctl_t *rc_ctl)
 {
@@ -1282,6 +1302,7 @@ void h264_start_enc_frm_noready(struct h264_device *p_h264,struct h264_cfg_t *pe
 	
     enc_ctl->frm_type = 2;
     rc_ctl->gop_remain_byte = enc_ctl->target_gop;
+	rc_ctl->i_qp = h264_limit_i_qp(rc_ctl->i_qp, rc_ctl->p_qp);
 	// _os_printf("gop remain(%x):%d\r\n",penc_cfg,rc_ctl->gop_remain_byte);
     enc_ctl->frm_qp   = rc_ctl->i_qp;
   } else {	
@@ -1983,7 +2004,7 @@ void h264_main_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uint8
 	
 	enc_cfg.still_enc_bps   = 600;    //Kbit pre second
 	enc_cfg.move_enc_bps    = 4000;   //Kbit pre second	
-	enc_cfg.stilltomove     = 100;    //permil for judgmemnt is move or still
+	enc_cfg.stilltomove     = 0;    //permil for judgmemnt is move or still
 	enc_cfg.move_keep_gop   = 5;
 	enc_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY 
@@ -2039,7 +2060,7 @@ void h264_second_sensor_cfg(struct h264_device *p_h264,uint32_t w,uint32_t h,uin
 
 	enc_2_cfg.still_enc_bps = 300;    //Kbit pre second
 	enc_2_cfg.move_enc_bps  = 1000;   //Kbit pre second	
-	enc_2_cfg.stilltomove   = 100;    //permil for judgmemnt is move or still
+	enc_2_cfg.stilltomove   = 0;    //permil for judgmemnt is move or still
 	enc_2_cfg.move_keep_gop = 5;
 	enc_2_cfg.frm_rate		= 25;	//fps
 #if H264_I_ONLY

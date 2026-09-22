@@ -342,10 +342,6 @@ int32 llm_tti_config(void *tti_hdl, llm_cfg_type type, void *cfg, uint32 cfg_siz
     tti_session = (struct llm_session_tti *)tti_hdl;
 
     void **target_config = type ? &tti_session->base.transfer_config : &tti_session->base.platform_config;
-    if (*target_config != NULL && os_memcmp(*target_config, cfg, cfg_size) == 0) {
-        return RET_OK;
-    }
-
     if (llm_copy_config(target_config, cfg, cfg_size) != RET_OK) {
         return RET_ERR;
     }

@@ -160,11 +160,22 @@ __SYS_INIT void sys_start_cpu1(uint32_t run_addr)
     CoreSetting->wdt1_to = 4;
     CoreSetting->wdt1_irq_hdl = 0;
     CoreSetting->cpu_clk = CONFIG_CORE_CPU_CLK;
-    CoreSetting->rxbuf_addr = (uint32_t)(os_malloc(CONFIG_CORE_RXBUF_SIZE));;
+    #ifdef TXW82X
+    /* 如果设置的RXBUF大小小于等于14KB,直接使用ld中SRAM2-3的14KB空间 */
+    if (CONFIG_CORE_RXBUF_SIZE <= (14*1024)) {
+        CoreSetting->rxbuf_addr = (uint32_t)(0x20068000);
+        CoreSetting->rxbuf_size = (14*1024);
+    } else {
+        CoreSetting->rxbuf_addr = (uint32_t)(os_malloc(CONFIG_CORE_RXBUF_SIZE));
+        CoreSetting->rxbuf_size = CONFIG_CORE_RXBUF_SIZE;
+    }
+    #else
+    CoreSetting->rxbuf_addr = (uint32_t)(os_malloc(CONFIG_CORE_RXBUF_SIZE));
     CoreSetting->rxbuf_size = CONFIG_CORE_RXBUF_SIZE;
+    #endif
     CoreSetting->heap_addr = (uint32_t)(os_malloc(CONFIG_CORE_HEAP_SIZE));
     CoreSetting->heap_size = CONFIG_CORE_HEAP_SIZE;
-    CoreSetting->skbpool_addr = (uint32_t)(os_malloc_psram(CONFIG_CORE_SKB_POOL_SIZE));;
+    CoreSetting->skbpool_addr = (uint32_t)(os_malloc_psram(CONFIG_CORE_SKB_POOL_SIZE));
     CoreSetting->skbpool_size = CONFIG_CORE_SKB_POOL_SIZE;
     CoreSetting->skbpool_flag = BIT(4) | BIT(7); //SKBPOOL_FLAGS_ALIGN_32|SKBPOOL_FLAGS_TAIL_ALIGN_32
     CoreSetting->soft_int_pending = 0;

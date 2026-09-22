@@ -759,7 +759,7 @@ static int32 hgscale1_close(struct scale_device *p_scale){
 	struct hgscale *scale_hw = (struct hgscale*)p_scale;	
 	struct hgscale1_hw *hw  = (struct hgscale1_hw *)scale_hw->hw;
 	//如果关闭中断或者在中断调用,就不再处理,并且是在vpp模式需要等待中断关闭
-	if((!(__in_interrupt() || in_disable_irq())) && hw->SCALECON & BIT(2))
+	if((!(__in_interrupt() || in_disable_irq())) && !(hw->SCALECON & BIT(2)))
 	{
 		uint32_t timeout = 50;
 		scale_hw->need_close = 1;

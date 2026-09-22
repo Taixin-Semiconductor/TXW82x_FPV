@@ -92,6 +92,7 @@ struct sys_config {
 	uint8 ip6_autocfg_en;  
 
     uint8 coze_conversation_id[64];
+    uint8 coze_pat_key[128];
 };
 
 extern struct sys_config sys_cfgs;

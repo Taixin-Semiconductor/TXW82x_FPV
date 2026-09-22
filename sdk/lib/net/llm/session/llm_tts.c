@@ -380,10 +380,6 @@ int32 llm_tts_config(void *tts_hdl, llm_cfg_type type, void *cfg, uint32 cfg_siz
     tts_session = (struct llm_session_tts *)tts_hdl;
 
     void **target_config = type ? &tts_session->base.transfer_config : &tts_session->base.platform_config;
-    if (*target_config != NULL && os_memcmp(*target_config, cfg, cfg_size) == 0) {
-        return RET_OK;
-    }
-
     if (llm_copy_config(target_config, cfg, cfg_size) != RET_OK) {
         return RET_ERR;
     }

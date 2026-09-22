@@ -474,6 +474,7 @@ static int fatfs_vfs_mount(void **fs_ctx, const char *source, const char *target
 
     FRESULT fr = f_mount(&vol->fs, source, 1);
     if (fr != FR_OK) {
+        f_mount(NULL, source, 0);
         vfs_free(vol);
         os_printf(KERN_ERR"fatfs: mount fail, fr=%d. source:%s, target:%s\r\n", fr, source, target);
         return fatfs_err_to_vfs(fr);
@@ -495,9 +496,50 @@ static int fatfs_vfs_unmount(void *fs_ctx)
     return fatfs_err_to_vfs(fr);
 }
 
+static int fatfs_vfs_statvfs(void *fs_ctx, const char *path, struct vfs_statvfs *buf)
+{
+    FATFS *fat = (FATFS *)fs_ctx;       /* 挂载时保存的文件系统上下文 */
+    DWORD free_clusters;
+    FRESULT res;
+
+    /* 如果传入的路径为空，则使用根目录 "/" */
+    const char *fs_path = (path && path[0] != '\0') ? path : "/";
+
+    /* 调用 FatFS 获取空闲簇数，同时获得有效的 FATFS 指针 */
+    res = f_getfree(fs_path, &free_clusters, &fat);
+    if (res != FR_OK) {
+        /* 将 FatFS 错误码映射为负 errno（这里简单映射为 -EIO） */
+        return -EIO;
+    }
+
+    /* 计算总簇数：n_fatent 包括保留簇（通常 2 个），需减去 */
+    DWORD total_clusters = fat->n_fatent - 2;
+    UINT sector_size = fat->ssize;       /* 扇区大小（字节） */
+    UINT sectors_per_cluster = fat->csize; /* 每簇扇区数 */
+
+    /* 每簇大小（字节） */
+    unsigned long cluster_size = sector_size * sectors_per_cluster;
+
+    /* 填充统计结构体（遵循 POSIX statvfs 语义） */
+    buf->f_bsize   = sector_size;            /* 文件系统块大小（通常指扇区） */
+    buf->f_frsize  = cluster_size;           /* 片段大小（即簇大小） */
+    buf->f_blocks  = total_clusters;         /* 总块数（按 f_frsize 计） */
+    buf->f_bfree   = free_clusters;          /* 空闲块数 */
+    buf->f_bavail  = free_clusters;          /* 非特权用户可用块数（无区别） */
+    buf->f_files   = 0;                      /* FatFS 无 inode 统计，填 0 */
+    buf->f_ffree   = 0;
+    buf->f_favail  = 0;
+    buf->f_fsid    = 0;                      /* 文件系统 ID（可忽略） */
+    buf->f_flag    = 0;                      /* 挂载标志（可忽略） */
+    buf->f_namemax = 255;                    /* 最大文件名长度（长文件名支持） */
+
+    return 0;  /* 成功 */
+}
+
 static const struct vfs_mount_ops fatfs_vfs_mount_ops = {
     .mount      = fatfs_vfs_mount,
     .unmount    = fatfs_vfs_unmount,
+    .statvfs    = fatfs_vfs_statvfs,
 };
 
 /*=============================================================================

@@ -24,6 +24,7 @@
 #include "stream_define.h"
 #include "sys_config.h"
 #include "app/viidure/recorder_viidure.h"
+#include "ota.h"
 
 extern void fatfs_sd0_init(void);
 extern void user_workqueue_init(uint16 pri, void *stack, uint16 stack_size);
@@ -124,6 +125,7 @@ static void app_function_init(void)
     app_cjson_init();
     // 网络eloop模块初始化
     eloop_init();
+    ota_Tcp_Server();
     app_h264_init(SUB_STREAM_EN);
     app_takephoto_init();
 }

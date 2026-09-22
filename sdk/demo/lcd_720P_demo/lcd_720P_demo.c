@@ -26,6 +26,7 @@
 #include "app_lcd/lcd_virtual.h"
 #include "app_lcd/app_lcd.h"
 #include "app/interface_management/interface_mgnt_msi.h"
+#include "ota.h"
 
 extern void user_workqueue_init(uint16 pri, void *stack, uint16 stack_size);
 
@@ -111,6 +112,7 @@ static void app_function_init(void)
     gen420_hardware_msi_init();
     app_cjson_init();
     eloop_init();
+    ota_Tcp_Server();
     app_h264_init(SUB_STREAM_EN);
     app_takephoto_init();
     extern void main_ui();

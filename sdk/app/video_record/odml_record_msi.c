@@ -198,7 +198,7 @@ static int odml_record_running(struct msi *msi, uint32_t save_time, void *fp, co
                     goto odml_record_running_clean_end;
                 }
 
-                audio_sr            = odml_record->audio_en ? audio_adc_get_samplerate(AUSYS_AUAD) : 0;
+                audio_sr            = odml_record->audio_en ? audio_adc_get_samplerate(MAIN_MIC_ID) : 0;
                 odml_msg->win_w      = width;
                 odml_msg->win_h      = height;
                 odml_msg->frame_rate = video_fps;

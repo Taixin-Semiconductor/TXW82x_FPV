@@ -1032,7 +1032,7 @@ static int mp4_record_running(struct msi *msi, uint32_t save_time, void *fp, con
             }
         }
 
-        if (mp4_msg && sps_pps_flag && mp4_is_realtime_mode(mp4_record))
+        if (mp4_msg && sps_pps_flag && mp4_is_realtime_mode(mp4_record) && mp4_sync_judge(mp4_msg, 1000))
         {
             uint8_t sync_lock = 0;
             if (mp4_record->file_process.need_lock && !holding_lock)
@@ -1040,7 +1040,7 @@ static int mp4_record_running(struct msi *msi, uint32_t save_time, void *fp, con
                 os_mutex_lock(&mult_record.mutex, osWaitForever);
                 sync_lock = 1;
             }
-            error |= mp4_sync_time(mp4_msg, 1000);
+            error |= mp4_sync(mp4_msg);
             if (sync_lock)
             {
                 os_mutex_unlock(&mult_record.mutex);
@@ -1420,7 +1420,7 @@ static int32_t mp4_record_msi_action(struct msi *msi, uint32_t cmd_id, uint32_t 
 
 struct msi *mp4_record_msi_init(struct video_record_cfg *cfg)
 {
-    uint16_t                 audio_sr   = cfg->audio_en ? audio_adc_get_samplerate(AUSYS_AUAD) : 0;
+    uint16_t                 audio_sr   = cfg->audio_en ? audio_adc_get_samplerate(MAIN_MIC_ID) : 0;
     uint16_t                 node_size  = mp4_get_node_size(cfg->video_fps, audio_sr, cfg->audio_en, cfg->mode);
     uint8_t                  is_new     = 0;
     struct msi              *msi        = msi_new(cfg->name, node_size, &is_new);

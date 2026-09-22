@@ -933,9 +933,12 @@ __retry:
                     host->sd_write_retry = (host->sd_write_retry == LL_SDHC_RETRY_DEFAULT) ? LL_SDHC_RETRY_SELECT_POINT : LL_SDHC_RETRY_DEFAULT;
                 }
                 
-                curr_lba  = host->new_lba - host->data.blks;
-                block_num = host->data.blks;
-                kick_buf  = kick_buf + (block_num - host->data.blks) * SECTOR_SIZE;
+                uint32 retry_blocks = host->data.blks;
+                uint32 completed_blocks = (block_num > retry_blocks) ? (block_num - retry_blocks) : 0;
+
+                curr_lba  = host->new_lba - retry_blocks;
+                kick_buf  = kick_buf + completed_blocks * SECTOR_SIZE;
+                block_num = retry_blocks;
                 goto __retry;
             } else if (retry_cnt >= retry_limit) {
                 host->sd_write_retry = LL_SDHC_RETRY_ERR;
@@ -1087,9 +1090,12 @@ __retry:
                     host->sd_read_retry = (host->sd_read_retry == LL_SDHC_RETRY_DEFAULT) ? LL_SDHC_RETRY_SELECT_POINT : LL_SDHC_RETRY_DEFAULT;
                 }
                 
-                curr_lba  = host->new_lba - host->data.blks;
-                block_num = host->data.blks;
-                kick_buf  = kick_buf + (block_num - host->data.blks) * SECTOR_SIZE;
+                uint32 retry_blocks = host->data.blks;
+                uint32 completed_blocks = (block_num > retry_blocks) ? (block_num - retry_blocks) : 0;
+
+                curr_lba  = host->new_lba - retry_blocks;
+                kick_buf  = kick_buf + completed_blocks * SECTOR_SIZE;
+                block_num = retry_blocks;
                 goto __retry;
             } else if (retry_cnt >= retry_limit) {
                 host->sd_read_retry = LL_SDHC_RETRY_ERR;
@@ -1433,7 +1439,19 @@ uint32 sd_init(struct sdh_device * host, uint32 clk, uint32 flags)
     uint32 ret;
     uint32 resp[4];
     uint32 ocr;
-    uint8  bw  = 1;
+    uint8  bw = (flags & SDHC_INIT_FLAGS_BUS_WIDTH_4) ? 4 : 1;
+
+#if defined (TXW82X)
+    if ((bw == 4) &&
+        ((MACRO_PIN(PIN_SDH_DAT1) == 255) ||
+         (MACRO_PIN(PIN_SDH_DAT2) == 255) ||
+         (MACRO_PIN(PIN_SDH_DAT3) == 255)))
+    {
+        SDHC_ERR_PRINTF("sd 4-bit init requires DAT1/DAT2/DAT3 pins\r\n");
+        return RET_ERR;
+    }
+#endif
+
     SDHC_WARN_PRINTF("open_width:%d\r\n",bw);
 
 
@@ -1664,6 +1682,15 @@ uint32 sdhost_deinit_for_sleep()
     struct sdh_device *sdh = NULL;
     sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
     os_work_cancle2(&sdhost_wk.wk,1);
+     if (sdh) {
+        os_mutex_lock(&sdh->lock, osWaitForever);
+        sd_tran_stop(sdh);
+        sdh->sd_stop  = 0;
+        sdh->sd_opt   = SD_IDLE;
+        sdh->new_lba  = 0;
+        sdh->data.err = 0;
+        os_mutex_unlock(&sdh->lock);
+    }
     return err;
 }
 

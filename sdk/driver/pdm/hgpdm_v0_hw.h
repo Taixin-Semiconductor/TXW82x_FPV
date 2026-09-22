@@ -36,4 +36,4 @@ struct hgpdm_v0_hw {
 }
 #endif
 
-#endif /* _HGPDM_V0_HW_H */
+#endif /* _HGPDM_V0_HW_H */

@@ -1399,7 +1399,7 @@ uint32_t mp4_sync(mp4_key_msg *msg)
     return ret;
 }
 
-uint32_t mp4_sync_time(mp4_key_msg *msg, uint32_t time_ms)
+uint8_t mp4_sync_judge(mp4_key_msg *msg, uint32_t time_ms)
 {
     uint32_t written_duration;
 
@@ -1410,16 +1410,16 @@ uint32_t mp4_sync_time(mp4_key_msg *msg, uint32_t time_ms)
 
     if (time_ms == 0)
     {
-        return mp4_sync(msg);
+        return 1;
     }
 
     written_duration = mp4_written_duration_ms(msg);
-    if (written_duration < msg->sync_time || written_duration - msg->sync_time >= time_ms)
-    {
-        return mp4_sync(msg);
-    }
+    return written_duration < msg->sync_time || written_duration - msg->sync_time >= time_ms;
+}
 
-    return 0;
+uint32_t mp4_sync_time(mp4_key_msg *msg, uint32_t time_ms)
+{
+    return mp4_sync_judge(msg, time_ms) ? mp4_sync(msg) : 0;
 }
 
 static uint8_t mp4_update_sample_tables(trak_key_msg *vtrak, uint32_t sample_size, uint32_t sample_offset, uint32_t delta)

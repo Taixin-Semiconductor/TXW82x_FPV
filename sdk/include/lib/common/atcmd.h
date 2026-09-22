@@ -69,6 +69,7 @@ int32 sys_vcam2_conflict_detect(const char *cmd, char *argv[], uint32 argc);
 int32 sys_wifi_atcmd_set_rmesh(const char *cmd, char *argv[], uint32 argc);
 void sys_wifi_pair_start(uint8 ifidx, uint16 magic);
 int32 sys_atcmd_coze_upload_photo(const char *cmd, char *argv[], uint32 argc);
+int32 sys_atcmd_coze_set_pat_key(const char *cmd, char *argv[], uint32 argc);
 
 int32 atcmd_dump_msi_hdl(const char *cmd, char *argv[], uint32 argc);
 int32 sys_wifi_atcmd_dhcpd_lease_time(const char *cmd, char *argv[], uint32 argc);

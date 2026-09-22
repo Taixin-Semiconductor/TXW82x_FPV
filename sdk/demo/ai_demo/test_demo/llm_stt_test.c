@@ -267,7 +267,7 @@ int32 llm_stt_test_app_init(char *llm_name)
         return RET_ERR;
     }
 
-    auadc_msi_add_output(AUSYS_AUAD, stt_mgr.stt_msi->name);
+    auadc_msi_add_output(MAIN_MIC_ID, stt_mgr.stt_msi->name);
     stt_mgr.stt_msi->enable = 1;
 
     event_queue_buf = llm_malloc((LLM_STT_TEST_EVENT_QUEUE_CNT + 1) * sizeof(struct llm_stt_test_event_msg));

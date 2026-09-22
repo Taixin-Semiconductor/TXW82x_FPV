@@ -240,6 +240,15 @@ __init int32 spi_nor_attach(struct spi_nor_flash *flash, uint32 dev_id)
     flash->vendor_id  = id[0];
     flash->product_id = (id[1] << 8) | id[2];
 
+    if (id[2] >= 0x20) 
+        id[2] -= 6;
+    flash->size = 1 << id[2];
+
+    if (flash->mode == SPI_NOR_XIP_MODE) {
+        spi_ioctl(flash->spidev, SPI_XIP_CAP_ADAPT, flash->size, 0);
+
+    }
+
     if (flash->bp_conv) {
         struct bpreg_cfg bp;
         flash->bp_conv(flash, 0, flash->size, &bp);

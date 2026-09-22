@@ -69,6 +69,8 @@
 #define R_THUMB_DECODE_MSG          "THUMB_DECODE_MSG"
 #define R_THUMB_DECODE_MSG_USB      "THUMB_DECODE_MSG_USB"
 #define R_USBD_VIDEO                "usbd_video_msi"
+#define R_USBD_VIDEO_MJPEG          "usbd_video_mjpeg"
+#define R_USBD_VIDEO_H264           "usbd_video_h264"
 #define R_FILE_MSI                  "file_msi"
 #define R_RTP_H264                  "rtp-h264" // 图传的视频
 #define R_AVI_ENCODE_MSI            "avi_encode_msi"

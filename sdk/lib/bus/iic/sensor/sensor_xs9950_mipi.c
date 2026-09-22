@@ -12,7 +12,7 @@
 // #define XS9950_MIPI_LANE_RATA_800
 #define XS9950_MIPI_LANE_RATA_500 1
 
-SENSOR_INIT_SECTION const unsigned char xs9950_mipi_AHD_720p_25_init[CMOS_INIT_LEN]=
+SENSOR_INIT_SECTION const unsigned char xs9950_1280x720_25fps_1lane[CMOS_INIT_LEN]=
 {
     // 0x10, 0x1F, 0x00,   // 此为默认值，bit4=0: VCCA18_33 is 1.8V.  bit4=1:VCCA18_33 is 3.3V
     // 0x41, 0x07, 0x40,   // 此为默认值，bit0=0:iic_rst_ls3v is 1.8V   bit0=1: iic_rst_ls3v is 3.3V       
@@ -405,26 +405,33 @@ SENSOR_INIT_SECTION const unsigned char xs9950_mipi_AHD_720p_25_init[CMOS_INIT_L
     0xFF, 0xFF, 0xFF,
 };
 
-const _Sensor_ISP_CFG xs9950_isp_init = 
-{
-    .type         = ISP_INPUT_DAT_SRC_MIPI0,
-    .pixel_h      = 720,
-    .pixel_w      = 1280,
-    .input_format = ISP_INPUT_DAT_FORMAT_YUV422,
+
+static const SensorWorkMode xs9950_supported_modes[] = {
+    {
+        .mode = CAM_SINGLE_MASTER_MODE,
+        .width = 1280,
+        .height = 720,
+        .mipi = {
+            .mipi_lane_num = 1,
+            .mipi_bps = 500,
+        },
+        .reg_list = xs9950_1280x720_25fps_1lane,
+    },
+
 };
 
-SENSOR_OP_SECTION const _Sensor_Adpt_ xs9950_cmd = 
-{
-	.pixelw = 1280,
-	.pixelh= 720,
-	.init = (uint8 *)xs9950_mipi_AHD_720p_25_init,
-    .init_len = sizeof(xs9950_mipi_AHD_720p_25_init),
-    .mipi_lane_num = 1,
-	.sensor_isp_cfg  = (_Sensor_ISP_CFG *)&xs9950_isp_init,
+SENSOR_OP_SECTION const _Sensor_Adpt_ xs9950_cmd= 
+{	
+    .supported_modes = (SensorWorkMode*)xs9950_supported_modes,
+    .mode_num        = ARRAY_SIZE(xs9950_supported_modes),
+
+    .sensor_iic = {
+        0x99, 0x60, 0x61, 0x02, 0x01, 0x40f0
+    },
+    .sensor_isp_cfg = {
+        .input_format = ISP_INPUT_DAT_FORMAT_YUV422,
+    },
+
 };
 
-const _Sensor_Ident_ xs9950_init =
-{
-	0x99, 0x60, 0x61, 0x02, 0x01, 0x40f0
-};
 #endif

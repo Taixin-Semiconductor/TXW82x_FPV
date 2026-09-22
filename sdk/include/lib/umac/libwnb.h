@@ -255,7 +255,7 @@ struct wnb_sta_info {
     uint8  key[32];
 };
 
-struct wnb_psalive_config{
+struct wnb_psalive_config{
     uint16 wkdata_off;
     uint16 wkdata_save:1;
     uint8  wkdata_mask[16];

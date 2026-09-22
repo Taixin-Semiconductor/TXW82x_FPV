@@ -187,7 +187,7 @@ struct AVDemuxer {
      *         =0: 未读取到数据. 检查是否eof，delay后再执行do_demux
      *         <0: demux失败，返回错误码：
      *             -EAGAIN: 返回后马上再次执行do_demux
-     *             -ENOMEM: 没有buffer，可以 delay 后再执行
+     *             -ENOMEM: 没有buffer，可以 delay 后再执行
      *
      * @note **关键行为约束**:
      *       1. **非阻塞**: 此函数严禁阻塞或 sleep。

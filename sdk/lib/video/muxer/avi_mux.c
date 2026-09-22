@@ -1257,26 +1257,30 @@ void avimuxer_sync(void *ctx)
     }
 }
 
-void avimuxer_sync_time(void *ctx, uint32_t time_ms)
+uint8_t avimuxer_sync_judge(void *ctx, uint32_t time_ms)
 {
     AVI_FILE *avi = (AVI_FILE *) ctx;
     uint32_t  written_duration;
 
     if (!avi || !avi->fp)
     {
-        return;
+        return 0;
     }
 
     if (time_ms == 0)
     {
-        avimuxer_sync(ctx);
-        return;
+        return 1;
     }
 
     written_duration = avimuxer_written_duration_ms(avi);
-    if ((avi->syn_time == 0 && written_duration > 0) ||
-        written_duration < avi->syn_time ||
-        written_duration - avi->syn_time >= time_ms)
+    return (avi->syn_time == 0 && written_duration > 0) ||
+           written_duration < avi->syn_time ||
+           written_duration - avi->syn_time >= time_ms;
+}
+
+void avimuxer_sync_time(void *ctx, uint32_t time_ms)
+{
+    if (avimuxer_sync_judge(ctx, time_ms))
     {
         avimuxer_sync(ctx);
     }

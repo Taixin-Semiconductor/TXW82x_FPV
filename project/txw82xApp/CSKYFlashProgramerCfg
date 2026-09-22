@@ -1,0 +1,49 @@
+{
+  "DebugServerSetting": {
+    "UseDDC": true,
+    "EnableTRST": false,
+    "EnableDbgSvrLog": false,
+    "ICECLk": 12000,
+    "DelayMTCR": 10
+  },
+  "FlashProgramSession": {
+    "CommandType": 0,
+    "TargetConfig": {
+      "AlgorithmFile": "../../sdk/chip/txw82x/TXW82X_FLASH_ALGORITHM.elf",
+      "PreScriptFile": "../../sdk/chip/txw82x/TXW82X_FLASH_ALGORITHM.init",
+      "EraseType": 1,
+      "EraseRangStart": 0,
+      "EraseRangLength": 4096,
+      "ConnectType": 0,
+      "Timeout": 20,
+      "LogEnable": false,
+      "ResetAndRun": true,
+      "ResetType": 0,
+      "ResetValue": 2882338816,
+      "RunMode": false,
+      "CPUSelect": 0
+    },
+    "TargetFile": {
+      "DumpFileType": 1,
+      "DumpBinFileInfo": {
+        "FilePath": "C:/dump.bin",
+        "StartAddress": 0,
+        "Length": 1048576
+      },
+      "DumpHexFileInfo": {
+        "FilePath": "",
+        "StartAddress": 0,
+        "Length": 4096
+      }
+    },
+    "TargetObjectArray": [
+      {
+        "Type": 2,
+        "Verify": true,
+        "TargetAddr": 0,
+        "FilePath": "APP.bin",
+        "Program": true
+      }
+    ]
+  }
+}

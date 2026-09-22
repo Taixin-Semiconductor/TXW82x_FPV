@@ -340,6 +340,18 @@ bool hgusb20_dev_ep0_tx(struct hgusb20_dev *p_dev, void *buf, uint16_t len);
 bool hgusb20_dev_ep0_tx_rtt(struct hgusb20_dev *p_dev, void *buf, uint16_t len);
 bool hgusb20_dev_ep0_tx_abort(struct hgusb20_dev *p_dev);
 
+/**
+ * @brief Validate and queue a USB 2.0 device test mode selector.
+ *
+ * The hardware test mode is applied by the EP0 interrupt path only after the
+ * control request status stage has completed.
+ *
+ * @param p_dev USB2 device controller instance.
+ * @param selector USB 2.0 test selector, 1 through 5.
+ * @return TRUE when queued, FALSE for an invalid argument.
+ */
+bool hgusb20_dev_set_test_mode(struct hgusb20_dev *p_dev, uint8 selector);
+
 /** 
   * @brief  usb ep rx data stage handle
   * @param  p_dev   : hgusb20_dev use @ref dev_get() function to get the handle.

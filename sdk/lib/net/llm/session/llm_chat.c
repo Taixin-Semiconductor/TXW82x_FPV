@@ -421,10 +421,6 @@ int32 llm_chat_config(void *chat_hdl, llm_cfg_type type, void *cfg, uint32 cfg_s
     chat_session = (struct llm_session_chat *)chat_hdl;
 
     void **target_config = type ? &chat_session->base.transfer_config : &chat_session->base.platform_config;
-    if (*target_config != NULL && os_memcmp(*target_config, cfg, cfg_size) == 0) {
-        return RET_OK;
-    }
-
     if (llm_copy_config(target_config, cfg, cfg_size) != RET_OK) {
         return RET_ERR;
     }

@@ -593,7 +593,7 @@ int32 neteast_main_app_init(char *llm_name)
     neteast_mgr.txmplayer_msi = msi_find2("txmplayer", 0, 0, NULL);
     msi_add_output(neteast_mgr.neteast_msi, NULL, neteast_mgr.txmplayer_msi, NULL);
 
-    auadc_msi_add_output(AUSYS_AUAD, neteast_mgr.neteast_msi->name);
+    auadc_msi_add_output(MAIN_MIC_ID, neteast_mgr.neteast_msi->name);
     msi_add_output(neteast_mgr.neteast_msi, NULL, NULL, S_NET_JPEG);
 
 #if LLM_SPV12XX

@@ -16,6 +16,7 @@
 #include "osal/irq.h"
 #include <k_api.h>
 // #include "osal/osal_time.h"
+#include "osal/mutex.h"
 
 #define eloop_dbg(fmt, ...) _os_printf("%s:%d::" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define eloop_err(fmt, ...) _os_printf("%s:%d::" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
@@ -26,6 +27,7 @@
 
 static int     g_loopback_socket;
 static uint8_t wakeup_flag = 0; // 读标志,防止自己唤醒过多,保证尽量多个线程也是只是唤醒一次
+static struct os_mutex global_loopback_mutex;
 static void    eloop_wakeup(void);
 
 static struct eloop_state els;
@@ -513,8 +515,10 @@ static void eloop_wakeup_read(struct event *ei, void *d)
     struct udp_loopback loopback;
     struct sockaddr_in  remote_addr;
     socklen_t           retval = (sizeof(struct sockaddr_in));
+	os_mutex_lock(&global_loopback_mutex, osWaitForever);
     recvfrom(socket, (char *) &loopback, sizeof(struct udp_loopback), 0, (struct sockaddr *) &remote_addr, &retval);
     wakeup_flag = 0;
+	os_mutex_unlock(&global_loopback_mutex);
 }
 
 int eloop_wakeup_init(void)
@@ -534,6 +538,11 @@ int eloop_wakeup_init(void)
         eloop_err("socket error !");
         return 1;
     }
+	err = os_mutex_init(&global_loopback_mutex);
+	if(err != RET_OK) {
+		eloop_err("create mutex error !\n");
+	    return 1;
+	}
     err               = bind(t_socket, (struct sockaddr *) &listenAddr, sizeof(struct sockaddr_in));
     g_loopback_socket = t_socket;
     getsockname(t_socket, (struct sockaddr *) &connect_addr, &namelen);
@@ -551,6 +560,8 @@ static void eloop_wakeup(void)
     {
         return;
     }
+	os_mutex_lock(&global_loopback_mutex, osWaitForever);
     wakeup_flag = 1;
     send(g_loopback_socket, (char *) &loopback, sizeof(loopback), 0);
+	os_mutex_unlock(&global_loopback_mutex);
 }

@@ -269,10 +269,10 @@ static void txmplayer_out_fb(struct msi *owner, struct framebuff *fb)
         }
     }
 
-    if(fb->mtype == MEDIA_DATA_AUDIO && stream->param.volume == 0){
-        fb_put(fb);
-        return;
-    }
+//    if(fb->mtype == MEDIA_DATA_AUDIO && stream->param.volume == 0){
+//        fb_put(fb);
+//        return;
+//    }
 
     if (fb->mtype == MEDIA_DATA_UNKNOWN || mtype > (TXMPLAYER_CODEC_COUNT - 1)) {
         fb_put(fb);

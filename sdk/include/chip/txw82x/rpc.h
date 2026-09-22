@@ -43,7 +43,6 @@ enum CPU1_RPC_FUNCID {
     RPC_FUNC_ID(ieee80211_tx_ether),
     RPC_FUNC_ID(ieee80211_disassoc),
     RPC_FUNC_ID(ieee80211_disassoc_all),
-    RPC_FUNC_ID(ieee80211_hook_ext_data),
     RPC_FUNC_ID(ieee80211_cleanup_bsslist),
     RPC_FUNC_ID(ieee80211_get_bsslist),
     RPC_FUNC_ID(ieee80211_get_stalist),

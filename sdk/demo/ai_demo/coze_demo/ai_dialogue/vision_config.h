@@ -12,7 +12,7 @@
 #define PSRAM_HEAP          
 #define AV_PSRAM_HEAP    
 #define AV_HEAP
-#define CONFIG_PSRAM_AVHEAP_SIZE        (2*1024*1024)
+#define CONFIG_PSRAM_AVHEAP_SIZE        (1*1024*1024+512*1024)
 #define CONFIG_AVHEAP_SIZE              (80*1024)
 // #define MEM_TRACE
 #define PIN_FROM_PARAM

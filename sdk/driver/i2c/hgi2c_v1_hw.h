@@ -303,4 +303,4 @@ struct hgi2c_v1_hw {
 #endif
 
 
-#endif /* _HGI2C_V1_HW_H */
+#endif /* _HGI2C_V1_HW_H */

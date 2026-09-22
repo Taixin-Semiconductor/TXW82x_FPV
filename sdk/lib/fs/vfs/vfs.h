@@ -81,6 +81,23 @@ struct vfs_dirent {
 struct vfs_file_desc;
 
 /*=============================================================================
+ * 文件系统统计信息
+ *============================================================================*/
+struct vfs_statvfs {
+    unsigned long f_bsize;   /* 文件系统块大小（字节） */
+    unsigned long f_frsize;  /* 片段大小（字节），通常与f_bsize相同 */
+    vfs_off_t f_blocks;      /* 总数据块数（按f_frsize计） */
+    vfs_off_t f_bfree;       /* 空闲块数 */
+    vfs_off_t f_bavail;      /* 非特权用户可用块数 */
+    vfs_off_t f_files;       /* 总文件节点数 */
+    vfs_off_t f_ffree;       /* 空闲文件节点数 */
+    vfs_off_t f_favail;      /* 非特权用户可用文件节点数 */
+    unsigned long f_fsid;    /* 文件系统ID */
+    unsigned long f_flag;    /* 挂载标志 */
+    unsigned long f_namemax; /* 最大文件名长度 */
+};
+
+/*=============================================================================
  * 文件系统操作接口（需由具体FS实现）
  *============================================================================*/
 
@@ -112,6 +129,7 @@ struct vfs_file_ops {
 struct vfs_mount_ops {
     int (*mount)(void **fs_ctx, const char *source, const char *target, int flags, void *data);
     int (*unmount)(void *fs_ctx);
+    int (*statvfs)(void *fs_ctx, const char *path, struct vfs_statvfs *buf);
 };
 
 /* 文件系统类型描述符（由具体FS注册） */
@@ -143,6 +161,9 @@ int vfs_mount(const char *source, const char *target, const char *fsname, int fl
 
 /* 卸载文件系统 */
 int vfs_umount(const char *target);
+
+/* 获取指定路径所在分区的容量/剩余信息 */
+int vfs_statvfs(const char *path, struct vfs_statvfs *buf);
 
 /*=============================================================================
  * 文件操作API

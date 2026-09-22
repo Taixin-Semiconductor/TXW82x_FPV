@@ -37,25 +37,15 @@ enum _usb_ep0_state {
     USB_EP0_STATE_STALL,
 };
 
+extern uint8 ep0_buf[1024];
 
 /* USB EP0控制块 */
 struct _usb_ep0_ctrl {
 
     enum _usb_ep0_state     ep0_state;
     
-    //本次要发送包的地址、总长度
-    uint8                  *p_ep0_ptk2send;
-    uint32                  ep0_ptk2send_size;
-
-    //偏移量和计数
-    uint32                  ep0_ptk_counter;
-    uint32                  ep0_buf_offset;
-   
     //单次发送包的最大长度
     uint32                  ep0_oneptk_max_size;
-
-    uint8 ep0_buf[1024]   __attribute__((aligned(4)));    //针对iso传输接收非word对齐的数据dma写入的情况  fix:修改64为1024
-
 };
 
 struct usb11_ep_trx_ctrl {

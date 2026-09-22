@@ -248,7 +248,7 @@ void msi_put(struct msi *msi)
 
         if (users == 0 && inited == 0) {
             int32 ret = RET_OK;
-            if(msi->mgr){
+            if(msi->mgr){
                 ret = msi_do_cmd(msi, MSI_CMD_PRE_DESTROY, 0, 0);
             }
             if(ret == RET_OK){

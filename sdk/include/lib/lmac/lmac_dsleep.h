@@ -226,6 +226,7 @@ struct dsleep_cfg{
     void                        (*dsleep_exit_hook)(void);
     void                        (*dsleep_rx_hook)(uint8 *data, uint32 len);
     void                        (*dsleep_ready_hook)(void);
+    int32                       (*dsleep_loop_hook)(void);
     struct lmac_wkdata_param    *wkdata;
 
     uint16                      aid;

@@ -25,3 +25,8 @@ __weak void coze_ui_destroy(coze_ui_id ui_id)
 
 }
 
+__weak void coze_ui_err_msg(int32 err_code, char *err_msg)
+{
+
+}
+

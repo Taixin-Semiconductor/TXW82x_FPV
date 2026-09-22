@@ -75,56 +75,41 @@ void coze_pwr_detect_thread(void)
     gpio_set_dir(MACRO_PIN(LLM_PWR_KEY_DET), GPIO_DIR_INPUT);
     gpio_set_mode(MACRO_PIN(LLM_PWR_KEY_DET), GPIO_PULL_NONE, 0);
 
-    while (1)
-    {
+    while (1) {
         // 1. 读取原始按键电平
         key_current_raw = gpio_get_val(MACRO_PIN(LLM_PWR_KEY_DET));
 
         // 2. 软件去抖处理
-        if (key_current_raw != key_stable_last)
-        {
+        if (key_current_raw != key_stable_last) {
             debounce_tick   = os_jiffies_to_msecs(os_jiffies());
             key_stable_last = key_current_raw;
         }
 
         // 3. 检查去抖后是否有效
-        if (os_jiffies_to_msecs(os_jiffies()) - debounce_tick >= DEBOUNE_MS)
-        {
+        if (os_jiffies_to_msecs(os_jiffies()) - debounce_tick >= DEBOUNE_MS) {
             // 刚开机保护
-            if (initial_state_protection)
-            {
-                if (key_current_raw != 0)
-                {
+            if (initial_state_protection) {
+                if (key_current_raw != 0) {
                     // 按键松开, 关闭保护
                     initial_state_protection = 0;
                 }
-            }
-            else
-            {
-                if (key_current_raw == 0)
-                {
+            } else {
+                if (key_current_raw == 0) {
                     // 按键稳定按下
-                    if (press_start_tick == 0)
-                    {
+                    if (press_start_tick == 0) {
                         press_start_tick = os_jiffies_to_msecs(os_jiffies());
                     }
-                    if (press_start_tick != 0)
-                    {
-                        if (os_jiffies_to_msecs(os_jiffies()) - press_start_tick >= LONG_PRESS_MS)
-                        {
+                    if (press_start_tick != 0) {
+                        if (os_jiffies_to_msecs(os_jiffies()) - press_start_tick >= LONG_PRESS_MS) {
                             // 长按2s → 关机
                             coze_mgr.pwr_en  = 0;
                             press_start_tick = 0;
                         }
                     }
-                }
-                else
-                {
+                } else {
                     // 按键稳定松开
-                    if (press_start_tick != 0)
-                    {
-                        if (os_jiffies_to_msecs(os_jiffies()) - press_start_tick >= SHORT_PRESS_MS)
-                        {
+                    if (press_start_tick != 0) {
+                        if (os_jiffies_to_msecs(os_jiffies()) - press_start_tick >= SHORT_PRESS_MS) {
                             // 短按 → 语音触发
                             coze_mgr.voice_triggered = 1;
                         }
@@ -140,8 +125,7 @@ void coze_pwr_detect_thread(void)
 
 void coze_ui_set_ai_text(char *text)
 {
-    if (coze_mgr.ai_dialogue_screen_id < 0)
-    {
+    if (coze_mgr.ai_dialogue_screen_id < 0) {
         coze_err("screen_id is invalid(%d)\n", coze_mgr.ai_dialogue_screen_id);
         return;
     }
@@ -150,8 +134,7 @@ void coze_ui_set_ai_text(char *text)
 
 void coze_ui_set_user_text(char *text)
 {
-    if (coze_mgr.ai_dialogue_screen_id < 0)
-    {
+    if (coze_mgr.ai_dialogue_screen_id < 0) {
         coze_err("screen_id is invalid(%d)\n", coze_mgr.ai_dialogue_screen_id);
         return;
     }
@@ -160,31 +143,31 @@ void coze_ui_set_user_text(char *text)
 
 static void coze_ui_cmd_recording(uint32 screen_id, uint8_t isrecoding)
 {
-    if (isrecoding)
-    {
+    if (isrecoding) {
         coze_mgr.ai_dialogue_screen_id = screen_id;
         coze_mgr.key_triggered         = 1;
         coze_err("key start\r\n");
-    }
-    else
-    {
+    } else {
         coze_mgr.key_triggered = 0;
         coze_err("key stop\r\n");
     }
 }
 
+void coze_ui_err_msg(int32 err_code, char *err_msg)
+{
+    ui_home_view_set_error(err_code, err_msg);
+}
+
 static void coze_ui_cmd_destroy(uint32_t screen_id, uint8_t param)
 {
-    if (param == 0)
-    {
+    if (param == 0) {
         coze_msg_cmd_add(COZE_DEMO_CMD_INTERRUPT, param, 0);
     }
 }
 
 int32 coze_ui_cb(uint32_t screen_id, enum callback_cmd_t cmd, void *priv, uint32_t param)
 {
-    switch (cmd)
-    {
+    switch (cmd) {
         case CALLBACK_CMD_RECORDING:
             coze_ui_cmd_recording(screen_id, param);
             break;
@@ -199,10 +182,8 @@ int32 coze_ui_cb(uint32_t screen_id, enum callback_cmd_t cmd, void *priv, uint32
 
 void coze_ui_create(coze_ui_id ui_id)
 {
-    switch (ui_id)
-    {
-        case COZE_UI_ID_AI_DIALOGUE:
-        {
+    switch (ui_id) {
+        case COZE_UI_ID_AI_DIALOGUE: {
             struct screen_common_s cmd = {0};
             cmd.magic                  = SCREEN_MAGIC;
             cmd.ui_id                  = AI_SCREEN;
@@ -213,15 +194,12 @@ void coze_ui_create(coze_ui_id ui_id)
             break;
         }
         case COZE_UI_ID_AI_THINKING:
-            if (coze_mgr.ai_dialogue_screen_id > 0)
-            {
+            if (coze_mgr.ai_dialogue_screen_id > 0) {
                 screen_msg_queue_push_dispatch(coze_mgr.ai_dialogue_screen_id, "thinking", 3);
             }
             break;
-        case COZE_UI_ID_MUSIC_PLAYER:
-        {
-            if (coze_mgr.audio_url_hdl >= 0)
-            {
+        case COZE_UI_ID_MUSIC_PLAYER: {
+            if (coze_mgr.audio_url_hdl >= 0) {
                 struct screen_music_s cmd = {0};
                 cmd.type                  = SCREEN_MUSIC_TYPE;
                 cmd.magic                 = SCREEN_MAGIC;
@@ -245,17 +223,14 @@ void coze_ui_destroy(coze_ui_id ui_id)
     cmd.magic                  = SCREEN_MAGIC;
     cmd.ui_id                  = SCREEN_DEL;
 
-    switch (ui_id)
-    {
+    switch (ui_id) {
         case COZE_UI_ID_AI_DIALOGUE:
-            if (coze_mgr.ai_dialogue_screen_id > 0)
-            {
+            if (coze_mgr.ai_dialogue_screen_id > 0) {
                 cmd.screen_id = coze_mgr.ai_dialogue_screen_id;
             }
             break;
         case COZE_UI_ID_MUSIC_PLAYER:
-            if (coze_mgr.music_player_screen_id > 0)
-            {
+            if (coze_mgr.music_player_screen_id > 0) {
                 cmd.screen_id = coze_mgr.music_player_screen_id;
             }
             break;
@@ -263,8 +238,7 @@ void coze_ui_destroy(coze_ui_id ui_id)
             break;
     }
 
-    if (cmd.screen_id > 0)
-    {
+    if (cmd.screen_id > 0) {
         screen_ioctl(0, SCREEN_IOCTL_CMD_CREATE_UI, (uint32_t) &cmd, 0);
     }
 }
@@ -293,13 +267,11 @@ static void lcd_bl_pwm_init(void)
     gpio_set_val(MACRO_PIN(LCD_BACKLIGHT_IO), 1);
 
     pwm_dev = (struct hgpwm_v0 *) dev_get(HG_PWM0_DEVID);
-    if (!pwm_dev)
-    {
+    if (!pwm_dev) {
         return;
     }
 
-    if (duty_percent > 100)
-    {
+    if (duty_percent > 100) {
         duty_percent = 100;
     }
 
@@ -318,8 +290,7 @@ void lcd_bl_pwm(uint32 duty_percent)
     struct hgpwm_v0 *pwm_dev    = (struct hgpwm_v0 *) dev_get(HG_PWM0_DEVID);
     uint32           period_cnt = (DEFAULT_SYS_CLK / 1) / 1000 - 1;
     uint32           duty_cnt;
-    if (duty_percent > 100)
-    {
+    if (duty_percent > 100) {
         duty_percent = 100;
     }
     duty_cnt = (period_cnt * duty_percent) / 100;
@@ -330,8 +301,7 @@ static uint32_t power_adc_check(struct key_callback_list_s *callback_list, uint3
 {
     // 这里计算百分比,需要根据实际电路
     uint32_t key = keyvalue >> 8;
-    if (key == POWER_CHECK)
-    {
+    if (key == POWER_CHECK) {
         // os_printf("battery adc extern_value = %d\r\n", extern_value);
         extern_value           = extern_value < 1600 ? 1600 : extern_value;
         extern_value           = extern_value > 1900 ? 1900 : extern_value;
@@ -385,8 +355,8 @@ static int32_t app_hardware_init(void)
 
 #if HUWEN_WAKEUP_EN == 1
     void *aurpc_psram_buf = os_malloc_psram(AURPC_PSRAM_HEAP_SIZE);
-    if(aurpc_psram_buf) {
-        uint32 flags = SYSHEAP_FLAGS_MEM_ALIGN_32;   
+    if (aurpc_psram_buf) {
+        uint32 flags = SYSHEAP_FLAGS_MEM_ALIGN_32;
         aurpc_psram_heap_init(aurpc_psram_buf, AURPC_PSRAM_HEAP_SIZE, flags);
     }
     audio_adc_init(AUSYS_AUAD, 16000, 1, 1);
@@ -395,7 +365,7 @@ static int32_t app_hardware_init(void)
 
     huwen_wakeup_init();
 #else
-    app_audio_init(16000,16000);
+    app_audio_init(16000, 16000);
 #endif
 
     app_lcd_init(NULL);
@@ -426,7 +396,7 @@ static void app_function_init(void)
     coze_demo();
     OS_TASK_INIT("COZE_PWR", &coze_pwr_detect_task, coze_pwr_detect_thread, NULL, OS_TASK_PRIORITY_ABOVE_NORMAL, NULL, 1024);
     void ai_main_ui();
-    app_lvgl_init(ai_main_ui,LVGL_INPUTDEV_SUPPORT);
+    app_lvgl_init(ai_main_ui, LVGL_INPUTDEV_SUPPORT);
 }
 
 void ai_alarm_clock_demo_init(void)

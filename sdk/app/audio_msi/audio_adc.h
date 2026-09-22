@@ -31,12 +31,23 @@
 #define AUADC_TASK_PRIORITY   OS_TASK_PRIORITY_ABOVE_NORMAL
 #endif
 
+#ifndef MAIN_MIC_ID
+#define MAIN_MIC_ID           0
+#endif
+
+typedef enum {
+    mic_auadc = 0,
+    mic_aupdm = 1,
+    mic_auiis0 = 2,
+    mic_auiis1 = 3,
+}mic_platform_id;
+
 int32_t audio_adc_init(enum ausys_ad_platform platform, uint32_t sampleRate, uint32_t channels, uint32_t gain);
-int32_t audio_adc_deinit(enum ausys_ad_platform platform);
-int32_t audio_adc_get_samplerate(enum ausys_ad_platform platform);
-struct msi *get_auadc_msi(enum ausys_ad_platform platform);
-int32_t auadc_msi_add_output(enum ausys_ad_platform platform, const char *msi_name);
-int32_t auadc_msi_del_output(enum ausys_ad_platform platform, const char *msi_name);
-int32_t audio_adc_set_gain(enum ausys_ad_platform platform, uint32_t gain);
+int32_t audio_adc_deinit(uint32_t mic_id);
+int32_t audio_adc_get_samplerate(uint32_t mic_id);
+struct msi *get_auadc_msi(uint32_t mic_id);
+int32_t auadc_msi_add_output(uint32_t mic_id, const char *msi_name);
+int32_t auadc_msi_del_output(uint32_t mic_id, const char *msi_name);
+int32_t audio_adc_set_gain(uint32_t mic_id, uint32_t gain);
 void audio_adc_dev_out(struct dev_hotplug_info *info);
 #endif

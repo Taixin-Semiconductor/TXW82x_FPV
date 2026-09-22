@@ -497,6 +497,58 @@ static rt_err_t _request_interface(struct udevice* device, ureq_t setup)
     return ret;
 }
 
+static rt_err_t _set_device_feature(struct udevice *device, ureq_t setup)
+{
+    rt_err_t ret;
+    rt_uint8_t selector;
+
+    RT_ASSERT(device != RT_NULL);
+    RT_ASSERT(setup != RT_NULL);
+
+    if ((setup->request_type != (USB_REQ_TYPE_DIR_OUT |
+                                 USB_REQ_TYPE_STANDARD |
+                                 USB_REQ_TYPE_DEVICE)) ||
+        (setup->wLength != 0))
+    {
+        goto _stall;
+    }
+
+    switch (setup->wValue)
+    {
+    case USB_FEATURE_DEV_REMOTE_WAKEUP:
+        if (setup->wIndex != 0)
+        {
+            goto _stall;
+        }
+        break;
+
+    case USB_FEATURE_TEST_MODE:
+        selector = (rt_uint8_t)((setup->wIndex >> 8) & 0xFF);
+        if (((setup->wIndex & 0xFF) != 0) ||
+            (selector < USB_TEST_J) ||
+            (selector > USB_TEST_FORCE_ENABLE))
+        {
+            goto _stall;
+        }
+        break;
+
+    default:
+        goto _stall;
+    }
+
+    ret = rt_usbd_set_feature(device, setup->wValue, setup->wIndex);
+    if (ret != RT_EOK)
+    {
+        goto _stall;
+    }
+
+    return dcd_ep0_send_status(device->dcd);
+
+_stall:
+    rt_usbd_ep0_set_stall(device);
+    return -RT_ERROR;
+}
+
 /**
  * This function will handle standard bRequest.
  *
@@ -529,8 +581,7 @@ static rt_err_t _standard_request(struct udevice* device, ureq_t setup)
             dcd_ep0_send_status(dcd);
             break;
         case USB_REQ_SET_FEATURE:
-            rt_usbd_set_feature(device, setup->wValue, setup->wIndex);
-            break;
+            return _set_device_feature(device, setup);
         case USB_REQ_SET_ADDRESS:
             _set_address(device, setup);
             break;
@@ -1426,12 +1477,26 @@ uep_t rt_usbd_endpoint_new(uep_desc_t ep_desc, udep_handler_t handler)
         return RT_NULL;
     }
     ep->ep_desc = ep_desc;
+    ep->address_mirror = RT_NULL;
     ep->handler = handler;
     ep->buffer  = RT_NULL;
     ep->stalled = RT_FALSE;
     rt_list_init(&ep->request_list);
 
     return ep;
+}
+
+rt_err_t rt_usbd_endpoint_bind_address(uep_t ep, rt_uint8_t *address)
+{
+    RT_ASSERT(ep != RT_NULL);
+
+    ep->address_mirror = address;
+    if(address != RT_NULL)
+    {
+        *address = EP_ADDRESS(ep);
+    }
+
+    return RT_EOK;
 }
 
 /**
@@ -1653,11 +1718,10 @@ rt_err_t rt_usbd_device_add_config(udevice_t device, uconfig_t cfg)
             intf = (uintf_t)rt_list_entry(j, struct uinterface, list);
             cfg->cfg_desc.bNumInterfaces++;
 
-            for(k=intf->setting_list.next; k!=&intf->setting_list;k=k->next)
+            for(k=intf->setting_list.next; k!=&intf->setting_list; k=k->next)
             {
                 altsetting = (ualtsetting_t)rt_list_entry(k, struct ualtsetting, list);
 
-                /* allocate address for every endpoint in the interface alternate setting */
                 for(m=altsetting->ep_list.next; m!=&altsetting->ep_list; m=m->next)
                 {
                     ep = (uep_t)rt_list_entry(m, struct uendpoint, list);
@@ -1666,11 +1730,24 @@ rt_err_t rt_usbd_device_add_config(udevice_t device, uconfig_t cfg)
                         rt_kprintf("endpoint assign error\n");
                     }
                 }
+            }
+        }
+    }
 
-                /* construct complete configuration descriptor */
+    for (i=cfg->func_list.next; i!=&cfg->func_list; i=i->next)
+    {
+        func = (ufunction_t)rt_list_entry(i, struct ufunction, list);
+
+        for(j=func->intf_list.next; j!=&func->intf_list; j=j->next)
+        {
+            intf = (uintf_t)rt_list_entry(j, struct uinterface, list);
+
+            for(k=intf->setting_list.next; k!=&intf->setting_list; k=k->next)
+            {
+                altsetting = (ualtsetting_t)rt_list_entry(k, struct ualtsetting, list);
                 rt_memcpy((void*)&cfg->cfg_desc.data[cfg->cfg_desc.wTotalLength - USB_DESC_LENGTH_CONFIG],
-                            (void*)altsetting->desc,
-                            altsetting->desc_size);
+                          (void*)altsetting->desc,
+                          altsetting->desc_size);
                 cfg->cfg_desc.wTotalLength += altsetting->desc_size;
             }
         }
@@ -1891,19 +1968,28 @@ rt_size_t rt_usbd_io_request(udevice_t device, uep_t ep, uio_request_t req)
  */
 rt_err_t rt_usbd_set_feature(udevice_t device, rt_uint16_t value, rt_uint16_t index)
 {
+    rt_uint8_t selector;
+
     RT_ASSERT(device != RT_NULL);
 
     if (value == USB_FEATURE_DEV_REMOTE_WAKEUP)
     {
         LOG_D("set feature remote wakeup");
+        return RT_EOK;
     }
     else if (value == USB_FEATURE_ENDPOINT_HALT)
     {
         LOG_D("set feature stall");
-        dcd_ep_set_stall(device->dcd, (rt_uint32_t)(index & 0xFF));
+        return dcd_ep_set_stall(device->dcd, (rt_uint8_t)(index & 0xFF));
+    }
+    else if (value == USB_FEATURE_TEST_MODE)
+    {
+        selector = (rt_uint8_t)((index >> 8) & 0xFF);
+        LOG_D("set feature test mode %d", selector);
+        return dcd_set_test_mode(device->dcd, selector);
     }
 
-    return RT_EOK;
+    return -RT_ERROR;
 }
 
 /**
@@ -1998,6 +2084,10 @@ static rt_err_t rt_usbd_ep_assign(udevice_t device, uep_t ep)
                 ((EP_ADDRESS(ep) & 0x80) == device->dcd->ep_pool[i].dir) )
             {
                 EP_ADDRESS(ep) |= device->dcd->ep_pool[i].addr;
+                if(ep->address_mirror != RT_NULL)
+                {
+                    *ep->address_mirror = EP_ADDRESS(ep);
+                }
                 ep->id = &device->dcd->ep_pool[i];
                 device->dcd->ep_pool[i].status = ID_ASSIGNED;
 

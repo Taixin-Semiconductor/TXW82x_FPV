@@ -399,9 +399,11 @@ err_t ethernetif_updown(struct netif *netif, int up)
 {
     struct ethernetif *ethernetif = (struct ethernetif *)netif->state;
     if (up) {
+        netdev_get_macaddr(ethernetif->ndev, netif->hwaddr);
         return netdev_open(ethernetif->ndev, lwip_netdev_input_cb, NULL, netif);
+    } else {
+        return netdev_close(ethernetif->ndev);
     }
-	return ERR_ARG;
 }
 
 /**
@@ -763,6 +765,20 @@ uint8 *lwip_netif_hwaddr(struct netif* netif)
 {
     return netif->hwaddr;
 }
+
+int32 lwip_netif_set_hwaddr(char *ifname, uint8 *mac_addr)
+{
+    struct netif *nif = netif_find(ifname);
+    if(nif){
+        struct ethernetif *ethernetif = (struct ethernetif *)nif->state;
+        netif_set_down(nif);
+        netdev_set_macaddr(ethernetif->ndev, mac_addr);
+        netif_set_up(nif);
+        return RET_OK;
+    }
+    return -ENODEV;
+}
+
 
 uint32 lwip_netif_ipaddr4(struct netif* netif)
 {

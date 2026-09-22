@@ -50,7 +50,9 @@ static int32 coze_msg_error_process(char *error)
                 break;
             }
             default: {
+				coze_main_set_state(COZE_DEMO_STATE_IDLE);
                 llm_sts_stop(coze_mgr.sts_session);
+                coze_ui_err_msg(err_code, err_msg);
                 // 注意：所有调用 llm_sts_reconnect 前必须将状态设置为 COZE_DEMO_STATE_IDLE
                 //coze_main_set_state(COZE_DEMO_STATE_IDLE);
                 //llm_sts_reconnect(coze_mgr.sts_session);
@@ -987,8 +989,10 @@ int32 coze_msg_event_process(void)
         case LLM_EVENT_TX_ERR:
         case LLM_EVENT_RX_ERR: {
             coze_err("COZE AI recv %s err!\r\n", (event_msg.event == LLM_EVENT_TX_ERR ? "TX" : "RX"));
-            coze_main_set_state(COZE_DEMO_STATE_IDLE);
-            llm_sts_reconnect(coze_mgr.sts_session);
+			if (coze_main_get_state() != COZE_DEMO_STATE_IDLE) {
+				coze_main_set_state(COZE_DEMO_STATE_IDLE);
+				llm_sts_reconnect(coze_mgr.sts_session);
+			}
             break;
         }
         default: {
@@ -1049,19 +1053,20 @@ int32 coze_msg_cmd_process(void)
             case COZE_DEMO_CMD_CLOSE_MEDIA: {
                 if (coze_mgr.audio_url_hdl == cmd_msg.param1) {
                     coze_err("Coze CMD close media: %d:%d!\r\n", cmd_msg.param1, cmd_msg.param2);
-                    coze_mgr.audio_url_hdl = -1;
-                    coze_mgr.time_stamp = UINT64_MAX;
-                    coze_mgr.busy = 0;
                     if (cmd_msg.param2 == 0) {
                         coze_err("**媒体播放结束!**\n");
                         txmplayer_close(coze_mgr.audio_url_hdl);
+						coze_mgr.audio_url_hdl = -1;
                     } else if (cmd_msg.param2 == 1) {
                         coze_err("**媒体播放失败!**\n");
                         txmplayer_close(coze_mgr.audio_url_hdl);
+						coze_mgr.audio_url_hdl = -1;
                         // 重新进入对话
                         coze_mgr.finish = 1;
                         coze_main_set_state(COZE_DEMO_STATE_READY);
                     }
+                    coze_mgr.time_stamp = UINT64_MAX;
+                    coze_mgr.busy = 0;
                 }
                 break;
             }

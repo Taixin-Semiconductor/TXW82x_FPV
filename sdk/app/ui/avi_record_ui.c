@@ -126,7 +126,7 @@ static void start_avi_record_ui(lv_event_t * e)
             {
                 if(rec_cfg.audio_en)
                 {
-                    auadc_msi_add_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
+                    auadc_msi_add_output(MAIN_MIC_ID, R_AVI_ENCODE_MSI);
                     ui_s->audio_en = 1;
                 }
                 msi_do_cmd(ret, MSI_CMD_MEDIA_CTRL, MSI_MEDIA_CTRL_RECORD_START, 0);
@@ -153,7 +153,7 @@ static void exit_avi_record_ui(lv_event_t * e)
         ui_s->now_group = NULL;
         if(ui_s->audio_en)
         {
-            auadc_msi_del_output(AUSYS_AUAD, R_AVI_ENCODE_MSI);
+            auadc_msi_del_output(MAIN_MIC_ID, R_AVI_ENCODE_MSI);
             ui_s->audio_en = 0;
         }
         if (ui_s->jpg_s)

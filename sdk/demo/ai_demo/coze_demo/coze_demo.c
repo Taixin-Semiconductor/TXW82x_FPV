@@ -242,6 +242,42 @@ __atcmd_update_file_end:
     return ret;
 }
 
+int32 sys_atcmd_coze_set_pat_key(const char *cmd, char *argv[], uint32 argc)
+{
+    int32 ret = 0;
+    const char *new_pat_key = NULL;
+    
+    if (argc < 1) {
+        coze_err("argv is too less\n");
+        return RET_ERR;
+    }
+    new_pat_key = argv[0];
+    
+    if (os_strlen(new_pat_key) > sizeof(sys_cfgs.coze_pat_key)) {
+        coze_err("Error:pat_key too long!\n");
+        return RET_ERR;
+    }
+    if (os_strcmp(sys_cfgs.coze_pat_key, new_pat_key) != 0) {
+        //保存到pat_key到flash
+        coze_err("Modify pat_key to %s\n", new_pat_key);
+        memset(sys_cfgs.coze_pat_key, 0, sizeof(sys_cfgs.coze_pat_key));
+        os_strncpy(sys_cfgs.coze_pat_key, new_pat_key, os_strlen(new_pat_key) + 1);
+        syscfg_save();
+    }
+
+    coze_sts_platform_cfg.pat_key = (char *)&sys_cfgs.coze_pat_key;
+    ret = llm_sts_config(coze_mgr.sts_session, LLM_CONFIG_TYPE_MODEL,
+                         (void *)&coze_sts_platform_cfg, sizeof(coze_sts_platform_cfg));//填入config并update到llm库中
+    if (ret) {
+        coze_err("update pat_key fail!\r\n");
+        return RET_ERR;
+    }
+    
+    coze_ui_err_msg(0, NULL);
+    llm_sts_reconnect(coze_mgr.sts_session);
+    return RET_OK;
+}
+
 /*
  * @brief 提交手动对话内容：conversation.message.create
  * @param id 对话ID
@@ -644,6 +680,10 @@ int32 coze_main_event_cb(void *session, uint16 evt, uint32 param1, uint32 param2
     }
     if (process) {
         if (RB_INT_SET(&coze_mgr.event_queue, event_msg) == 0) {
+			if (event_msg.msg != NULL) {
+                llm_free(event_msg.msg);
+            }
+            event_msg.msg = NULL;
             coze_err("event_queue is full!\r\n");
         }
     }
@@ -777,6 +817,17 @@ static void coze_main_conversation_id_init(void)
     }
 }
 
+static void coze_main_pat_key_init(void)
+{
+    char header[128];
+    memset(&header, 0xFF, sizeof(header));
+    if (os_memcmp(sys_cfgs.coze_pat_key,
+                  header, sizeof(sys_cfgs.coze_pat_key)) != 0) {
+        coze_sts_platform_cfg.pat_key = (char *)&sys_cfgs.coze_pat_key;
+        coze_err("use syscfg pat_key:%s\n", coze_sts_platform_cfg.pat_key);
+    }
+}
+
 #if COZE_DEMO_GET_EXTERNAL_IP
 size_t coze_main_get_external_ip_callback(void *contents, size_t size, size_t nmemb, char *userp)
 {
@@ -823,12 +874,9 @@ static int32 coze_main_get_external_ip(char *ip, int32 buff_len)
               os_jiffies_to_msecs(os_jiffies() - tick));
     if (ip) {
         memset(ip, 0, buff_len);
-        os_strncpy(ip, buff, os_strlen(buff) > buff_len ? buff_len : os_strlen(buff))
-        ;
+        os_strncpy(ip, buff, os_strlen(buff) > buff_len ? buff_len : os_strlen(buff));
     }
     coze_err("Get external ip info:[%s]\n", ip);
-    llm_free(buff);
-    return ret;
 
 __cleanup:
     if (buff) {
@@ -882,9 +930,43 @@ void coze_get_external_ip_main(void *arg)
 */
 struct os_task coze_audio_play_task;
 struct os_task coze_get_extern_ip_task;
+void coze_main_app_deinit(void)
+{
+    txmplayer_close(coze_mgr.audio_url_hdl);
+    coze_mgr.audio_url_hdl = -1;
+    if (coze_mgr.audio_msi) {
+        msi_output_cmd(coze_mgr.audio_msi, MSI_CMD_STOP, 0, 0);
+        msi_put(coze_mgr.audio_msi);
+        coze_mgr.audio_msi = NULL;
+    }
+    if (coze_mgr.image_msi) {
+        msi_put(coze_mgr.image_msi);
+        coze_mgr.image_msi = NULL;
+    }
+    txmplayer_deinit();
+    if (coze_mgr.coze_msi) {
+        msi_destroy(coze_mgr.coze_msi);
+        coze_mgr.coze_msi = NULL;
+    }
+
+    os_mutex_del(&coze_mgr.lock);
+    if (coze_mgr.cmd_queue.rbq) { llm_free(coze_mgr.cmd_queue.rbq); }
+    if (coze_mgr.event_queue.rbq) { llm_free(coze_mgr.event_queue.rbq); }
+    if (coze_mgr.weather_str) {
+        llm_free(coze_mgr.weather_str);
+        coze_mgr.weather_str = NULL;
+    }
+
+    if (coze_mgr.sts_session) {
+        llm_sts_deinit(coze_mgr.sts_session);
+        coze_mgr.sts_session = NULL;
+    }
+    coze_demo_exit();
+}
+
 int32 coze_main_app_init(char *llm_name)
 {
-    int ret = 0;
+    int ret = RET_ERR;
     struct txmplayer_param param = {
         .volume = coze_mgr.volume,
     };
@@ -895,14 +977,17 @@ int32 coze_main_app_init(char *llm_name)
     coze_mgr.sts_session = llm_sts_init(llm_name, &coze_sts_session_cfg);
     if (!coze_mgr.sts_session) {
         coze_err("sts session init fail!\r\n");
-        return RET_ERR;
+        goto __cleanup;
     }
+    
+    coze_main_conversation_id_init();
+    coze_main_pat_key_init();
 
     ret = llm_sts_config(coze_mgr.sts_session, LLM_CONFIG_TYPE_TRANS,
                          (void *)&coze_sts_trans_cfg, sizeof(coze_sts_trans_cfg));
     if (ret) {
         coze_err("sts_trans_cfg fail!\r\n");
-        return RET_ERR;
+        goto __cleanup;
     }
 
     coze_sts_platform_cfg.turn_detection_type = "client_interrupt";
@@ -910,7 +995,7 @@ int32 coze_main_app_init(char *llm_name)
                          (void *)&coze_sts_platform_cfg, sizeof(coze_sts_platform_cfg));
     if (ret) {
         coze_err("sts_trans_cfg fail!\r\n");
-        return RET_ERR;
+        goto __cleanup;
     }
     coze_sts_platform_cfg.chat_config_parameters = coze_mgr.chat_config_parameter;
 
@@ -919,27 +1004,27 @@ int32 coze_main_app_init(char *llm_name)
     event_queue_buf = llm_malloc((COZE_DEMO_EVENT_QUEUE_CNT + 1) * sizeof(struct coze_demo_event_msg));
     if (!event_queue_buf) {
         coze_err("event_queue_buf malloc fail, no memory!\r\n");
-        return RET_ERR;
+        goto __cleanup;
     }
     RB_INIT_R(&coze_mgr.event_queue, COZE_DEMO_EVENT_QUEUE_CNT, event_queue_buf);
 
     cmd_queue_buf = llm_malloc((COZE_DEMO_CMD_QUEUE_CNT + 1) * sizeof(struct coze_demo_cmd_msg));
     if (!cmd_queue_buf) {
         coze_err("cmd_queue_buf malloc fail, no memory!\r\n");
-        return RET_ERR;
+        goto __cleanup;
     }
     RB_INIT_R(&coze_mgr.cmd_queue, COZE_DEMO_CMD_QUEUE_CNT, cmd_queue_buf);
 
     coze_mgr.coze_msi = msi_new("coze_msi", 8, NULL);//确保比adc的fb队列小，自己丢数据，不要影响其他的模块
     if (!coze_mgr.coze_msi) {
         coze_err("coze_msi err!\r\n");
-        return RET_ERR;
+        goto __cleanup;
     }
     coze_mgr.coze_msi->fb_limits.counter = 32;
     coze_mgr.coze_msi->enable = 0;
 
     // 麦克风
-    auadc_msi_add_output(AUSYS_AUAD, coze_mgr.coze_msi->name);
+    auadc_msi_add_output(MAIN_MIC_ID, coze_mgr.coze_msi->name);
 
     txmplayer_init(0, 0, &param);
     // 音频
@@ -952,7 +1037,6 @@ int32 coze_main_app_init(char *llm_name)
     //msi_add_output(coze_mgr.coze_msi, NULL, coze_mgr.image_msi, NULL);
 
     OS_TASK_INIT("COZE_AUPLAY", &coze_audio_play_task, coze_audio_play_thread, NULL, OS_TASK_PRIORITY_NORMAL, NULL, 1024);
-    coze_main_conversation_id_init();
 
     coze_audio_play_prompt_tone(kaiji, kaiji_size);
     os_sleep_ms(2000);
@@ -960,7 +1044,7 @@ int32 coze_main_app_init(char *llm_name)
     coze_err("Waiting for network connection...");
     while (!sys_status.wifi_connected || !sys_status.dhcpc_done) {
         if (coze_mgr.pwr_en == 0) {
-            return RET_ERR;
+            goto __cleanup;
         }
         _os_printf(".");
         os_sleep(1);
@@ -983,6 +1067,8 @@ int32 coze_main_app_init(char *llm_name)
 
     coze_main_set_state(COZE_DEMO_STATE_IDLE);
     llm_sts_reconnect(coze_mgr.sts_session);
+	
+__cleanup:
     return ret;
 }
 
@@ -1002,7 +1088,7 @@ void coze_main(void)
     ret = coze_main_app_init("coze_sts");
     if (ret) {
         coze_err("coze main init failed: %d\r\n", ret);
-        goto cleanup;
+        goto __cleanup;
     }
 
     while (coze_mgr.pwr_en) {
@@ -1080,7 +1166,7 @@ void coze_main(void)
             case COZE_DEMO_STATE_CONNECTED: {
                 coze_err("**已连接!**\n");
                 coze_audio_play_prompt_tone(yilianjie, yilianjie_size);
-                os_sleep_ms(1000);
+                os_sleep_ms(2000);
                 
                 coze_mgr.key_triggered   = 0;
                 coze_mgr.voice_triggered = 0;
@@ -1204,7 +1290,7 @@ void coze_main(void)
                 coze_err("**已断开!**\n");                
                 txmplayer_pause(coze_mgr.audio_url_hdl, 1);
                 coze_audio_play_prompt_tone(yiduankai, yiduankai_size);
-                os_sleep_ms(1000);
+                os_sleep_ms(2000);
                 coze_mgr.connected = 0;
                 coze_ui_destroy(COZE_UI_ID_AI_DIALOGUE);
                 coze_main_set_state(COZE_DEMO_STATE_IDLE);
@@ -1216,7 +1302,6 @@ void coze_main(void)
         os_sleep_ms(10);
     }
 
-cleanup:
     coze_main_interrupt();
     // 关闭屏幕
 //extern void lcd_bl_pwm(uint32 duty_percent);
@@ -1224,16 +1309,9 @@ cleanup:
     coze_audio_play_prompt_tone(guanji, guanji_size);
     os_sleep_ms(2000);
     coze_audio_wait_empty();
-    txmplayer_close(coze_mgr.audio_url_hdl);
-    msi_output_cmd(coze_mgr.audio_msi, MSI_CMD_STOP, 0, 0);
-    msi_put(coze_mgr.audio_msi);
-    txmplayer_deinit();
-    msi_destroy(coze_mgr.coze_msi);
-    llm_free(coze_mgr.event_queue.rbq);
-    if (coze_mgr.weather_str) { llm_free(coze_mgr.weather_str); }
-    llm_sts_deinit(coze_mgr.sts_session);
-    llm_global_deinit();
-    coze_demo_exit();
+	
+__cleanup:
+    coze_main_app_deinit();
 }
 
 struct os_task coze_main_task;

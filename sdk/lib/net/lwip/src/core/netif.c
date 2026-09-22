@@ -952,6 +952,8 @@ netif_set_down(struct netif *netif)
 
   LWIP_ERROR("netif_set_down: invalid netif", netif != NULL, return);
 
+  if(netif->updown) netif->updown(netif, 0);
+
   if (netif->flags & NETIF_FLAG_UP) {
 #if LWIP_NETIF_EXT_STATUS_CALLBACK
     {

@@ -6496,7 +6496,7 @@ FRESULT f_mkfs (
 		st_16(buf + BS_55AA, 0xAA55);					/* Signature (offset is fixed here regardless of sector size) */
 
 #if USE_FAT_CACHE
-		update_fat_info(fsty,n_fat,sz_fat,(sz_rsv+b_vol),b_vol);
+		update_fat_info(fsty,n_fat,sz_fat, (DWORD)(sz_rsv+b_vol), (DWORD)b_vol);
 #endif
 
 		if (disk_write(pdrv, buf, b_vol, 1) != RES_OK) LEAVE_MKFS(FR_DISK_ERR);	/* Write it to the VBR sector */

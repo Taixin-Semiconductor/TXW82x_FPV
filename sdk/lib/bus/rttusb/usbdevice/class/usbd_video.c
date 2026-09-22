@@ -30,8 +30,6 @@
 #define VIDEO_PACKET_SIZE (unsigned int)(((MAX_PAYLOAD_SIZE / 1)) | (0x00 << 11))
 #endif
 
-#define VIDEO_IN_EP  0x81
-
 /* --------- Video MJPEG Format ---------  */
 #define VIDEO_MJPEG_bNumFrameDescriptors        (2)
 
@@ -288,7 +286,7 @@ static struct uvc_vs_noep_descriptor vs_noep_desc =
         VIDEO_VS_INPUT_HEADER_DESCRIPTOR_SUBTYPE,
         VIDEO_VS_INPUT_HEADER_bNumFormats,
         VIDEO_VS_INPUT_HEADER_wTotalLength,
-        VIDEO_IN_EP,                                                
+        USB_DYNAMIC | USB_DIR_IN,
         0x00,
         0x03,
         0x00,
@@ -2037,6 +2035,7 @@ static ufunction_t rt_usbd_function_uvc_device_create(udevice_t device)
     uintf_t intf_vc, intf_vs;
     ualtsetting_t setting_vs_noep;
     ualtsetting_t setting_vc, setting_vs_ep;
+    struct uvc_vs_noep_descriptor *vs_noep_desc_t;
     struct uvc_vs_ep_descriptor *vs_ep_desc_t;
 
     /* parameter check */
@@ -2078,8 +2077,13 @@ static ufunction_t rt_usbd_function_uvc_device_create(udevice_t device)
     //_uac_samplerate_config(setting_vs_ep->desc, AUDIO_SAMPLERATE);
 
     /* create endpoint */
+    vs_noep_desc_t = (struct uvc_vs_noep_descriptor *)setting_vs_noep->desc;
     vs_ep_desc_t = (struct uvc_vs_ep_descriptor *)setting_vs_ep->desc;
     usbd_uvc.ep = rt_usbd_endpoint_new(&vs_ep_desc_t->ep_desc, _ep_data_handler);    //配置端点handler
+    if(usbd_uvc.ep != RT_NULL)
+    {
+        rt_usbd_endpoint_bind_address(usbd_uvc.ep, &vs_noep_desc_t->it_desc.bEndpointAddress);
+    }
 
     /* add the endpoint to the alternate setting */
     rt_usbd_altsetting_add_endpoint(setting_vs_ep, usbd_uvc.ep);

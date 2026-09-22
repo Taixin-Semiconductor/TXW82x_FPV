@@ -312,6 +312,51 @@ static const SensorWorkMode cv2008_supported_modes[] = {
     },
 };
 
+void CV2008_img_opt(struct isp_sensor_opt *p_opt)
+{
+    uint8  *addr = (uint8 *)p_opt->data.addr;
+    uint8  index = 0;
+    addr[index++] = 0x30;
+    addr[index++] = 0x28;
+    addr[index++] = p_opt->reverse_en*2 + p_opt->mirror_en;
+
+    if((p_opt->reverse_en*2 + p_opt->mirror_en) == 0){
+        addr[index++] = 0x30;
+        addr[index++] = 0x34;
+        addr[index++] = 4;
+        addr[index++] = 0x30;
+        addr[index++] = 0x38;
+        addr[index++] = 4;
+    }
+    if((p_opt->reverse_en*2 + p_opt->mirror_en) == 1){
+        addr[index++] = 0x30;
+        addr[index++] = 0x34;
+        addr[index++] = 4;
+        addr[index++] = 0x30;
+        addr[index++] = 0x38;
+        addr[index++] = 5;
+    }
+    if((p_opt->reverse_en*2 + p_opt->mirror_en) == 2){
+        addr[index++] = 0x30;
+        addr[index++] = 0x34;
+        addr[index++] = 5;
+        addr[index++] = 0x30;
+        addr[index++] = 0x38;
+        addr[index++] = 4;
+    }
+    if((p_opt->reverse_en*2 + p_opt->mirror_en) == 3){
+        addr[index++] = 0x30;
+        addr[index++] = 0x34;
+        addr[index++] = 5;
+        addr[index++] = 0x30;
+        addr[index++] = 0x38;
+        addr[index++] = 5;
+    }
+
+    p_opt->data.size = index;
+    p_opt->cmd_len   = 2+1;
+}
+
 SENSOR_OP_SECTION const _Sensor_Adpt_ cv2008_cmd = 
 {
     .supported_modes = (SensorWorkMode*)cv2008_supported_modes,
@@ -329,8 +374,8 @@ SENSOR_OP_SECTION const _Sensor_Adpt_ cv2008_cmd =
         .reverse      = 1,
         .input_format = ISP_INPUT_DAT_FORMAT_RAW10,
         .adjust_func  = (isp_ae_func     )CV2008_ae_adjust,
-        // .img_opt      = (sensor_img_opt  )CV2008_img_opt,
-        // .fps_opt      = (sensor_fps_opt  )CV2008_fps_opt,
+		.img_opt      = (sensor_img_opt  )CV2008_img_opt,
+//		.fps_opt      = (sensor_fps_opt  )CV2008_fps_opt,
         // .isp_iq_param   = (_Sensor_ISP_Init*)&CV2008_isp_param_init,
     },
 };

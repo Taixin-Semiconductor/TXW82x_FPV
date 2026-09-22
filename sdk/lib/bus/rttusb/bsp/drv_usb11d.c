@@ -48,8 +48,6 @@ static rt_err_t _wakeup(void);
 
 static uint32 hal_pcd11_bus_irq(uint32 irq, uint32 param1, uint32 param2, uint32 param3)
 {
-    struct usb_device *p_usb_d = (struct usb_device *)param1;
-    struct hgusb11_dev *p_dev = (struct hgusb11_dev *)p_usb_d;
     uint32 ep_num = param2 & 0xF;
     uint32 len    = param3;
 
@@ -76,7 +74,7 @@ static uint32 hal_pcd11_bus_irq(uint32 irq, uint32 param1, uint32 param2, uint32
             break;
         case USB_DEV_CTL_IRQ://4
             ret_val = 0;
-            rt_usbd_ep0_setup_handler(&_hg_udc, (struct urequest *)p_dev->ep0_ctrl.ep0_buf);
+            rt_usbd_ep0_setup_handler(&_hg_udc, (struct urequest *)ep0_buf);
             break;
         case USB_EP_RX_IRQ://5
             if (ep_num == 0) {
@@ -261,6 +259,7 @@ const static struct udcd_ops _udc_ops =
     _ep0_send_status,
     _suspend,
     _wakeup,
+    RT_NULL,
 };
 
 /**

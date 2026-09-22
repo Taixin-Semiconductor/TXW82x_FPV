@@ -241,5 +241,6 @@ void vfs_free(void *ptr)
 #else
     __free((struct sys_heap *)&psram_heap, ptr, RETURN_ADDR());
 #endif
-}
+
+}
 /** @} */ // End of Memory_Allocation group

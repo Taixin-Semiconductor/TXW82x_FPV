@@ -66,13 +66,15 @@ typedef WORD			WCHAR;	/* UTF-16 code unit */
 
 
 #ifndef USE_FAT_CACHE
-#define USE_FAT_CACHE 			0	// 优化开关
+#define USE_FAT_CACHE 0                 /* FAT/exFAT fat cache switch */
 #endif
 
-#define FAT_CACHE_SIZE 			32 	// 32KB = 64 sectors (512B per sector)
+/* USE_FAT_CACHE also enables the exFAT allocation bitmap cache. */
+#define FAT_CACHE_SIZE 32               /* FAT cache: 16 KiB (32 sectors) */
+#define BITMAP_CACHE_SIZE 32            /* exFAT bitmap cache: 16 KiB (32 sectors) */
 
 #if USE_FAT_CACHE
-signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat,DWORD fatbase, DWORD b_vol);
+signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat, DWORD fatbase, DWORD b_vol);
 #endif
 
 
@@ -199,6 +201,11 @@ typedef struct {
 #endif
 	__attribute__ ((aligned(16))) BYTE	win[FF_MAX_SS];	/* Disk access window for directory, FAT (and file data in tiny cfg) */
 } FATFS;
+
+#if USE_FAT_CACHE
+signed char fat_cache_mount(FATFS *fs);
+void fat_cache_unmount(void);
+#endif
 
 
 

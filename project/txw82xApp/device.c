@@ -533,12 +533,6 @@ static void cpu1_ctl1_run_pwm_in_debug(void)
 
 void device_init(void)
 {
-    extern uint32_t get_flash_cap();
-    uint32_t flash_size = get_flash_cap();
-    if (flash_size > 0) {
-        flash0.size = flash_size;
-    }
-
     hg_crc_attach(HG_CRC_DEVID, &crc32_module);
     hg_sysaes_v3_attach(HG_HWAES0_DEVID, &sysaes);
     hggpio_v4_attach(HG_GPIOA_DEVID, &gpioa);

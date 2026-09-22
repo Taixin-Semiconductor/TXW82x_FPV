@@ -344,6 +344,14 @@ __init static void sys_app_init(void)
     sntp_client_init("ntp.aliyun.com", 2);
 #endif
 
+#if SYS_APP_NETAT
+    net_atcmd_init();
+#endif
+
+#if SYS_APP_NETLOG
+    netlog_init(64320);
+#endif
+
 #if SYS_APP_BLENC
     sys_ble_netconfig_init();
 #endif

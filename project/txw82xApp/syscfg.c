@@ -245,6 +245,7 @@ void syscfg_default()
     sys_cfgs.rmesh_devmax = WIFI_RMESH_DEVMAX;
 #endif    
     memset(sys_cfgs.coze_conversation_id, 0xFF,sizeof(sys_cfgs.coze_conversation_id));//default
+    memset(sys_cfgs.coze_pat_key, 0xFF,sizeof(sys_cfgs.coze_pat_key));//default
 }
 
 void syscfg_dump()

@@ -11,15 +11,13 @@
 #include "dev.h"
 #include "sdhost.h"
 #include "devid.h"
-
 #include "osal/string.h"
 #include "osal/work.h"
-
 // #include "osal.h"
 
-// #define FAT_INFO_SHOW(...) //printf(__VA_ARGS__)
-
 // #define FAT_TIME
+
+#define FATFS_SECTOR_SIZE 512U
 
 static DSTATUS fatfs_status(void *status);
 static DSTATUS fatfs_init(void *init_dev);
@@ -33,7 +31,8 @@ static const struct fatfs_diskio  sdcdisk_driver = {
 	.init = fatfs_init,
 	.read = fatfs_read,
 	.write = fatfs_write,
-	.ioctl = fatfs_ioctl};
+	.ioctl = fatfs_ioctl
+};
 
 static DSTATUS fatfs_status(void *status)
 {
@@ -68,35 +67,37 @@ static void fat_free(void *p)
 	os_free(p);
 #endif
 }
-struct fat_data_t
+
+struct fat_cache_window_t
 {
-	// uint8 data[FAT_CACHE_SIZE * 512]; // 32KB 缓存
-	BYTE *data;		// 32KB 缓存
-	DWORD start_sector; // 缓存起始扇区
-	DWORD fat_start;	// FAT起始扇区
-	DWORD fat_end;
+	BYTE *data;
+	DWORD start_sector;
+	DWORD valid_sectors;
 	DWORD offset;
-	DWORD max_offset;
+	DWORD dirty_start;
+	DWORD dirty_end;
 };
 
 struct fat_cache_t
 {
-	BYTE fat_info_ready; //
 	BYTE fat_init;
+	BYTE fat_info_ready;
 	BYTE fs_type;
 	BYTE fs_fats;
-	DWORD fs_size;
 	DWORD fat_tick;
-	#ifdef FAT_TIME
- 	os_timer_t fat_timer;
-	#else
-	struct os_work fat_wk;
-	#endif
+	DWORD fat_start;
+	DWORD fs_size;
+	DWORD bitmap_start;
+	DWORD bitmap_size;	// bitmap size in sectors
 	struct os_mutex lock;
-	struct fat_data_t fat1;
+#ifdef FAT_TIME
+	os_timer_t fat_timer;
+#else
+	struct os_work fat_wk;
+#endif
+	struct fat_cache_window_t fat1;
+	struct fat_cache_window_t bitmap;
 };
-
-
 
 struct fat_cache_t fat_cache = {
 	// lock和time初始化标志位，1是未初始化，0是已经初始化
@@ -104,95 +105,429 @@ struct fat_cache_t fat_cache = {
 	.fat_info_ready = 1,
 };
 
-signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat,DWORD fatbase, DWORD b_vol)
+static uint8 fat_cache_is_ready(void)
+{
+	return (fat_cache.fat_init == RET_OK && fat_cache.fat_info_ready == RET_OK);
+}
+
+static void reset_cache_window(struct fat_cache_window_t *window)
+{
+	window->start_sector = 0;
+	window->valid_sectors = 0;
+	window->offset = 0;
+	window->dirty_start = 0;
+	window->dirty_end = 0;
+}
+
+static void free_cache_buffers(void)
+{
+	if (fat_cache.fat1.data != NULL) {
+		fat_free(fat_cache.fat1.data);
+		fat_cache.fat1.data = NULL;
+	}
+	if (fat_cache.bitmap.data != NULL) {
+		fat_free(fat_cache.bitmap.data);
+		fat_cache.bitmap.data = NULL;
+	}
+}
+
+static void mark_cache_dirty(struct fat_cache_window_t *cache, DWORD count)
+{
+	DWORD end;
+
+	if (count == 0) {
+		return;
+	}
+
+	end = cache->offset + count;
+	if (cache->dirty_end == 0 || cache->offset < cache->dirty_start) {
+		cache->dirty_start = cache->offset;
+	}
+	if (end > cache->dirty_end) {
+		cache->dirty_end = end;
+	}
+}
+
+static uint8 cache_range_contains(DWORD start_sector, DWORD sector_count, DWORD sector, UINT count)
+{
+	DWORD offset;
+
+	if (sector_count == 0 || count == 0 || sector < start_sector){
+		return 0;
+	}
+
+	offset = sector - start_sector;
+	if (offset >= sector_count){
+		return 0;
+	}
+
+	return (DWORD)count <= sector_count - offset;
+}
+
+static uint8 cache_window_contains(const struct fat_cache_window_t *cache, DWORD sector, UINT count)
+{
+	DWORD offset;
+
+	if (cache->valid_sectors == 0 || sector < cache->start_sector) {
+		return 0;
+	}
+	offset = sector - cache->start_sector;
+	return offset < cache->valid_sectors && (DWORD)count <= cache->valid_sectors - offset;
+}
+
+static void update_io_timestamp()
+{
+	if (!fat_cache_is_ready()) {
+		return;
+	}
+	os_mutex_lock(&fat_cache.lock, osWaitForever);
+	fat_cache.fat_tick = os_jiffies();
+	os_mutex_unlock(&fat_cache.lock);
+}
+
+signed char update_fat_info(BYTE fmt, BYTE n_fats, DWORD sz_fat, DWORD fatbase, DWORD b_vol)
 {
 	if (fat_cache.fat_init != RET_OK){
 		return RET_ERR;
-	}	
+	}
 
 	os_mutex_lock(&fat_cache.lock, osWaitForever);
 	
 	fat_cache.fs_type = fmt;
 	fat_cache.fs_fats = n_fats;
 	fat_cache.fs_size = sz_fat;
-
-	fat_cache.fat1.fat_start = fatbase;
-	fat_cache.fat1.fat_end = fat_cache.fat1.fat_start + fat_cache.fs_size - 1;
-
+	fat_cache.fat_start = fatbase;
 	fat_cache.fat_info_ready = RET_OK;
 
-	#if 0
-	// 计算逻辑地址（扇区号）
-	UINT fat1_logical = fatbase - b_vol;                    // FAT1 logical start
-	UINT fat2_logical = fat1_logical + sz_fat;     // FAT2 logical start
-
-	// 计算物理地址（加上分区偏移）
-	UINT partition_start = b_vol;                  // 分区起始扇区
-	//UINT fat1_physical = partition_start + fat1_logical;
-	UINT fat2_physical = partition_start + fat2_logical;
-
-	// if (fat_cache.fs_type == FS_EXFAT) // FS_EXFAT文件系统不需要优化
-	// {
-	// 	fat_cache.fat_info_ready = 0;
-	// }
-
-	if (fmt == FS_FAT12)
-		FAT_INFO_SHOW("Filesystem Type: FS_FAT12 \r\n");
-	else if (fmt == FS_FAT16)
-		FAT_INFO_SHOW("Filesystem Type: FS_FAT16 \r\n");
-	else if (fmt == FS_FAT32)
-		FAT_INFO_SHOW("Filesystem Type: FS_FAT32 \r\n");
-	else if (fmt == FS_EXFAT)
-		FAT_INFO_SHOW("Filesystem Type: FS_EXFAT \r\n");
-
-	FAT_INFO_SHOW("Filesystem fat_num %u \r\n", n_fats);
-	FAT_INFO_SHOW("Filesystem fat_size %u \r\n", sz_fat);
-
-	FAT_INFO_SHOW("Physical Address ===> fat1_start %u , fat1_end %u \r\n", fat_cache.fat1.fat_start, fat_cache.fat1.fat_end);
-	FAT_INFO_SHOW("Logical Address ====> fat1_start %u , fat1_end %u \r\n", fat1_logical, fat1_logical + sz_fat - 1);
-
-	if (n_fats > 1) {
-		FAT_INFO_SHOW("Physical Address ===> fat2_start %u , fat2_end %u \r\n",  fat2_physical, fat2_physical + sz_fat - 1);
-		FAT_INFO_SHOW("Logical Address ====> fat2_start %u , fat2_end %u \r\n", fat2_logical, fat2_logical + sz_fat - 1);
-	}	
-	#endif
 	os_mutex_unlock(&fat_cache.lock);
 
 	return RET_OK;
 }
 
-void update_io_timestamp()
+static signed char update_bitmap_info(FATFS *fs)
 {
-	if (fat_cache.fat_init != RET_OK || fat_cache.fat_info_ready != RET_OK){
+#if FF_FS_EXFAT
+	DWORD cluster_count;
+
+	if (fs == NULL || fs->fs_type != FS_EXFAT || fs->n_fatent <= 2) {
+		fat_cache.bitmap_start = 0;
+		fat_cache.bitmap_size = 0;
+		return RET_ERR;
+	}
+
+	cluster_count = fs->n_fatent - 2;
+	fat_cache.bitmap_start = (DWORD)fs->bitbase;
+	fat_cache.bitmap_size = (DWORD)((cluster_count + (8 * FATFS_SECTOR_SIZE) - 1) / (8 * FATFS_SECTOR_SIZE));
+	return (fat_cache.bitmap_size != 0) ? RET_OK : RET_ERR;
+#else
+	(void)fs;
+	fat_cache.bitmap_start = 0;
+	fat_cache.bitmap_size = 0;
+	return RET_ERR;
+#endif
+}
+
+static void init_cache_for_volume(FATFS *fs)
+{
+	int ret = -1;
+	DWORD valid_sectors = 0;
+	struct sdh_device *sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
+	valid_sectors = (fs->fsize < FAT_CACHE_SIZE) ? fs->fsize : FAT_CACHE_SIZE;
+	if (sdh != NULL && valid_sectors > 0) {
+		ret = sd_multiple_read(sdh, (DWORD)fs->fatbase, valid_sectors * FATFS_SECTOR_SIZE, fat_cache.fat1.data);
+		if(ret != RET_OK) {
+			os_printf("%s sd_multiple_read failed\n", __FUNCTION__);
+			return;
+		}
+	} else {
 		return;
-	}	
+	}
+	fat_cache.fat1.start_sector = (DWORD)fs->fatbase;
+	fat_cache.fat1.valid_sectors = valid_sectors;
+
+	update_bitmap_info(fs);
+	valid_sectors = (fat_cache.bitmap_size < BITMAP_CACHE_SIZE) ? fat_cache.bitmap_size : BITMAP_CACHE_SIZE;
+	if (sdh != NULL && valid_sectors > 0) {
+		ret = sd_multiple_read(sdh, fat_cache.bitmap_start, valid_sectors * FATFS_SECTOR_SIZE, fat_cache.bitmap.data);
+		if(ret != RET_OK) {
+			os_printf("%s sd_multiple_read failed\n", __FUNCTION__);
+			return;
+		}
+	}
+	fat_cache.bitmap.start_sector = fat_cache.bitmap_start;
+	fat_cache.bitmap.valid_sectors = valid_sectors;
+
+	update_fat_info(fs->fs_type, fs->n_fats, fs->fsize, (DWORD)fs->fatbase, (DWORD)fs->volbase);
+}
+
+static DRESULT fat_cache_sync(void *dev, struct fat_cache_window_t *cache)
+{
+	DRESULT ret;
+	DWORD dirty_sectors;
+
+	if (cache->dirty_end == 0 || cache->data == NULL) {
+		return RES_OK;
+	}
+	if (cache->dirty_end <= cache->dirty_start || cache->dirty_end > cache->valid_sectors) {
+		return RES_PARERR;
+	}
+	
+	dirty_sectors = cache->dirty_end - cache->dirty_start;
+	ret = sd_multiple_write((struct sdh_device *)dev, (DWORD)(cache->start_sector + cache->dirty_start),
+		dirty_sectors * FATFS_SECTOR_SIZE, cache->data + cache->dirty_start * FATFS_SECTOR_SIZE);
+	if (ret == RES_OK && fat_cache.fs_fats > 1) {
+		ret = sd_multiple_write((struct sdh_device *)dev, (DWORD)(cache->start_sector + fat_cache.fs_size + cache->dirty_start),
+			dirty_sectors * FATFS_SECTOR_SIZE, cache->data + cache->dirty_start * FATFS_SECTOR_SIZE);
+	}
+	if (ret == RES_OK) {
+		cache->dirty_start = 0;
+		cache->dirty_end = 0;
+	}
+	return ret;
+}
+
+static DRESULT bitmap_cache_sync(void *dev, struct fat_cache_window_t *cache)
+{
+	DRESULT ret = RES_OK;
+	DWORD dirty_sectors;
+
+	if (cache->dirty_end == 0) {
+		return RES_OK;
+	}
+	if (cache->dirty_end <= cache->dirty_start || cache->dirty_end > cache->valid_sectors) {
+		return RES_PARERR;
+	}
+
+	dirty_sectors = cache->dirty_end - cache->dirty_start;
+	ret = sd_multiple_write((struct sdh_device *)dev, (uint32)(cache->start_sector + cache->dirty_start),
+		dirty_sectors * FATFS_SECTOR_SIZE, cache->data + cache->dirty_start * FATFS_SECTOR_SIZE);
+	if (ret == RES_OK) {
+		cache->dirty_start = 0;
+		cache->dirty_end = 0;
+	}
+	return ret;
+}
+
+static void full_cache_sync(struct sdh_device *host)
+{
+	if (!fat_cache_is_ready() || host == NULL) {
+		return;
+	}
 	os_mutex_lock(&fat_cache.lock, osWaitForever);
-	fat_cache.fat_tick = os_jiffies();
+
+	fat_cache_sync(host, &fat_cache.fat1);
+	bitmap_cache_sync(host, &fat_cache.bitmap);
+	
 	os_mutex_unlock(&fat_cache.lock);
 }
 
-// fat回写SD
-static void fat_cache_sync(struct sdh_device *host)
+static DRESULT fat_cache_load(void *dev, DWORD sector)
 {
-	struct sdh_device *sdh = NULL;
-	sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
-	if (fat_cache.fat_init != RET_OK || fat_cache.fat_info_ready != RET_OK){
-		return;
+	DWORD offset;
+	DWORD window_sectors;
+	DRESULT ret;
+	struct fat_cache_window_t *cache = &fat_cache.fat1;
+
+	offset = sector - fat_cache.fat_start;
+	window_sectors = fat_cache.fs_size - offset;
+	if (window_sectors > FAT_CACHE_SIZE) {
+		window_sectors = FAT_CACHE_SIZE;
 	}
+
+	ret = fat_cache_sync(dev, cache);
+	if (ret != RES_OK) {
+		return ret;
+	}
+
+	ret = sd_multiple_read((struct sdh_device *)dev, sector, window_sectors * FATFS_SECTOR_SIZE, cache->data);
+	if (ret == RES_OK) {
+		cache->start_sector = sector;
+		cache->valid_sectors = window_sectors;
+		cache->offset = 0;
+		cache->dirty_start = 0;
+		cache->dirty_end = 0;
+	}
+	return ret;
+}
+
+static DRESULT bitmap_cache_load(void *dev, DWORD sector)
+{
+	DWORD offset;
+	DWORD window_sectors;
+	DRESULT ret;
+	struct fat_cache_window_t *cache = &fat_cache.bitmap;
+
+	offset = sector - fat_cache.bitmap_start;
+	window_sectors = fat_cache.bitmap_size - offset;
+	if (window_sectors > BITMAP_CACHE_SIZE) {
+		window_sectors = BITMAP_CACHE_SIZE;
+	}
+
+	ret = bitmap_cache_sync(dev, &fat_cache.bitmap);
+	if (ret != RES_OK) {
+		return ret;
+	}
+
+	ret = sd_multiple_read((struct sdh_device *)dev, sector, window_sectors * FATFS_SECTOR_SIZE, cache->data);
+	if (ret == RES_OK) {
+		cache->start_sector = sector;
+		cache->valid_sectors = window_sectors;
+		cache->offset = 0;
+		cache->dirty_start = 0;
+		cache->dirty_end = 0;
+	}
+	return ret;
+}
+
+static DRESULT read_from_fat_cache(void *dev, BYTE *buf, DWORD sector, UINT count)
+{
+	DRESULT ret = RES_OK;
+	struct fat_cache_window_t *cache = &fat_cache.fat1;
+	UINT remain = count;
+
+	if (!fat_cache_is_ready() || cache->data == NULL || fat_cache.fs_size == 0){
+		return sd_multiple_read((struct sdh_device *)dev, sector, count * FATFS_SECTOR_SIZE, buf);
+	}
+
 	os_mutex_lock(&fat_cache.lock, osWaitForever);
 
-	// FAT_INFO_SHOW("############# CTRL_SYNC max_offset %d\r\n", fat_cache.fat1.max_offset);
-	if (fat_cache.fat1.max_offset > 0)
-	{
-		sd_multiple_write((struct sdh_device *)host, fat_cache.fat1.start_sector, fat_cache.fat1.max_offset * 512, fat_cache.fat1.data);
-		if (fat_cache.fs_fats > 1)
-		{
-			sd_multiple_write((struct sdh_device *)host, (fat_cache.fat1.start_sector + fat_cache.fs_size), fat_cache.fat1.max_offset * 512, fat_cache.fat1.data);
+	while (remain > 0) {
+		DWORD offset;
+		DWORD chunk;
+
+		if (!cache_window_contains(cache, sector, 1)) {
+			ret = fat_cache_load(dev, sector);
+			if (ret != RES_OK) {
+				break;
+			}
 		}
-		fat_cache.fat1.max_offset = 0;
+		offset = sector - cache->start_sector;
+		chunk = cache->valid_sectors - offset;
+		if (chunk > remain) {
+			chunk = remain;
+		}
+		memcpy(buf, &cache->data[offset * FATFS_SECTOR_SIZE], chunk * FATFS_SECTOR_SIZE);
+		buf += chunk * FATFS_SECTOR_SIZE;
+		sector += chunk;
+		remain -= chunk;
+	}
+
+	os_mutex_unlock(&fat_cache.lock);
+	return ret;
+}
+
+static DRESULT read_from_bitmap_cache(void *dev, BYTE *buf, DWORD sector, UINT count)
+{
+	DRESULT ret = RES_OK;
+	struct fat_cache_window_t *cache = &fat_cache.bitmap;
+	UINT remain = count;
+
+	if (!fat_cache_is_ready() || cache->data == NULL || fat_cache.bitmap_size == 0) {
+		return sd_multiple_read((struct sdh_device *)dev, sector, count * FATFS_SECTOR_SIZE, buf);
+	}
+
+	os_mutex_lock(&fat_cache.lock, osWaitForever);
+
+	while (remain > 0) {
+		DWORD offset;
+		DWORD chunk;
+
+		if (!cache_window_contains(cache, sector, 1)) {
+			ret = bitmap_cache_load(dev, sector);
+			if (ret != RES_OK) {
+				break;
+			}
+		}
+		offset = sector - cache->start_sector;
+		chunk = cache->valid_sectors - offset;
+		if (chunk > remain) {
+			chunk = remain;
+		}
+		memcpy(buf, &cache->data[offset * FATFS_SECTOR_SIZE], chunk * FATFS_SECTOR_SIZE);
+		buf += chunk * FATFS_SECTOR_SIZE;
+		sector += chunk;
+		remain -= chunk;
+	}
+
+	os_mutex_unlock(&fat_cache.lock);
+	return ret;
+}
+
+static DRESULT write_to_fat_cache(void *dev, const BYTE *buf, DWORD sector, UINT count)
+{
+	DRESULT ret = RES_OK;
+	struct fat_cache_window_t *cache = &fat_cache.fat1;
+	UINT remain = count;
+
+	if (!fat_cache_is_ready() || cache->data == NULL || fat_cache.fs_size == 0){
+		return sd_multiple_write((struct sdh_device *)dev, sector, count * FATFS_SECTOR_SIZE, (BYTE *)buf);
 	}
 	
+	os_mutex_lock(&fat_cache.lock, osWaitForever);
+
+	while (remain > 0) {
+		DWORD offset;
+		DWORD chunk;
+
+		if (!cache_window_contains(cache, sector, 1)) {
+			ret = fat_cache_load(dev, sector);
+			if (ret != RES_OK) {
+				break;
+			}
+		}
+		offset = sector - cache->start_sector;
+		chunk = cache->valid_sectors - offset;
+		if (chunk > remain) {
+			chunk = remain;
+		}
+		cache->offset = offset;
+		memcpy(&cache->data[offset * FATFS_SECTOR_SIZE], buf, chunk * FATFS_SECTOR_SIZE);
+		mark_cache_dirty(cache, chunk);
+		buf += chunk * FATFS_SECTOR_SIZE;
+		sector += chunk;
+		remain -= chunk;
+	}
 	os_mutex_unlock(&fat_cache.lock);
+	return ret;
+}
+
+static DRESULT write_to_bitmap_cache(void *dev, const BYTE *buf, DWORD sector, UINT count)
+{
+	DRESULT ret = RES_OK;
+	struct fat_cache_window_t *cache = &fat_cache.bitmap;
+	UINT remain = count;
+
+	if (!fat_cache_is_ready() || cache->data == NULL || fat_cache.bitmap_size == 0) {
+		return sd_multiple_write((struct sdh_device *)dev, sector, count * FATFS_SECTOR_SIZE, (BYTE *)buf);
+	}
+
+	os_mutex_lock(&fat_cache.lock, osWaitForever);
+
+	while (remain > 0) {
+		DWORD offset;
+		DWORD chunk;
+
+		if (!cache_window_contains(cache, sector, 1)) {
+			ret = bitmap_cache_load(dev, sector);
+			if (ret != RES_OK) {
+				break;
+			}
+		}
+		offset = sector - cache->start_sector;
+		chunk = cache->valid_sectors - offset;
+		if (chunk > remain) {
+			chunk = remain;
+		}
+		cache->offset = offset;
+		memcpy(&cache->data[offset * FATFS_SECTOR_SIZE], buf, chunk * FATFS_SECTOR_SIZE);
+		mark_cache_dirty(cache, chunk);
+		buf += chunk * FATFS_SECTOR_SIZE;
+		sector += chunk;
+		remain -= chunk;
+	}
+
+	os_mutex_unlock(&fat_cache.lock);
+	return ret;
 }
 
 #ifdef FAT_TIME
@@ -201,13 +536,16 @@ static void fat_loop(void *arg)
 static int32 fat_loop(struct os_work *work)
 #endif
 {
-	if (fat_cache.fat_init != RET_OK || fat_cache.fat_info_ready != RET_OK){
+	if (!fat_cache_is_ready()) {
 		goto fat_loop_end;
 	}	
 
 	uint8 ret = 0;
 	struct sdh_device *sdh = NULL;
 	sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
+	if (sdh == NULL) {
+		goto fat_loop_end;
+	}
 
 	ret = os_mutex_lock(&sdh->lock, 0);
 	if (ret != RET_OK)
@@ -222,20 +560,12 @@ static int32 fat_loop(struct os_work *work)
 		goto fat_loop_end; // 获取锁失败
 	}
 
-	// 检测到200ms没有操作SD卡，并SD卡在线，fat信息回写SD
+	// 检测到200ms没有操作SD卡，且SD卡在线，fat信息回写SD
 	if (os_jiffies() - fat_cache.fat_tick > 200 && SD_OFF != sdh->sd_opt)
 	{
 		fat_cache.fat_tick = os_jiffies();
-		if (fat_cache.fat1.max_offset > 0)
-		{
-			// FAT_INFO_SHOW(" fat_loop write back max_offset %d\r\n", fat_cache.fat1.max_offset);
-			sd_multiple_write(sdh, fat_cache.fat1.start_sector, fat_cache.fat1.max_offset * 512, fat_cache.fat1.data);
-			if (fat_cache.fs_fats > 1) // 写入FAT2
-			{
-				sd_multiple_write(sdh, (fat_cache.fat1.start_sector + fat_cache.fs_size), fat_cache.fat1.max_offset * 512, fat_cache.fat1.data);
-			}
-			fat_cache.fat1.max_offset = 0;
-		}
+		fat_cache_sync(sdh, &fat_cache.fat1);
+		bitmap_cache_sync(sdh, &fat_cache.bitmap);
 	}
 	
 	os_mutex_unlock(&fat_cache.lock);
@@ -246,20 +576,65 @@ fat_loop_end:
     os_run_work_delay(work, 50);
 	return 0;
 	#endif
-	
 }
 
-static void init_fat_cache(FATFS *fs)
+signed char fat_cache_mount(FATFS *fs)
 {
-	if (update_fat_info(fs->fs_type, fs->n_fats, fs->fsize,fs->fatbase, fs->volbase) != RET_OK){
-		return;
+	if (fs == NULL){
+		return RET_ERR;
 	}
-	// FAT_INFO_SHOW("init_fat_cache \r\n");
-	struct sdh_device *sdh = NULL;
-	sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
-	// 初始化后第一次读fat1
-	fat_cache.fat1.start_sector = fs->fatbase;
-	sd_multiple_read(sdh, fat_cache.fat1.start_sector, FAT_CACHE_SIZE * 512, fat_cache.fat1.data);
+
+	if (fat_cache.fat_init == RET_OK){
+		return RET_OK;
+	}
+
+	fat_cache.fat1.data = fat_malloc(FAT_CACHE_SIZE * FATFS_SECTOR_SIZE);
+	if (fat_cache.fat1.data == NULL){
+		return RET_ERR;
+	}
+	if (fs->fs_type == FS_EXFAT) {
+		fat_cache.bitmap.data = fat_malloc(BITMAP_CACHE_SIZE * FATFS_SECTOR_SIZE);
+	}
+	if (fs->fs_type == FS_EXFAT && fat_cache.bitmap.data == NULL) {
+		fat_free(fat_cache.fat1.data);
+		fat_cache.fat1.data = NULL;
+		return RET_ERR;
+	}
+
+	if (os_mutex_init(&fat_cache.lock) != RET_OK){
+		goto fat_cache_mount_free;
+	}
+
+	#ifdef FAT_TIME
+	if (os_timer_init(&fat_cache.fat_timer, fat_loop, OS_TIMER_MODE_PERIODIC, 0) != RET_OK){
+		goto fat_cache_mount_del_mutex;
+	}
+	#else
+	if (OS_WORK_INIT(&fat_cache.fat_wk, fat_loop, 0) != RET_OK){
+		goto fat_cache_mount_del_mutex;
+	}
+	#endif
+
+	fat_cache.fat_info_ready = 1;
+	reset_cache_window(&fat_cache.fat1);
+	reset_cache_window(&fat_cache.bitmap);
+	fat_cache.fat_tick = os_jiffies();
+	fat_cache.fat_init = RET_OK;
+	init_cache_for_volume(fs);
+
+	#ifdef FAT_TIME
+	os_timer_start(&fat_cache.fat_timer, 50);
+	#else
+	os_run_work_delay(&fat_cache.fat_wk, 50);
+	#endif
+
+	return RET_OK;
+
+fat_cache_mount_del_mutex:
+	os_mutex_del(&fat_cache.lock);
+fat_cache_mount_free:
+	free_cache_buffers();
+	return RET_ERR;
 }
 
 static void del_fat_cache(void)
@@ -270,140 +645,78 @@ static void del_fat_cache(void)
 
 	fat_cache.fat_init = 1;
 	fat_cache.fat_info_ready = 1;
-	os_mutex_lock(&fat_cache.lock, osWaitForever);
-	// FAT_INFO_SHOW("########### del_fat_cache \r\n");
 	
 	#ifdef FAT_TIME
 	os_timer_stop(&fat_cache.fat_timer);
 	os_timer_del(&fat_cache.fat_timer);// 先卸载定时器
 	#else
-	os_work_cancle(&fat_cache.fat_wk,1);
+	os_work_cancle2(&fat_cache.fat_wk,1);
 	#endif
+	os_mutex_lock(&fat_cache.lock, osWaitForever);
 	
-	// 释放fat缓存
-	if (fat_cache.fat1.data)
-	{
-		// FAT_INFO_SHOW("%s %d fat free \r\n", __func__, __LINE__);
-		fat_free(fat_cache.fat1.data);
-		fat_cache.fat1.data = NULL;
-	}
+	free_cache_buffers();
+	fat_cache.fs_type = 0;
+	fat_cache.fs_fats = 0;
+	fat_cache.fs_size = 0;
+	fat_cache.bitmap_start = 0;
+	fat_cache.bitmap_size = 0;
+	fat_cache.fat_start = 0;
+	reset_cache_window(&fat_cache.fat1);
+	reset_cache_window(&fat_cache.bitmap);
 	os_mutex_unlock(&fat_cache.lock);
 	os_mutex_del(&fat_cache.lock); 
 }
 
-static DRESULT read_from_fat_cache(void *dev, struct fat_data_t *cache, BYTE *buf, DWORD sector, UINT count)
+void fat_cache_unmount(void)
 {
-	int ret = 0;
-	if (fat_cache.fat_init != RET_OK || fat_cache.fat_info_ready != RET_OK){
-		return sd_multiple_read((struct sdh_device *)dev, sector, count * 512, buf);
-	}
-	os_mutex_lock(&fat_cache.lock, osWaitForever);
+	struct sdh_device *sdh = NULL;
 
-	if (sector >= cache->start_sector && sector + count <= cache->start_sector + FAT_CACHE_SIZE)
-	{
-		// 从缓存读取
-		cache->offset = (sector - cache->start_sector);
-		memcpy(buf, &cache->data[cache->offset * 512], count * 512);
+	if (fat_cache.fat_init != RET_OK){
+		return;
 	}
-	// 未命中缓存，把旧缓存写入SD，重新预读 16KB 到缓存
-	else
-	{
-		// 把旧缓存写入fat
-		if (cache->max_offset > 0)
-		{
-			// FAT_INFO_SHOW("read_from_fat_cache write back max_offset %d sector %d\r\n", cache->max_offset, sector);
-			sd_multiple_write((struct sdh_device *)dev, cache->start_sector, cache->max_offset * 512, cache->data);
-			if (fat_cache.fs_fats > 1)
-			{
-				sd_multiple_write((struct sdh_device *)dev, (cache->start_sector + fat_cache.fs_size), cache->max_offset * 512, cache->data);
-			}
-			cache->max_offset = 0;
-			// memset(cache->data, 0, FAT_CACHE_SIZE * 512);
-		}
-		// 重新预读数据到缓存
-		ret = sd_multiple_read((struct sdh_device *)dev, sector, FAT_CACHE_SIZE * 512, cache->data);
-		cache->start_sector = sector;
-		memcpy(buf, &cache->data[0], count * 512);
+
+	sdh = (struct sdh_device *)dev_get(HG_SDIOHOST_DEVID);
+	if (sdh != NULL && sdh->sd_opt != SD_OFF){
+		full_cache_sync(sdh);
 	}
-	// __end:
-	os_mutex_unlock(&fat_cache.lock);
-	return ret;
+
+	del_fat_cache();
 }
 
-static DRESULT write_to_fat_cache(void *dev, struct fat_data_t *cache, BYTE *buf, DWORD sector, UINT count)
-{
-	int ret = 0;
-	
-	if (fat_cache.fat_init != RET_OK || fat_cache.fat_info_ready != RET_OK){
-		return sd_multiple_write((struct sdh_device *)dev, sector, count * 512, buf);
-	}
-	os_mutex_lock(&fat_cache.lock, osWaitForever);
-
-	// 检查是否命中缓存
-	if (sector >= cache->start_sector && sector + count <= cache->start_sector + FAT_CACHE_SIZE)
-	{
-		cache->offset = (sector - cache->start_sector);
-		memcpy(&cache->data[cache->offset * 512], buf, count * 512);
-		if (cache->max_offset < (cache->offset + 1))
-		{
-			cache->max_offset = cache->offset + 1;
-		}
-	}
-	else
-	{
-		// 把旧缓存写入fat
-		if (cache->max_offset > 0)
-		{
-			// FAT_INFO_SHOW("write_to_fat_cache write back max_offset %d sector %d\r\n", cache->max_offset, sector);
-			sd_multiple_write((struct sdh_device *)dev, cache->start_sector, cache->max_offset * 512, cache->data);
-			if (fat_cache.fs_fats > 1)
-			{
-				sd_multiple_write((struct sdh_device *)dev, (cache->start_sector + fat_cache.fs_size), cache->max_offset * 512, cache->data);
-			}
-			cache->max_offset = 0;
-			// memset(cache->data, 0, FAT_CACHE_SIZE * 512);
-		}
-		// 重新预读数据到缓存
-		ret = sd_multiple_read((struct sdh_device *)dev, sector, FAT_CACHE_SIZE * 512, cache->data);
-		cache->start_sector = sector;
-
-		cache->offset = 0;
-		memcpy(&cache->data[cache->offset * 512], buf, count * 512);
-
-		if (cache->max_offset < (cache->offset + 1))
-		{
-			cache->max_offset = cache->offset + 1;
-		}
-	}
-	// __end:
-	os_mutex_unlock(&fat_cache.lock);
-	return ret;
-}
-
-#endif
+#endif	/* USE_FAT_CACHE */
 
 DRESULT fatfs_read(void *dev, BYTE *buf, DWORD sector, UINT count)
 {
 #if USE_FAT_CACHE
 	update_io_timestamp();
-	if (sector >= fat_cache.fat1.fat_start && sector <= fat_cache.fat1.fat_end)
-	{
-		return read_from_fat_cache((struct sdh_device *)dev, &fat_cache.fat1, buf, sector, count);
+	if (cache_range_contains(fat_cache.bitmap_start, fat_cache.bitmap_size, sector, count)) {
+		return read_from_bitmap_cache(dev, buf, sector, count);
+	}
+	if (cache_range_contains(fat_cache.fat_start, fat_cache.fs_size, sector, count)) {
+		return read_from_fat_cache(dev, buf, sector, count);
 	}
 #endif
-    return sd_multiple_read((struct sdh_device *)dev, sector, count * 512, buf);
+	return sd_multiple_read((struct sdh_device *)dev, sector, count * FATFS_SECTOR_SIZE, buf);
 }
 
 static DRESULT fatfs_write(void *dev, BYTE *buf, DWORD sector, UINT count)
 {
 #if USE_FAT_CACHE
 	update_io_timestamp();
-	if (sector >= fat_cache.fat1.fat_start && sector <= fat_cache.fat1.fat_end)
+	if (cache_range_contains(fat_cache.bitmap_start, fat_cache.bitmap_size, sector, count)) {
+		return write_to_bitmap_cache(dev, buf, sector, count);
+	}
+	if (cache_range_contains(fat_cache.fat_start, fat_cache.fs_size, sector, count)) {
+		return write_to_fat_cache(dev, buf, sector, count);
+	}
+
+	if (fat_cache_is_ready() && count <= FAT_CACHE_SIZE && fat_cache.fs_fats > 1 &&
+		cache_range_contains(fat_cache.fat_start + fat_cache.fs_size, fat_cache.fs_size, sector, count))
 	{
-		return write_to_fat_cache((struct sdh_device *)dev, &fat_cache.fat1, buf, sector, count);
+		return RES_OK;
 	}
 #endif
-	return sd_multiple_write((struct sdh_device *)dev, sector, count * 512, buf);
+	return sd_multiple_write((struct sdh_device *)dev, sector, count * FATFS_SECTOR_SIZE, buf);
 }
 
 extern unsigned int sd_dwCap;
@@ -417,7 +730,7 @@ static DRESULT fatfs_ioctl(void *init_dev, BYTE cmd, void *buf)
 		// fatfs_sd_tran_stop(init_dev);
 
 #if USE_FAT_CACHE
-		fat_cache_sync(init_dev);
+		full_cache_sync(init_dev);
 #endif
 		break;
 	case GET_SECTOR_COUNT:
@@ -426,7 +739,7 @@ static DRESULT fatfs_ioctl(void *init_dev, BYTE cmd, void *buf)
 		break;
 
 	case GET_SECTOR_SIZE:
-		*(WORD *)buf = 512;
+		*(WORD *)buf = FATFS_SECTOR_SIZE;
 		ret = RES_OK;
 
 		break;

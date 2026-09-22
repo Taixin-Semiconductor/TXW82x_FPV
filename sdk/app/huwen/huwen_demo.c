@@ -234,7 +234,7 @@ void huwen_wakeup_main(void)
         huwen_app_printf("msi_new huwen_mic_msi error!!!\n");
         goto exit;
     }
-    auadc_msi_add_output(AUSYS_AUAD, huwen_mic_msi->name);
+    auadc_msi_add_output(MAIN_MIC_ID, huwen_mic_msi->name);
     huwen_mic_msi->fb_limits.counter = 32;
     huwen_mic_msi->enable = 1;
 

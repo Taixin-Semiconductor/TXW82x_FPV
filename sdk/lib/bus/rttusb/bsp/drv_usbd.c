@@ -51,6 +51,7 @@ static struct udcd _hg_udc;
 
 static rt_err_t _suspend(void);
 static rt_err_t _wakeup(void);
+static rt_err_t _set_test_mode(rt_uint8_t selector);
 
 static uint32 hal_pcd_bus_irq(uint32 irq, uint32 param1, uint32 param2, uint32 param3)
 {
@@ -132,6 +133,23 @@ static rt_err_t _set_config(rt_uint8_t address)
     LOG_D("%s %d %d\r\n", __FUNCTION__, address);
 
     hgusb20_dev_state_config((struct hgusb20_dev *)_hg_pdc);
+    return RT_EOK;
+}
+
+static rt_err_t _set_test_mode(rt_uint8_t selector)
+{
+    struct hgusb20_dev *p_dev = (struct hgusb20_dev *)_hg_pdc;
+
+    if ((p_dev == RT_NULL) || !p_dev->usb_ctrl.bus_high_speed)
+    {
+        return -RT_ERROR;
+    }
+
+    if (!hgusb20_dev_set_test_mode(p_dev, selector))
+    {
+        return -RT_ERROR;
+    }
+
     return RT_EOK;
 }
 
@@ -300,6 +318,7 @@ const static struct udcd_ops _udc_ops =
     _ep0_send_status,
     _suspend,
     _wakeup,
+    _set_test_mode,
 };
 
 /**
@@ -324,6 +343,12 @@ void hg_usbd_class_driver_register()
 
     #ifdef RT_USB_DEVICE_VIDEO
         rt_usbd_uvc_device_class_register(devid);
+    #endif
+    #ifdef RT_USB_DEVICE_VIDEO_MJPEG
+        rt_usbd_uvc_mjpeg_device_class_register(devid);
+    #endif
+    #ifdef RT_USB_DEVICE_VIDEO_H264
+        rt_usbd_uvc_h264_device_class_register(devid);
     #endif
     #ifdef RT_USB_DEVICE_AUDIO_MIC
         rt_usbd_uac_mic_class_register(devid);

@@ -111,7 +111,7 @@ static void start_mp4_record_ui(lv_event_t *e)
                 ui_s->aac_msi          = aenc_get_msi(AUDIO_CODEC_AAC, "adc", &codec_info);
                 if (ui_s->aac_msi)
                 {
-                    auadc_msi_add_output(AUSYS_AUAD, ui_s->aac_msi->name);
+                    auadc_msi_add_output(MAIN_MIC_ID, ui_s->aac_msi->name);
                     msi_do_cmd(ui_s->aac_msi, MSI_CMD_START, 0, 0);
                     msi_add_output(ui_s->aac_msi, NULL, NULL, LVGL_MP4_MSI_NAME);
                     audio_flag = 1;

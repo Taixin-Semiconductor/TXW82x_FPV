@@ -769,6 +769,37 @@ static void http_reponse_success(struct httpClient *httpClient)
     cJSON_Delete(root);
 }
 
+static uint32_t json_seterr(cJSON **root2, char **post_content)
+{
+    *root2 = cJSON_CreateObject();
+    cJSON_AddNumberToObject(*root2, "result", 99);
+    cJSON_AddStringToObject(*root2, "info", "unsupport.");
+    *post_content = cJSON_PrintUnformatted(*root2);
+    _os_printf("postcontent: %s\r\n", *post_content);
+    _os_printf("postlen: %d\r\n", strlen(*post_content));
+    return strlen(*post_content);
+}
+
+static void http_reponse_err(struct httpClient *httpClient)
+{
+	cJSON *root = NULL;
+    char *post_content = NULL;
+    uint32_t sendlen = 0;
+    struct httpresp *head;
+    int fd = httpClient->fdClient;
+
+    head = http_create_reply(200, "OK");
+    http_add_header(head, httpIndex.Connection, "close");
+    http_add_header(head, httpIndex.Type, "application/json");
+    sendlen = json_seterr(&root, &post_content);
+    http_header_send(head, httpIndex.Length, sendlen, fd);
+    send(fd, post_content, sendlen, 0);
+    
+    closeRes(httpClient);
+    cJSON_free(post_content);
+    cJSON_Delete(root);
+}
+
 static uint32_t json_setunsupport(cJSON **root2, char **post_content)
 {
     *root2 = cJSON_CreateObject();
@@ -987,7 +1018,7 @@ void open_audio(struct dev_obj *audio_dev)
                 {
                     aac_init = 1;
                     g_cam_configs[i].aac_msi = aac_msi;
-                    auadc_msi_add_output(AUSYS_AUAD, aac_msi->name);
+                    auadc_msi_add_output(MAIN_MIC_ID, aac_msi->name);
                     msi_do_cmd(g_cam_configs[i].aac_msi, MSI_CMD_START, 0, 0);
                     msi_add_output(g_cam_configs[i].aac_msi, NULL, g_cam_configs[i].msi, NULL);
                 }
@@ -995,7 +1026,7 @@ void open_audio(struct dev_obj *audio_dev)
             else if(g_cam_configs[i].type == AVI)
             {
                 g_cam_configs[i].aac_msi = NULL;
-                auadc_msi_add_output(AUSYS_AUAD, g_cam_configs[i].msi->name);
+                auadc_msi_add_output(MAIN_MIC_ID, g_cam_configs[i].msi->name);
             }
         }
     }
@@ -1017,7 +1048,7 @@ void close_audio(void)
             }
             else if(g_cam_configs[i].type == AVI)
             {
-                auadc_msi_del_output(AUSYS_AUAD, g_cam_configs[i].msi->name);
+                auadc_msi_del_output(MAIN_MIC_ID, g_cam_configs[i].msi->name);
             }
         }
     }
@@ -4098,8 +4129,33 @@ static void http_reponse_reset(struct httpClient *httpClient)
 
 static void http_reponse_sdformat(struct httpClient *httpClient)
 {
-    vfs_mkfs("0:","fatfs",NULL);
-	http_reponse_success(httpClient);
+    int ret = 0;
+    ret = vfs_umount("/sd0");
+    if (ret != 0 && ret != -ENOENT)
+    {
+        os_printf("sd umount failed, ret: %d\r\n", ret);
+        goto format_failed;
+    }
+
+    ret = vfs_mkfs("0:", "fatfs", NULL);
+    if (ret != 0)
+    {
+        os_printf("sd mkfs failed, ret: %d\r\n", ret);
+        goto format_failed;
+    }
+
+    ret = vfs_mount("0:", "/sd0", "fatfs", 0, NULL);
+    if (ret != 0)
+    {
+        os_printf("sd mount failed after format, ret: %d\r\n", ret);
+        goto format_failed;
+    }
+
+    http_reponse_success(httpClient);
+    return;
+
+format_failed:
+    http_reponse_err(httpClient);
 }
 
 static void http_reponse_wifireboot(struct httpClient *httpClient)
